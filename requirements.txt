@@ -1,0 +1,3 @@
+# Supply Chain AI OS - Main requirements
+-r requirements-api.txt
+-r requirements-ingestion.txt

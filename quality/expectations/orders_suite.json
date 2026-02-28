@@ -1,0 +1,40 @@
+{
+  "expectation_suite_name": "orders_suite",
+  "expectations": [
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {"column": "order_id"},
+      "meta": {}
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_in_set",
+      "kwargs": {
+        "column": "status",
+        "value_set": ["PENDING", "IN_TRANSIT", "DELIVERED", "DELAYED", "CANCELLED"]
+      },
+      "meta": {}
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": {
+        "column": "delay_days",
+        "min_value": 0,
+        "max_value": 365
+      },
+      "meta": {}
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": {
+        "column": "inventory_level",
+        "min_value": 0,
+        "max_value": 100
+      },
+      "meta": {}
+    }
+  ],
+  "meta": {
+    "data_asset_type": "Dataset",
+    "great_expectations_version": "0.18.0"
+  }
+}

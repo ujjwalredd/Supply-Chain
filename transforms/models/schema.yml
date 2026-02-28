@@ -1,0 +1,61 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: public
+    tables:
+      - name: orders
+      - name: suppliers
+
+models:
+  - name: stg_orders
+    description: Cleaned raw orders
+    columns:
+      - name: order_id
+        description: Unique order identifier
+        tests:
+          - not_null
+          - unique
+      - name: supplier_id
+        tests:
+          - not_null
+      - name: status
+        tests:
+          - accepted_values:
+              values: ['PENDING', 'IN_TRANSIT', 'DELIVERED', 'DELAYED', 'CANCELLED']
+      - name: delay_days
+        tests:
+          - not_null
+
+  - name: stg_suppliers
+    description: Cleaned supplier data
+    columns:
+      - name: supplier_id
+        tests:
+          - not_null
+          - unique
+      - name: trust_score
+        tests:
+          - not_null
+
+  - name: fct_shipments
+    description: Fact table for shipments with delay calculation
+    columns:
+      - name: order_id
+        tests:
+          - not_null
+          - unique
+
+  - name: dim_suppliers
+    description: Supplier dimension with trust scores
+    columns:
+      - name: supplier_id
+        tests:
+          - not_null
+          - unique
+
+  - name: agg_control_tower
+    description: KPI rollups for control tower dashboard
+    columns:
+      - name: pipeline_value
+      - name: on_time_pct

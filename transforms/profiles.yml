@@ -1,0 +1,11 @@
+supply_chain:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('POSTGRES_HOST', 'localhost') }}"
+      port: "{{ env_var('POSTGRES_PORT', '5432') | int }}"
+      user: "{{ env_var('POSTGRES_USER', 'supplychain') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD', 'supplychain_secret') }}"
+      dbname: "{{ env_var('POSTGRES_DB', 'supply_chain_db') }}"
+      schema: public
