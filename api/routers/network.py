@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-DATA_DIR = Path(os.getenv("DATA_DIR", "/opt/dagster/app/data"))
+DATA_DIR = Path(os.getenv("DATA_DIR", "data/source"))
 
 
 def _load_plant_ports() -> list[dict]:

@@ -5,7 +5,6 @@ Legacy: Kafka-based pipeline (raw_orders → cleaned → modeled).
 """
 
 import os
-from dagster import Definitions
 
 # Medallion: bronze → silver → gold (real data, batch files, lakehouse)
 from pipeline.definitions_medallion import defs as medallion_defs

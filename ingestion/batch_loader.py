@@ -5,7 +5,6 @@ Supports: databases (Postgres), batch files (CSV), incremental feeds.
 Writes to bronze layer with full lineage metadata.
 """
 
-import json
 import logging
 import os
 from datetime import datetime
@@ -35,7 +34,7 @@ def load_orderlist_csv(path: Path) -> Iterator[dict[str, Any]]:
                     continue
                 order_date = row.get("Order_Date", "").strip()
                 ship_late = int(row.get("Ship_Late_Day_Count", "0") or "0")
-                ship_ahead = int(row.get("Ship_Ahead_Day_Count", "0") or "0")
+                _ = int(row.get("Ship_Ahead_Day_Count", "0") or "0")  # parsed but unused
                 unit_quant = int(float(row.get("Unit_Quant", "0") or "0"))
                 weight = float(row.get("Weight", "0") or "0")
 

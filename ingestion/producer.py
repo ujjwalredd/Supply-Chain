@@ -61,6 +61,63 @@ STATUSES = ["PENDING", "IN_TRANSIT", "DELIVERED", "DELAYED", "CANCELLED"]
 fake = Faker() if Faker else None
 _order_counter = 0
 
+# ── Supplier state machine ──────────────────────────────────────────────────
+# Tracks health state per supplier: NORMAL → DEGRADING → CRITICAL → NORMAL
+# Drives causality: a DELAY nudges the supplier toward CRITICAL, which then
+# raises the probability of downstream STOCKOUT events.
+_supplier_state: dict[str, str] = {}            # SUP-XXX → NORMAL|DEGRADING|CRITICAL
+_supplier_anomaly_count: dict[str, int] = {}    # rolling anomaly hit counter
+# Pending causality events: list of (fire_at_tick, event_dict)
+_causality_queue: list[tuple[int, dict]] = []
+_tick: int = 0                                  # incremented on every event send
+
+
+def _get_supplier_state(supplier_id: str) -> str:
+    return _supplier_state.get(supplier_id, "NORMAL")
+
+
+def _record_supplier_anomaly(supplier_id: str) -> None:
+    """Increment anomaly count and advance state machine."""
+    _supplier_anomaly_count[supplier_id] = _supplier_anomaly_count.get(supplier_id, 0) + 1
+    count = _supplier_anomaly_count[supplier_id]
+    current = _get_supplier_state(supplier_id)
+    if current == "NORMAL" and count >= 2:
+        _supplier_state[supplier_id] = "DEGRADING"
+        logger.info("Supplier %s → DEGRADING (anomaly_count=%d)", supplier_id, count)
+    elif current == "DEGRADING" and count >= 5:
+        _supplier_state[supplier_id] = "CRITICAL"
+        logger.warning("Supplier %s → CRITICAL (anomaly_count=%d)", supplier_id, count)
+    # Gradual recovery: reset count after 20 clean events (handled in generate_event)
+
+
+def _maybe_recover_supplier(supplier_id: str) -> None:
+    """On a clean event, slowly decrement anomaly count and allow recovery."""
+    count = _supplier_anomaly_count.get(supplier_id, 0)
+    if count > 0:
+        _supplier_anomaly_count[supplier_id] = count - 1
+    # State downgrade when count falls below threshold
+    current = _get_supplier_state(supplier_id)
+    new_count = _supplier_anomaly_count[supplier_id]
+    if current == "CRITICAL" and new_count < 3:
+        _supplier_state[supplier_id] = "DEGRADING"
+        logger.info("Supplier %s → DEGRADING (recovering)", supplier_id)
+    elif current == "DEGRADING" and new_count == 0:
+        _supplier_state[supplier_id] = "NORMAL"
+        logger.info("Supplier %s → NORMAL (recovered)", supplier_id)
+
+
+def _queue_causality_stockout(supplier_id: str, region: str, product: str) -> None:
+    """Schedule a downstream STOCKOUT from the same supplier in 1-2 ticks."""
+    fire_at = _tick + random.randint(1, 2)
+    payload = {
+        "_causality_trigger": "DELAY",
+        "supplier_id": supplier_id,
+        "region": region,
+        "product": product,
+    }
+    _causality_queue.append((fire_at, payload))
+    logger.debug("Queued causality STOCKOUT for %s at tick %d", supplier_id, fire_at)
+
 
 def _next_order_id() -> str:
     global _order_counter
@@ -68,7 +125,7 @@ def _next_order_id() -> str:
     return f"ORD-{datetime.utcnow().strftime('%Y%m%d')}-{_order_counter:06d}"
 
 
-def _generate_base_order() -> dict:
+def _generate_base_order(supplier_id: str | None = None) -> dict:
     """Generate a normal order event."""
     expected = datetime.utcnow() + timedelta(days=random.randint(3, 14))
     quantity = random.randint(10, 500)
@@ -78,7 +135,7 @@ def _generate_base_order() -> dict:
 
     return {
         "order_id": _next_order_id(),
-        "supplier_id": random.choice(SUPPLIERS),
+        "supplier_id": supplier_id or random.choice(SUPPLIERS),
         "product": random.choice(PRODUCTS),
         "region": random.choice(REGIONS),
         "quantity": quantity,
@@ -94,13 +151,35 @@ def _generate_base_order() -> dict:
     }
 
 
-def _inject_anomaly(base: dict) -> dict:
-    """Inject an anomaly: delay, stockout, or value spike."""
-    anomaly_type = random.choices(
-        ["DELAY", "STOCKOUT", "VALUE_SPIKE", "QUANTITY_ANOMALY"],
-        weights=[0.5, 0.25, 0.15, 0.1],
-        k=1,
-    )[0]
+def _inject_anomaly(base: dict, force_type: str | None = None) -> dict:
+    """Inject an anomaly: delay, stockout, value spike, or quantity anomaly.
+
+    If force_type is set (causality path), inject that specific type.
+    CRITICAL suppliers get higher weights on severe anomaly types.
+    """
+    state = _get_supplier_state(base["supplier_id"])
+
+    if force_type:
+        anomaly_type = force_type
+    elif state == "CRITICAL":
+        # Critical suppliers more likely to have compounding delays + stockouts
+        anomaly_type = random.choices(
+            ["DELAY", "STOCKOUT", "VALUE_SPIKE", "QUANTITY_ANOMALY"],
+            weights=[0.55, 0.35, 0.06, 0.04],
+            k=1,
+        )[0]
+    elif state == "DEGRADING":
+        anomaly_type = random.choices(
+            ["DELAY", "STOCKOUT", "VALUE_SPIKE", "QUANTITY_ANOMALY"],
+            weights=[0.55, 0.30, 0.10, 0.05],
+            k=1,
+        )[0]
+    else:
+        anomaly_type = random.choices(
+            ["DELAY", "STOCKOUT", "VALUE_SPIKE", "QUANTITY_ANOMALY"],
+            weights=[0.5, 0.25, 0.15, 0.1],
+            k=1,
+        )[0]
 
     if anomaly_type == "DELAY":
         delay_days = random.randint(1, 14)
@@ -109,6 +188,9 @@ def _inject_anomaly(base: dict) -> dict:
         base["actual_delivery"] = actual.date().isoformat()
         base["delay_days"] = delay_days
         base["status"] = "DELAYED"
+        # ── Causality: 30% chance of downstream STOCKOUT in next 1-2 ticks ──
+        if random.random() < 0.30:
+            _queue_causality_stockout(base["supplier_id"], base["region"], base["product"])
 
     elif anomaly_type == "STOCKOUT":
         base["inventory_level"] = round(random.uniform(0.0, 8.0), 1)
@@ -122,14 +204,46 @@ def _inject_anomaly(base: dict) -> dict:
         base["quantity"] = base["quantity"] * random.randint(3, 10)
         base["order_value"] = round(base["quantity"] * base["unit_price"], 2)
 
+    _record_supplier_anomaly(base["supplier_id"])
+    base["supplier_health"] = _get_supplier_state(base["supplier_id"])
     return base
 
 
 def generate_event() -> OrderEvent:
-    """Generate a validated order event, with anomalies based on ANOMALY_RATE."""
+    """Generate a validated order event, with anomalies and causality chains."""
+    global _tick
+    _tick += 1
+
+    # ── Check causality queue for due events ────────────────────────────────
+    due = [(t, p) for (t, p) in _causality_queue if _tick >= t]
+    if due:
+        fire_at, payload = due[0]
+        _causality_queue.remove((fire_at, payload))
+        base = _generate_base_order(supplier_id=payload["supplier_id"])
+        base["product"] = payload.get("product", base["product"])
+        base["region"] = payload.get("region", base["region"])
+        base["causality_chain"] = f"DELAY→STOCKOUT (supplier {payload['supplier_id']})"
+        base = _inject_anomaly(base, force_type="STOCKOUT")
+        return OrderEvent.model_validate(base)
+
+    # ── Normal event generation ──────────────────────────────────────────────
     base = _generate_base_order()
-    if random.random() < ANOMALY_RATE:
+    supplier_id = base["supplier_id"]
+    state = _get_supplier_state(supplier_id)
+
+    # CRITICAL/DEGRADING suppliers have elevated anomaly rates
+    effective_rate = ANOMALY_RATE
+    if state == "CRITICAL":
+        effective_rate = min(ANOMALY_RATE * 3.0, 0.60)
+    elif state == "DEGRADING":
+        effective_rate = min(ANOMALY_RATE * 1.8, 0.35)
+
+    if random.random() < effective_rate:
         base = _inject_anomaly(base)
+    else:
+        _maybe_recover_supplier(supplier_id)
+        base["supplier_health"] = state
+
     return OrderEvent.model_validate(base)
 
 

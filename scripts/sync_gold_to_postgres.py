@@ -78,7 +78,7 @@ def _build_orders_df(df) -> "pd.DataFrame":
 
     # Derive missing columns
     df_out["expected_delivery"] = pd.to_datetime(
-        df.get("expected_delivery", pd.NaT), errors="coerce"
+        df.get("expected_delivery", pd.NaT), errors="coerce", format="mixed", utc=True
     )
     df_out["actual_delivery"] = pd.NaT
     qty = df["quantity"].replace(0, 1) if "quantity" in df.columns else 1

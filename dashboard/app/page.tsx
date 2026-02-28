@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { KPICards } from "@/components/KPICards";
 import { DeviationFeed } from "@/components/DeviationFeed";
 import { SupplierRisk } from "@/components/SupplierRisk";
@@ -8,6 +9,8 @@ import { OntologyGraph } from "@/components/OntologyGraph";
 import { ActionsLog } from "@/components/ActionsLog";
 import { RiskForecast } from "@/components/RiskForecast";
 import { SupplyChainGraph } from "@/components/SupplyChainGraph";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { PanelSkeleton } from "@/components/PanelSkeleton";
 import { useWebSocket } from "@/hooks/useWebSocket";
 
 export default function ControlTowerPage() {
@@ -29,39 +32,71 @@ export default function ControlTowerPage() {
         </header>
 
         <section className="mb-8">
-          <KPICards />
+          <ErrorBoundary label="KPI Cards">
+            <Suspense fallback={<PanelSkeleton rows={3} height="h-16" />}>
+              <KPICards />
+            </Suspense>
+          </ErrorBoundary>
         </section>
 
         <div className="h-px bg-border mb-8" />
 
         <section className="mb-8 grid gap-6 lg:grid-cols-2">
-          <DeviationFeed />
-          <SupplierRisk />
+          <ErrorBoundary label="Deviation Feed">
+            <Suspense fallback={<PanelSkeleton rows={5} />}>
+              <DeviationFeed />
+            </Suspense>
+          </ErrorBoundary>
+          <ErrorBoundary label="Supplier Risk">
+            <Suspense fallback={<PanelSkeleton rows={5} />}>
+              <SupplierRisk />
+            </Suspense>
+          </ErrorBoundary>
         </section>
 
         <div className="h-px bg-border mb-8" />
 
         <section className="mb-8 grid gap-6 lg:grid-cols-2">
-          <RiskForecast />
-          <ActionsLog />
+          <ErrorBoundary label="Risk Forecast">
+            <Suspense fallback={<PanelSkeleton rows={6} />}>
+              <RiskForecast />
+            </Suspense>
+          </ErrorBoundary>
+          <ErrorBoundary label="Actions Log">
+            <Suspense fallback={<PanelSkeleton rows={4} />}>
+              <ActionsLog />
+            </Suspense>
+          </ErrorBoundary>
         </section>
 
         <div className="h-px bg-border mb-8" />
 
         <section className="mb-8">
-          <OrderTable />
+          <ErrorBoundary label="Order Table">
+            <Suspense fallback={<PanelSkeleton rows={8} />}>
+              <OrderTable />
+            </Suspense>
+          </ErrorBoundary>
         </section>
 
         <div className="h-px bg-border mb-8" />
 
         <section className="mb-8">
-          <SupplyChainGraph />
+          <ErrorBoundary label="Supply Chain Graph">
+            <Suspense fallback={<PanelSkeleton rows={6} height="h-6" />}>
+              <SupplyChainGraph />
+            </Suspense>
+          </ErrorBoundary>
         </section>
 
         <div className="h-px bg-border mb-8" />
 
         <section className="pb-8">
-          <OntologyGraph />
+          <ErrorBoundary label="Ontology Graph">
+            <Suspense fallback={<PanelSkeleton rows={5} height="h-5" />}>
+              <OntologyGraph />
+            </Suspense>
+          </ErrorBoundary>
         </section>
 
       </div>

@@ -11,7 +11,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +31,6 @@ class ValidationResult:
 def validate_not_null(df, column: str) -> ValidationResult:
     """Expect column values to not be null."""
     try:
-        import pandas as pd
-
         total = len(df)
         nulls = df[column].isna().sum()
         passed = nulls == 0

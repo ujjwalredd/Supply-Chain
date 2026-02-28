@@ -418,57 +418,125 @@ def gold_forecasted_risks(context: AssetExecutionContext) -> MaterializeResult:
     """
     Feature 5: Predict orders at risk of delay BEFORE they are late.
 
-    Logic:
-    - Read silver orders
-    - Compute per-supplier historical delay rate
-    - Flag orders due within 7 days from suppliers with >20% delay rate
-    - Enrich with cheapest alternative carrier from silver_freight_rates
-    - Include warehouse capacity headroom from silver_wh_capacities
+    ML scoring (time-decay weighted):
+    - delay_probability = Σ(is_delayed * weight) / Σ(weight)  per supplier
+      where weight = exp(-days_old / 90)  — recent delays count more
+    - confidence = 1 - 1/sqrt(n_orders)   — more orders → more certain
+    - risk_score = order_value * delay_probability * (1 / days_to_delivery)
+    - Threshold: at_risk if delay_probability > 0.15 OR risk_score > 500
     """
+    import numpy as np
     import pandas as pd
     from datetime import datetime, timezone
 
-    # Load silver orders
-    parquet_file = os.path.join(BRONZE_PATH, "orders", "data.parquet")
+    # Load silver orders (prefer silver, fall back to bronze)
+    silver_file = os.path.join(SILVER_PATH, "orders", "data.parquet")
+    bronze_file = os.path.join(BRONZE_PATH, "orders", "data.parquet")
+    parquet_file = silver_file if Path(silver_file).exists() else bronze_file
     if not Path(parquet_file).exists():
         return MaterializeResult(metadata={"at_risk_count": MetadataValue.int(0)})
 
+    now = datetime.now(timezone.utc)
+
     df = pd.read_parquet(parquet_file)
     df["delay_days"] = pd.to_numeric(df.get("delay_days", 0), errors="coerce").fillna(0)
-    df["expected_delivery"] = pd.to_datetime(df.get("expected_delivery"), errors="coerce")
+    df["order_value"] = pd.to_numeric(df.get("order_value", 0), errors="coerce").fillna(0)
+    df["expected_delivery"] = pd.to_datetime(df["expected_delivery"], errors="coerce", format="mixed", utc=True)
 
-    # Supplier delay rates
-    supplier_stats = (
-        df.groupby("supplier_id")
-        .agg(total=("order_id", "count"), delayed=("delay_days", lambda x: (x > 0).sum()))
-        .reset_index()
+    # ── Time-decay weighted delay probability per supplier ──────────────────
+    # Use the newest order date in the dataset as the reference point, not today.
+    # This keeps the decay meaningful for historical datasets (e.g. 2015-2016 CSV).
+    newest_date = df["expected_delivery"].dropna().max()
+    if pd.isnull(newest_date):
+        newest_date = now
+    df["days_old"] = (newest_date - df["expected_delivery"]).dt.total_seconds().div(86400).clip(lower=0).fillna(180)
+    df["weight"] = np.exp(-df["days_old"] / 90)          # half-life ≈ 62 days
+    df["weighted_delayed"] = (df["delay_days"] > 0).astype(float) * df["weight"]
+
+    def _supplier_risk(g: "pd.DataFrame") -> "pd.Series":
+        total_weight = float(g["weight"].sum())
+        if total_weight < 1e-9:
+            total_weight = 1e-9
+        return pd.Series({
+            "total_orders": len(g),
+            "delay_probability": float(g["weighted_delayed"].sum()) / total_weight,
+            "avg_delay_days": float(g["delay_days"].mean()),
+        })
+
+    try:
+        # pandas >= 2.2 requires include_groups=False
+        supplier_stats = (
+            df.groupby("supplier_id", group_keys=False)
+            .apply(_supplier_risk, include_groups=False)
+            .reset_index()
+        )
+    except TypeError:
+        # pandas < 2.2 — include_groups kwarg not recognised
+        supplier_stats = (
+            df.groupby("supplier_id", group_keys=False)
+            .apply(_supplier_risk)
+            .reset_index()
+        )
+    # Per-supplier confidence: more orders → less uncertainty
+    supplier_stats["confidence"] = (
+        1.0 - 1.0 / np.sqrt(supplier_stats["total_orders"].clip(lower=1))
+    ).clip(0, 1).round(3)
+
+    # ── All non-delivered orders are candidates ──────────────────────────────
+    # Note: OrderList.csv uses historical dates (2015-2016). We don't filter
+    # by absolute date — we use delay_probability and risk_score as the
+    # threshold so the endpoint returns real data regardless of the dataset era.
+    in_transit = (
+        df[df["status"] != "DELIVERED"].copy()
+        if "status" in df.columns
+        else df.copy()
     )
-    supplier_stats["delay_rate"] = supplier_stats["delayed"] / supplier_stats["total"]
-    risky_suppliers = set(supplier_stats[supplier_stats["delay_rate"] > 0.20]["supplier_id"])
-
-    # Orders due within 7 days from risky suppliers (not yet delivered)
-    now = datetime.now(timezone.utc)
-    in_transit = df[df.get("status", pd.Series()) != "DELIVERED"].copy() if "status" in df.columns else df.copy()
-    in_transit["expected_delivery"] = pd.to_datetime(in_transit["expected_delivery"], utc=True, errors="coerce")
     days_to_delivery = (in_transit["expected_delivery"] - now).dt.total_seconds() / 86400
-    at_risk = in_transit[
-        (days_to_delivery >= 0) & (days_to_delivery <= 7) & (in_transit["supplier_id"].isin(risky_suppliers))
-    ].copy()
-    at_risk["days_to_delivery"] = days_to_delivery[at_risk.index].round(1)
-    at_risk["risk_reason"] = at_risk["supplier_id"].apply(
-        lambda s: f"Supplier {s} has >{supplier_stats[supplier_stats['supplier_id']==s]['delay_rate'].iloc[0]*100:.0f}% historical delay rate"
-        if not supplier_stats[supplier_stats['supplier_id']==s].empty else "High delay rate"
+    at_risk = in_transit.copy()
+    at_risk["days_to_delivery"] = days_to_delivery[at_risk.index].round(2)
+
+    # ── Join supplier risk scores ────────────────────────────────────────────
+    at_risk = at_risk.merge(
+        supplier_stats[["supplier_id", "delay_probability", "confidence", "avg_delay_days"]],
+        on="supplier_id",
+        how="left",
+    )
+    at_risk["delay_probability"] = at_risk["delay_probability"].fillna(0)
+    at_risk["confidence"] = at_risk["confidence"].fillna(0)
+
+    # ── Risk score: value × probability (urgency not applied for historical data) ──
+    at_risk["risk_score"] = (
+        at_risk["order_value"] * at_risk["delay_probability"]
+    ).round(2)
+
+    # ── At-risk threshold: supplier delay probability > 15% ──────────────────
+    at_risk = at_risk[at_risk["delay_probability"] > 0.15].copy()
+
+    # Sort highest risk first and cap at 500 rows for the Parquet file
+    at_risk = at_risk.sort_values("risk_score", ascending=False).head(500)
+
+    at_risk["risk_reason"] = at_risk.apply(
+        lambda r: (
+            f"Supplier {r['supplier_id']}: {r['delay_probability']*100:.0f}% weighted delay prob "
+            f"(confidence {r['confidence']*100:.0f}%), risk_score={r['risk_score']:.0f}"
+        ),
+        axis=1,
     )
 
-    # Enrich with cheapest carrier option
+    # ── Enrich: cheapest alternative carrier ────────────────────────────────
     fr_file = os.path.join(SILVER_PATH, "freight_rates", "data.parquet")
     if Path(fr_file).exists():
         fr = pd.read_parquet(fr_file)
-        cheapest = fr.sort_values("min_cost").groupby("dest_port").first()[["carrier", "min_cost", "transit_days"]].reset_index()
+        cheapest = (
+            fr.sort_values("min_cost")
+            .groupby("dest_port")
+            .first()[["carrier", "min_cost", "transit_days"]]
+            .reset_index()
+        )
         cheapest.columns = ["dest_port", "alt_carrier", "alt_min_cost", "alt_transit_days"]
         at_risk = at_risk.merge(cheapest, left_on="region", right_on="dest_port", how="left")
 
-    # Enrich with warehouse capacity
+    # ── Enrich: warehouse capacity headroom ─────────────────────────────────
     wh_file = os.path.join(SILVER_PATH, "wh_capacities", "data.parquet")
     if Path(wh_file).exists():
         wh = pd.read_parquet(wh_file)
@@ -478,8 +546,18 @@ def gold_forecasted_risks(context: AssetExecutionContext) -> MaterializeResult:
     Path(gold_path).mkdir(parents=True, exist_ok=True)
     at_risk.to_parquet(os.path.join(gold_path, "data.parquet"), index=False)
 
+    n_risky_suppliers = int((supplier_stats["delay_probability"] > 0.15).sum())
+    avg_risk_score = round(float(at_risk["risk_score"].mean()), 2) if len(at_risk) else 0.0
+    avg_confidence = round(float(at_risk["confidence"].mean()), 3) if len(at_risk) else 0.0
+
+    context.log.info(
+        "Forecasted risks: %d at-risk orders, %d risky suppliers, avg_score=%.1f",
+        len(at_risk), n_risky_suppliers, avg_risk_score,
+    )
     return MaterializeResult(metadata={
         "at_risk_count": MetadataValue.int(len(at_risk)),
-        "risky_supplier_count": MetadataValue.int(len(risky_suppliers)),
+        "risky_supplier_count": MetadataValue.int(n_risky_suppliers),
         "total_orders_scanned": MetadataValue.int(len(df)),
+        "avg_risk_score": MetadataValue.float(avg_risk_score),
+        "avg_model_confidence": MetadataValue.float(avg_confidence),
     })

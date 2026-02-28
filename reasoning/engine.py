@@ -40,6 +40,8 @@ class AIAnalysisOutput(BaseModel):
         False,
         description="Whether the recommendation can be auto-executed",
     )
+    input_tokens: int = Field(0, description="Claude input token count")
+    output_tokens: int = Field(0, description="Claude output token count")
 
 
 SYSTEM_PROMPT = """You are an expert supply chain analyst for a control tower. Your job is to analyze deviations (delays, stockouts, anomalies) and recommend actions. You have access to:
@@ -73,9 +75,14 @@ def stream_analysis(
     order: dict | None = None,
     supplier: dict | None = None,
     ontology_constraints: list[dict] | None = None,
+    _usage_sink: dict | None = None,
 ) -> Iterator[str]:
     """
     Stream Claude's analysis token-by-token for real-time dashboard display.
+
+    If _usage_sink dict is provided, it is populated with:
+      {"input_tokens": int, "output_tokens": int}
+    after all tokens have been yielded.
     """
     client = _get_client()
     context = _build_context(
@@ -104,6 +111,14 @@ Provide a clear, actionable analysis."""
         ) as stream:
             for text in stream.text_stream:
                 yield text
+            # Capture token usage after all content has streamed
+            if _usage_sink is not None:
+                try:
+                    final = stream.get_final_message()
+                    _usage_sink["input_tokens"] = final.usage.input_tokens
+                    _usage_sink["output_tokens"] = final.usage.output_tokens
+                except Exception:
+                    pass
     except Exception as e:
         logger.exception("Claude stream failed: %s", e)
         yield f"\n\nError: {str(e)}"
@@ -177,6 +192,9 @@ Return only valid JSON, no markdown."""
         for block in response.content:
             if hasattr(block, "text"):
                 text += block.text
+        # Extract token usage
+        input_tokens = getattr(response.usage, "input_tokens", 0)
+        output_tokens = getattr(response.usage, "output_tokens", 0)
         # Strip markdown code block if present
         if "```" in text:
             parts = text.split("```")
@@ -186,11 +204,17 @@ Return only valid JSON, no markdown."""
                     p = p[4:].strip()
                 try:
                     data = json.loads(p)
-                    return AIAnalysisOutput.model_validate(data)
+                    result = AIAnalysisOutput.model_validate(data)
+                    result.input_tokens = input_tokens
+                    result.output_tokens = output_tokens
+                    return result
                 except (json.JSONDecodeError, Exception):
                     continue
         data = json.loads(text)
-        return AIAnalysisOutput.model_validate(data)
+        result = AIAnalysisOutput.model_validate(data)
+        result.input_tokens = input_tokens
+        result.output_tokens = output_tokens
+        return result
     except Exception as e:
         logger.exception("Claude structured call failed: %s", e)
         return AIAnalysisOutput(

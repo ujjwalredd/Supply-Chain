@@ -7,10 +7,8 @@ Sources:
 2. Supplyify supply-chain-data.csv - product/sales data
 """
 
-import hashlib
 import logging
 import os
-import shutil
 import sys
 from pathlib import Path
 

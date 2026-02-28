@@ -24,7 +24,7 @@ export function RiskForecast() {
   const [summary, setSummary] = useState<{ at_risk_count: number; suppliers_affected: number; avg_days_to_delivery: number | null } | null>(null);
 
   useEffect(() => {
-    fetchForecasts({ limit: 20, max_days: 7 })
+    fetchForecasts({ limit: 20 })
       .then(setRows)
       .catch(() => setRows([]));
 

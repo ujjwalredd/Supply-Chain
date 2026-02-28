@@ -66,6 +66,12 @@ export async function dismissAlert(id: string) {
   return res.json();
 }
 
+export type StreamUsage = {
+  input_tokens?: number;
+  output_tokens?: number;
+  analysis_time_ms?: number;
+};
+
 export async function analyzeDeviationStream(
   body: {
     deviation_id: string;
@@ -74,12 +80,17 @@ export async function analyzeDeviationStream(
     severity?: string;
     context?: Record<string, unknown>;
   },
-  onToken: (token: string) => void
+  onToken: (token: string) => void,
+  options?: {
+    signal?: AbortSignal;
+    onDone?: (usage: StreamUsage) => void;
+  }
 ) {
   const res = await fetch(`${API_BASE}/ai/analyze/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal: options?.signal,
   });
   if (!res.ok) {
     const text = await res.text();
@@ -96,20 +107,26 @@ export async function analyzeDeviationStream(
   if (!reader) throw new Error("No response body");
   const decoder = new TextDecoder();
   let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n\n");
-    buffer = lines.pop() || "";
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        try {
-          const data = JSON.parse(line.slice(6));
-          if (data.token) onToken(data.token);
-        } catch {}
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.token) onToken(data.token);
+            if (data.done && options?.onDone) options.onDone(data.usage ?? {});
+          } catch {}
+        }
       }
     }
+  } catch (err) {
+    if ((err as Error).name === "AbortError") return; // cancelled — not an error
+    throw err;
   }
 }
 
@@ -138,7 +155,7 @@ export async function fetchActions(params?: { limit?: number; status?: string })
   return res.json();
 }
 
-export async function fetchForecasts(params?: { limit?: number; max_days?: number }) {
+export async function fetchForecasts(params?: { limit?: number; min_risk_score?: number }) {
   const filtered = Object.fromEntries(
     Object.entries(params ?? {})
       .filter(([, v]) => v !== undefined && v !== null)

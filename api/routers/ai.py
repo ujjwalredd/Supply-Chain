@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import time
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,8 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_db
-from api.models import Deviation, Order, OntologyConstraint, Supplier
-from api.schemas import AIAnalysisRequest
+from api.models import Order, OntologyConstraint, Supplier
 from reasoning.engine import stream_analysis, analyze_structured
 
 logger = logging.getLogger(__name__)
@@ -101,13 +101,20 @@ async def analyze_stream(
     }
 
     def generate():
+        usage: dict = {}
+        start_ms = time.monotonic()
         try:
-            for token in stream_analysis(deviation, order_data, supplier_data, constraints):
+            for token in stream_analysis(
+                deviation, order_data, supplier_data, constraints, _usage_sink=usage
+            ):
                 yield f"data: {json.dumps({'token': token})}\n\n"
         except Exception as e:
             logger.exception("Stream error: %s", e)
             error_token = "\n\nError: " + str(e)
             yield f"data: {json.dumps({'token': error_token})}\n\n"
+        # Final event with token usage and wall-clock time
+        elapsed_ms = int((time.monotonic() - start_ms) * 1000)
+        yield f"data: {json.dumps({'done': True, 'usage': {**usage, 'analysis_time_ms': elapsed_ms}})}\n\n"
 
     return StreamingResponse(
         generate(),

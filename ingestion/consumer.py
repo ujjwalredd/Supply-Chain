@@ -9,8 +9,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from kafka import KafkaConsumer
 from kafka.errors import KafkaError

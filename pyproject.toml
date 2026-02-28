@@ -1,0 +1,21 @@
+[tool.ruff]
+# Exclude legacy Spark pipeline (replaced by medallion) and generated/build dirs
+exclude = [
+    "pipeline/assets.py",
+    ".venv",
+    "__pycache__",
+    "alembic/versions",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E501",   # line too long — handled by formatter
+    # F821 false-positives: string annotations reference names imported inside functions
+    # (e.g. `-> "pd.DataFrame | None"` where pandas is imported inside the function body)
+    "F821",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Scripts that use conditional imports (boto3 checked at runtime)
+"scripts/sync_data_to_minio.py" = ["F401"]

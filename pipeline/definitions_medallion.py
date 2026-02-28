@@ -1,6 +1,5 @@
 """Dagster Definitions - Medallion pipeline (bronze → silver → gold)."""
 
-import os
 from dagster import Definitions, ScheduleDefinition
 
 from pipeline.assets_medallion import (

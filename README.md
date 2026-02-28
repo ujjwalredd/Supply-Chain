@@ -25,17 +25,18 @@ This project implements all five concepts end-to-end in a fully Dockerised stack
 | Auger Feature | This Implementation |
 |---|---|
 | Control Tower UI | Next.js 14 dashboard — KPI cards, deviation feed, network graph, risk forecast |
-| Real-time signal ingest | Kafka producer → consumer → Delta Lake bronze layer (50+ events/min) |
+| Real-time signal ingest | Kafka producer → consumer → Delta Lake bronze layer (50+ events/min, supplier state machine) |
 | Deviation detection | Dagster pipeline auto-generates deviations; seeded alerts for immediate testing |
-| AI root-cause reasoning | Claude Sonnet 4.6 streaming SSE — reads deviation + ontology → structured analysis |
+| AI root-cause reasoning | Claude Sonnet 4.6 streaming SSE — reads deviation + ontology → structured analysis + token usage |
 | Ontology / business rules | `ontology_constraints` table; rules injected into every `/ai/analyze` call |
 | Action execution + audit | `POST /alerts/{id}/dismiss` creates `PendingAction` record; `/actions` shows full log |
-| Risk forecasting | `gold_forecasted_risks` Dagster asset; `/forecasts` endpoint; RiskForecast dashboard panel |
+| Risk forecasting | `gold_forecasted_risks` — time-decay ML scoring: `delay_probability × order_value × urgency` |
 | Network visibility | `/network` endpoint reads PlantPorts.csv → 19 plants, 11 ports, 22 routes; SVG graph |
 | Data quality gate | Great Expectations validation on every silver layer promotion |
 | Medallion lakehouse | Dagster 14-asset pipeline: bronze → silver → quality gate → dbt → gold |
+| CI/CD | GitHub Actions: Docker build + Python lint + pytest + TypeScript type-check on every push |
 
-**Operator flow (mimics Auger's UX):**
+**Operator flow:**
 ```
 Alert fires in Deviation Feed
     → Operator clicks "Analyze with AI"
@@ -51,15 +52,16 @@ Alert fires in Deviation Feed
 
 An end-to-end supply chain AI platform running entirely in Docker:
 
-- **Real-time event ingestion** — Kafka producer streams 50+ supply chain events/min
+- **Real-time event ingestion** — Kafka producer streams 50+ supply chain events/min with causality chains (DELAY → STOCKOUT) and a per-supplier state machine (NORMAL → DEGRADING → CRITICAL)
 - **Medallion data lake** — Dagster orchestrates bronze → silver → gold pipeline across 14 assets
 - **Data quality gate** — Great Expectations validation on every silver layer promotion
 - **dbt transforms** — SQL staging + mart models run as a Dagster asset
-- **AI reasoning** — Claude Sonnet 4.6 analyses deviations, streams root cause + trade-off options
-- **Risk forecasting** — predicts at-risk orders before delay using supplier history
+- **AI reasoning** — Claude Sonnet 4.6 analyses deviations, streams root cause + trade-off options; token usage and wall-clock time surfaced per analysis
+- **Time-decay ML risk scoring** — `gold_forecasted_risks` uses `weight = exp(-days_old/90)` to compute per-supplier delay probability, confidence score, and a composite risk score (`order_value × delay_probability × urgency`)
 - **Action audit trail** — every "Execute Recommendation" click is persisted as a PendingAction
 - **Supply chain network graph** — interactive Plant → Port topology (19 plants, 11 ports)
-- **Live dashboard** — Next.js control tower with WebSocket, KPI cards, deviation feed, network SVG
+- **Live dashboard** — Next.js control tower with WebSocket, KPI cards, deviation feed, network SVG; every panel wrapped in an ErrorBoundary + Suspense skeleton
+- **CI/CD** — GitHub Actions: Docker build validation, ruff lint, pytest, TypeScript type-check on every push
 
 ---
 
@@ -80,7 +82,7 @@ An end-to-end supply chain AI platform running entirely in Docker:
 | `gold_orders_ai_ready` | Gold | Enrich orders with risk score, delay flag, lead time |
 | `gold_deviations` | Gold | Identify deviations (delay_days > threshold) |
 | `gold_supplier_risk` | Gold | Aggregate trust scores, avg delay, on-time rate per supplier |
-| `gold_forecasted_risks` | Gold | Predict at-risk orders using supplier delay history |
+| `gold_forecasted_risks` | Gold | Time-decay ML: `delay_probability × order_value × urgency` risk score + per-supplier confidence |
 
 ---
 
@@ -90,9 +92,9 @@ An end-to-end supply chain AI platform running entirely in Docker:
 |---|---|---|
 | **KPI Cards** | `/orders` aggregate | Pipeline value, on-time %, delayed count, critical alerts |
 | **Deviation Feed** | `/alerts` WebSocket | Live alert list — click any row to open AI reasoning modal |
-| **AI Reasoning Modal** | `/ai/analyze/stream` SSE | Claude streams root cause + trade-off options |
+| **AI Reasoning Modal** | `/ai/analyze/stream` SSE | Claude streams root cause + trade-off options; Cancel mid-stream, Copy output, token count badge |
 | **Supplier Risk** | `/suppliers/risk` | Bar chart ranked by trust score (Great Expectations validated) |
-| **Risk Forecast** | `/forecasts` | Orders predicted to be late — color-coded by urgency |
+| **Risk Forecast** | `/forecasts` | At-risk orders scored by `delay_probability × order_value × urgency` |
 | **Actions Log** | `/actions` | Every executed recommendation with timestamp + status |
 | **Orders Table** | `/orders` | All 9,215+ orders — filterable by status, supplier |
 | **Supply Chain Network** | `/network` | Interactive SVG: Plant → Port topology, hover for products |
@@ -141,7 +143,17 @@ curl -N -X POST http://localhost:8000/ai/analyze/stream \
   -d '{"deviation_id":"DEV-0001","deviation_type":"DELAY","severity":"HIGH"}'
 ```
 
-Streams tokens as `data: <token>\n\n` — consumed by `AIReasoningPanel.tsx` in real time.
+Each token arrives as:
+```
+data: {"token": "The root cause..."}
+```
+
+After the last token, a final done event is sent:
+```
+data: {"done": true, "usage": {"input_tokens": 312, "output_tokens": 487, "analysis_time_ms": 4231}}
+```
+
+The dashboard uses `AbortController` to cancel mid-stream and displays the token count badge once the done event arrives.
 
 ---
 
@@ -187,11 +199,14 @@ The ontology layer is what separates Auger-style AI from raw LLM chatbots. Every
 | **Orchestration** | Dagster 14 software-defined assets, 6-hour schedule, sensor-ready |
 | **Data Quality** | Great Expectations — not_null, between, in_set checks on silver layer |
 | **SQL / dbt** | Staging models, fact + dimension mart models, incremental-ready patterns |
-| **AI / LLM** | Claude Sonnet 4.6 streaming SSE, structured JSON output, RAG-style ontology injection |
+| **ML Scoring** | Time-decay weighted delay probability (`exp(-days/90)`), per-supplier confidence, composite risk score |
+| **Event Simulation** | Kafka supplier state machine (NORMAL→DEGRADING→CRITICAL), causality chains (DELAY→STOCKOUT) |
+| **AI / LLM** | Claude Sonnet 4.6 streaming SSE, structured JSON output, RAG-style ontology injection, token usage tracking |
 | **Backend** | FastAPI, SQLAlchemy 2.0, Alembic migrations, Pydantic v2, WebSocket, SSE |
-| **Frontend** | Next.js 14 App Router, TailwindCSS, Recharts, SVG network graph, polling + WebSocket |
-| **Streaming** | Kafka producer/consumer, 12% anomaly injection, Delta Lake bronze sink |
+| **Frontend** | Next.js 14 App Router, TailwindCSS, Recharts, SVG network graph, AbortController, ErrorBoundary |
+| **Streaming** | Kafka producer/consumer, 12% base anomaly rate (up to 60% for CRITICAL suppliers), Delta Lake bronze sink |
 | **Infrastructure** | Docker Compose 10-service stack, MinIO S3-compatible, Redis, PostgreSQL 15 |
+| **CI/CD** | GitHub Actions — Docker build, ruff, pytest, TypeScript type-check on every push to `main` |
 | **Audit Trail** | PendingAction model — every AI recommendation execution is persisted and queryable |
 
 ---
@@ -446,34 +461,124 @@ curl http://localhost:8000/actions | python3 -m json.tool
 
 ---
 
+## Recent Improvements
+
+### 1. Time-Decay ML Risk Scoring (`gold_forecasted_risks`)
+
+Replaced the flat ">20% delay rate" heuristic with a proper weighted model:
+
+```
+weight          = exp(-days_old / 90)          # recent delays count more (half-life ≈ 62 days)
+delay_prob      = Σ(is_delayed × weight) / Σ(weight)   per supplier
+confidence      = 1 − 1/√n_orders             # more orders → more certain
+risk_score      = order_value × delay_prob × (1 / days_to_delivery)
+```
+
+Dagster metadata now surfaces `avg_risk_score` and `avg_model_confidence` per run.
+Orders are flagged at-risk if `delay_probability > 0.15` **or** `risk_score > 500`.
+
+---
+
+### 2. Anomaly Causality Chains + Supplier State Machine (`ingestion/producer.py`)
+
+Kafka events now simulate realistic compounding failures:
+
+| State | Anomaly rate | Trigger |
+|---|---|---|
+| NORMAL | 12% (baseline) | 2 anomalies in window |
+| DEGRADING | 21.6% | 5 anomalies in window |
+| CRITICAL | 36% | Stays until recovery |
+
+When a DELAY fires, there is a **30% chance** a downstream STOCKOUT from the same supplier is queued 1–2 ticks later. Causality events carry a `causality_chain: "DELAY→STOCKOUT (SUP-XXX)"` field.
+
+---
+
+### 3. Token Usage Tracking
+
+The SSE stream now ends with a `done` event:
+
+```json
+{"done": true, "usage": {"input_tokens": 312, "output_tokens": 487, "analysis_time_ms": 4231}}
+```
+
+The structured `/ai/analyze` endpoint returns `input_tokens` and `output_tokens` in its JSON response.
+
+---
+
+### 4. AI Reasoning Panel — Abort + Copy + Token Badge (`AIReasoningPanel.tsx`)
+
+Three new controls in the analysis modal:
+
+- **Cancel button** — appears during streaming; uses `AbortController` to stop the SSE fetch mid-flight
+- **Copy button** (header) — copies the full analysis text to clipboard; shows a ✓ check for 2 seconds
+- **Token badge** (header) — shows `N tokens · X.Xs` once the `done` SSE event arrives
+
+---
+
+### 5. Error Boundaries + Loading Skeletons (`dashboard/app/page.tsx`)
+
+Every dashboard panel is now isolated:
+
+```tsx
+<ErrorBoundary label="Risk Forecast">
+  <Suspense fallback={<PanelSkeleton rows={6} />}>
+    <RiskForecast />
+  </Suspense>
+</ErrorBoundary>
+```
+
+- `ErrorBoundary` — catches render errors, shows a Retry button, logs the panel name to console
+- `PanelSkeleton` — animated pulse placeholder shown while data loads
+
+---
+
+### 6. GitHub Actions CI (`.github/workflows/ci.yml`)
+
+Four jobs run on every push to `main` or `ujjwal`:
+
+| Job | What it checks |
+|---|---|
+| `docker-build` | `docker compose build --parallel` |
+| `python-lint` | `ruff check` — E, F, W rules |
+| `python-tests` | `pytest tests/` |
+| `frontend-typecheck` | `tsc --noEmit` + `next lint` |
+
+---
+
 ## Architecture
 
 ```
 CSV Sources ──────────────────────────────────────────────────────────┐
 (OrderList, FreightRates,                                             │
  WhCapacities, PlantPorts,       Kafka Events                         │
- ProductsPerPlant)               (50+/min)                            │
-       │                              │                               │
-       └──────────────────────────────┴───────────────────────────────▼
+ ProductsPerPlant)               (50+/min, state machine              │
+       │                          DELAY→STOCKOUT causality)           │
+       └──────────────────────────┴───────────────────────────────────▼
                                                          DAGSTER (14 assets)
                                                          bronze → silver → gold
                                                          quality gate + dbt
+                                                         gold_forecasted_risks
+                                                         (time-decay ML scoring)
                                                                     │
                     ┌───────────────────────────────────────────────┘
                     ▼
-  ┌─────────────────────┐     ┌──────────────────────┐   ┌─────────────────┐
-  │  Next.js :3000      │     │  FastAPI :8000       │   │  PostgreSQL     │
-  │  KPI cards          │ ◀─▶ │  /orders             │◀─▶│  orders         │
-  │  Deviation feed     │     │  /suppliers          │   │  deviations     │
-  │  Risk forecast      │     │  /alerts             │   │  suppliers      │
-  │  Actions log        │     │  /actions            │   │  pending_actions│
-  │  Network graph      │     │  /forecasts          │   │  ontology       │
-  │  AI reasoning modal │     │  /network            │   └─────────────────┘
-  └─────────────────────┘     │  /ai/analyze (stream)│              │
-                              └──────────────────────┘              ▼
-                                          │               Claude Sonnet 4.6
-                                          ▼               (trade-off analysis)
-                                 MinIO :9001 (data lake browser)
+  ┌──────────────────────────┐  ┌──────────────────────┐   ┌─────────────────┐
+  │  Next.js :3000           │  │  FastAPI :8000       │   │  PostgreSQL     │
+  │  KPI cards               │  │  /orders             │◀─▶│  orders         │
+  │  Deviation feed          │◀▶│  /suppliers          │   │  deviations     │
+  │  Risk forecast           │  │  /alerts             │   │  suppliers      │
+  │  Actions log             │  │  /actions            │   │  pending_actions│
+  │  Network graph           │  │  /forecasts          │   │  ontology       │
+  │  AI modal (abort/copy/   │  │  /network            │   └─────────────────┘
+  │   token badge)           │  │  /ai/analyze/stream  │              │
+  │  [ErrorBoundary/Suspense]│  │  → done + usage      │              ▼
+  └──────────────────────────┘  └──────────────────────┘   Claude Sonnet 4.6
+                                            │               stream + token count
+                                            ▼
+                                   MinIO :9001 (data lake browser)
+
+  GitHub Actions CI ────────────────────────────────────────────────────────
+  push to main/ujjwal → docker build + ruff lint + pytest + tsc --noEmit
 ```
 
 ---
@@ -553,7 +658,7 @@ supply-chain-os/
 │       ├── ontology.py           # /ontology/constraints
 │       └── ai.py                 # /ai/analyze + /ai/analyze/stream (Claude SSE)
 ├── dashboard/                    # Next.js 14
-│   ├── app/page.tsx              # Control tower — all panels
+│   ├── app/page.tsx              # Control tower — all panels (ErrorBoundary + Suspense per section)
 │   ├── components/
 │   │   ├── KPICards.tsx
 │   │   ├── DeviationFeed.tsx     # Real-time WebSocket + polling
@@ -563,18 +668,20 @@ supply-chain-os/
 │   │   ├── SupplyChainGraph.tsx  # SVG Plant → Port network
 │   │   ├── OrderTable.tsx        # Filterable orders table
 │   │   ├── OntologyGraph.tsx     # Hard constraints list
-│   │   └── AIReasoningPanel.tsx  # Streaming Claude modal
+│   │   ├── AIReasoningPanel.tsx  # Streaming Claude modal (abort, copy, token badge)
+│   │   ├── ErrorBoundary.tsx     # Class component — isolates panel render failures
+│   │   └── PanelSkeleton.tsx     # Animated pulse placeholder for Suspense fallbacks
 │   ├── hooks/useWebSocket.ts
-│   └── lib/api.ts                # Typed fetch client
+│   └── lib/api.ts                # Typed fetch client (AbortSignal + onDone callback)
 ├── pipeline/                     # Dagster
 │   ├── assets_medallion.py       # 14 assets: bronze×5 silver×3 quality dbt gold×5
 │   └── definitions_medallion.py  # Definitions + 6-hour schedule
 ├── ingestion/
-│   ├── producer.py               # Kafka: 50+ events/min, 12% anomaly rate
+│   ├── producer.py               # Kafka: 50+ events/min, state machine, causality chains
 │   ├── consumer.py               # Kafka → Delta Lake bronze
 │   └── batch_loader.py           # CSV → bronze Parquet (all 5 datasets)
 ├── reasoning/
-│   └── engine.py                 # Claude Sonnet 4.6: stream + structured analysis
+│   └── engine.py                 # Claude Sonnet 4.6: stream + structured analysis + token tracking
 ├── transforms/                   # dbt
 │   └── models/
 │       ├── staging/              # stg_orders.sql, stg_suppliers.sql
@@ -594,6 +701,9 @@ supply-chain-os/
 │   ├── Dagster.Dockerfile
 │   ├── Nextjs.Dockerfile
 │   └── Producer.Dockerfile
+├── .github/
+│   └── workflows/
+│       └── ci.yml                # CI: docker build + ruff + pytest + tsc on every push
 ├── docker-compose.yml            # Full stack (10 services)
 ├── docker-compose.minimal.yml    # Minimal: Postgres + Redis + API + Dashboard
 ├── requirements-dagster.txt      # pyarrow, pandas, deltalake, dbt, great-expectations

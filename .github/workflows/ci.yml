@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "ujjwal"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  # ── Docker build validation ─────────────────────────────────────────────
+  docker-build:
+    name: Build Docker images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build all services
+        run: docker compose build --parallel
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || 'ci-placeholder' }}
+          POSTGRES_PASSWORD: ci_secret
+          DAGSTER_POSTGRES_PASSWORD: ci_secret
+
+  # ── Python lint + type check ────────────────────────────────────────────
+  python-lint:
+    name: Python lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install linting tools
+        run: pip install ruff
+
+      - name: Run ruff
+        run: ruff check .
+
+  # ── Python unit tests ───────────────────────────────────────────────────
+  python-tests:
+    name: Python tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx
+
+      - name: Run tests
+        run: pytest tests/ -q --tb=short
+        env:
+          ANTHROPIC_API_KEY: ci-placeholder
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: supplychain
+          POSTGRES_PASSWORD: ci_secret
+          POSTGRES_DB: supply_chain_db
+
+  # ── Next.js type-check ──────────────────────────────────────────────────
+  frontend-typecheck:
+    name: Frontend type-check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint

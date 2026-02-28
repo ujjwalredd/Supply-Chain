@@ -32,8 +32,12 @@ class OrderEvent(BaseModel):
         default="ORDER",
         description="Event type for routing",
     )
+    # Causality chain enrichment (set by producer when a DELAY triggers a downstream STOCKOUT)
+    causality_chain: Optional[str] = Field(None, description="e.g. 'DELAY→STOCKOUT (supplier SUP-001)'")
+    # Supplier health state from producer state machine: NORMAL | DEGRADING | CRITICAL
+    supplier_health: Optional[str] = Field(None, description="Supplier state: NORMAL | DEGRADING | CRITICAL")
 
-    model_config = {"extra": "forbid"}
+    model_config = {"extra": "ignore"}
 
 
 class DeviationEvent(BaseModel):

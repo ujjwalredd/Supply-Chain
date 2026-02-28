@@ -11,20 +11,22 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-GOLD_PATH = os.getenv("GOLD_PATH", "/opt/dagster/storage/gold")
+GOLD_PATH = os.getenv("GOLD_PATH", "data/gold")
 
 
 def _read_forecasted_risks() -> list[dict[str, Any]]:
     """Read forecasted_risks parquet from gold layer."""
     parquet_file = Path(GOLD_PATH) / "forecasted_risks" / "data.parquet"
     if not parquet_file.exists():
+        logger.warning("forecasted_risks parquet not found at %s", parquet_file)
         return []
     try:
         import pandas as pd
         df = pd.read_parquet(parquet_file)
         # Keep only essential columns for the API
         keep = [c for c in [
-            "order_id", "supplier_id", "days_to_delivery", "risk_reason",
+            "order_id", "supplier_id", "days_to_delivery", "risk_score",
+            "delay_probability", "confidence", "risk_reason",
             "alt_carrier", "alt_min_cost", "alt_transit_days",
             "product", "quantity", "order_value", "expected_delivery",
         ] if c in df.columns]
@@ -42,20 +44,17 @@ def _read_forecasted_risks() -> list[dict[str, Any]]:
 @router.get("")
 async def list_forecasted_risks(
     limit: int = Query(50, ge=1, le=500),
-    min_days: float = Query(0.0, description="Filter to orders with days_to_delivery >= N"),
-    max_days: float = Query(7.0, description="Filter to orders with days_to_delivery <= N"),
+    min_risk_score: float = Query(0.0, description="Filter to orders with risk_score >= N"),
 ):
     """
-    Return orders predicted to be at risk of delay.
+    Return orders predicted to be at risk of delay, ranked by risk_score.
 
-    Sourced from the gold/forecasted_risks Parquet produced by the Dagster pipeline.
+    Sourced from gold/forecasted_risks Parquet (Dagster pipeline).
+    risk_score = order_value × delay_probability (time-decay weighted).
     """
     rows = _read_forecasted_risks()
-    # Filter by days window
-    rows = [
-        r for r in rows
-        if min_days <= float(r.get("days_to_delivery", 0)) <= max_days
-    ]
+    if min_risk_score > 0:
+        rows = [r for r in rows if float(r.get("risk_score", 0)) >= min_risk_score]
     return rows[:limit]
 
 
