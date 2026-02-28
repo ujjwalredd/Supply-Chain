@@ -369,6 +369,8 @@ What you'll see:
 
 Click any deviation in the feed → **Analyze with AI** → Claude streams root cause + options in real time.
 
+![AI Analysis — Claude streaming root cause and trade-off options in real time](assets/ai-analysis.gif)
+
 Or via curl:
 ```bash
 # Get a deviation ID first
