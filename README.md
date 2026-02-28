@@ -208,7 +208,7 @@ The ontology layer is what separates Auger-style AI from raw LLM chatbots. Every
 ### Step 1 — Clone and configure
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/ujjwalredd/Supply-Chain.git
 cd supply-chain-os
 cp .env.example .env
 ```
