@@ -2,8 +2,8 @@
 AI reasoning engine for supply chain deviations.
 
 Calls Anthropic Claude API with full context: order data, supplier history, ontology
-constraints. Streams token-by-token and returns structured JSON output for
-automated action recommendations.
+constraints. Streams token-by-token and returns structured output via tool_use
+for automated action recommendations.
 """
 
 import json
@@ -49,7 +49,55 @@ SYSTEM_PROMPT = """You are an expert supply chain analyst for a control tower. Y
 - Supplier history: trust score, delayed orders %, avg delay days
 - Ontology constraints: hard limits like max_delay_days, min_inventory_level, max_single_supplier_dependency
 
-Output valid JSON only when asked for structured output. Always consider ontology constraints when evaluating trade-offs. If a constraint is violated, highlight it in root_cause. Use confidence 0-1 for each option."""
+Always consider ontology constraints when evaluating trade-offs. If a constraint is violated, highlight it in root_cause. Use confidence 0-1 for each option."""
+
+# Tool schema for structured output — Claude fills this via tool_use instead of free-form JSON
+_ANALYSIS_TOOL = {
+    "name": "supply_chain_analysis",
+    "description": "Record the structured analysis of a supply chain deviation",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "root_cause": {
+                "type": "string",
+                "description": "Identified root cause of the deviation",
+            },
+            "financial_impact": {
+                "type": "string",
+                "description": "Estimated financial impact (e.g. '$12,000 at risk')",
+            },
+            "options": {
+                "type": "array",
+                "description": "Trade-off options with pros/cons",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"type": "string"},
+                        "pros": {"type": "array", "items": {"type": "string"}},
+                        "cons": {"type": "array", "items": {"type": "string"}},
+                        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                    },
+                    "required": ["action", "pros", "cons", "confidence"],
+                },
+            },
+            "recommendation": {
+                "type": "string",
+                "description": "Primary recommended action",
+            },
+            "autonomous_executable": {
+                "type": "boolean",
+                "description": "True if the recommendation can be auto-executed without human approval",
+            },
+        },
+        "required": [
+            "root_cause",
+            "financial_impact",
+            "options",
+            "recommendation",
+            "autonomous_executable",
+        ],
+    },
+}
 
 
 def _build_context(deviation: dict[str, Any], order: dict | None, supplier: dict | None, constraints: list[dict]) -> str:
@@ -157,7 +205,8 @@ def analyze_structured(
     ontology_constraints: list[dict] | None = None,
 ) -> AIAnalysisOutput:
     """
-    Call Claude with structured output mode for machine-readable recommendation.
+    Call Claude with tool_use for reliable machine-readable structured output.
+    No JSON parsing fragility — Claude fills in the tool input schema directly.
     """
     client = _get_client()
     context = _build_context(
@@ -166,55 +215,68 @@ def analyze_structured(
         supplier or {},
         ontology_constraints or [],
     )
-    prompt = f"""Analyze this supply chain deviation. Return valid JSON matching this schema:
-{{
-  "root_cause": "string",
-  "financial_impact": "string",
-  "options": [
-    {{"action": "string", "pros": ["string"], "cons": ["string"], "confidence": 0.0-1.0}}
-  ],
-  "recommendation": "string",
-  "autonomous_executable": boolean
-}}
+    prompt = f"""Analyze this supply chain deviation and call the supply_chain_analysis tool with your findings.
 
-{context}
-
-Return only valid JSON, no markdown."""
+{context}"""
 
     try:
         response = client.messages.create(
             model=MODEL,
             max_tokens=1024,
             system=SYSTEM_PROMPT,
+            tools=[_ANALYSIS_TOOL],
+            tool_choice={"type": "auto"},
             messages=[{"role": "user", "content": prompt}],
         )
+
+        input_tokens = getattr(response.usage, "input_tokens", 0)
+        output_tokens = getattr(response.usage, "output_tokens", 0)
+
+        # Extract tool_use block — Claude is guided to call the tool
+        for block in response.content:
+            if block.type == "tool_use" and block.name == "supply_chain_analysis":
+                data = block.input
+                result = AIAnalysisOutput.model_validate(data)
+                result.input_tokens = input_tokens
+                result.output_tokens = output_tokens
+                return result
+
+        # Fallback: Claude responded with text instead of a tool call
         text = ""
         for block in response.content:
             if hasattr(block, "text"):
                 text += block.text
-        # Extract token usage
-        input_tokens = getattr(response.usage, "input_tokens", 0)
-        output_tokens = getattr(response.usage, "output_tokens", 0)
-        # Strip markdown code block if present
-        if "```" in text:
-            parts = text.split("```")
-            for p in parts:
-                p = p.strip()
-                if p.startswith("json"):
-                    p = p[4:].strip()
-                try:
-                    data = json.loads(p)
-                    result = AIAnalysisOutput.model_validate(data)
-                    result.input_tokens = input_tokens
-                    result.output_tokens = output_tokens
-                    return result
-                except (json.JSONDecodeError, Exception):
-                    continue
-        data = json.loads(text)
-        result = AIAnalysisOutput.model_validate(data)
-        result.input_tokens = input_tokens
-        result.output_tokens = output_tokens
-        return result
+        if text.strip():
+            clean = text.strip()
+            if "```" in clean:
+                for part in clean.split("```"):
+                    part = part.strip().lstrip("json").strip()
+                    try:
+                        data = json.loads(part)
+                        result = AIAnalysisOutput.model_validate(data)
+                        result.input_tokens = input_tokens
+                        result.output_tokens = output_tokens
+                        return result
+                    except Exception:
+                        continue
+            try:
+                data = json.loads(clean)
+                result = AIAnalysisOutput.model_validate(data)
+                result.input_tokens = input_tokens
+                result.output_tokens = output_tokens
+                return result
+            except Exception:
+                pass
+
+        logger.warning("Claude returned no tool_use block and no parseable JSON")
+        return AIAnalysisOutput(
+            root_cause="Analysis unavailable — Claude did not return structured output",
+            financial_impact="Unknown",
+            options=[],
+            recommendation="Manual review required",
+            autonomous_executable=False,
+        )
+
     except Exception as e:
         logger.exception("Claude structured call failed: %s", e)
         return AIAnalysisOutput(

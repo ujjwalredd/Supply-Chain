@@ -1,67 +1,220 @@
-# Supply Chain AI Operating System
+# Supply Chain AI Operating System — v2.0
 
-> *Prototype inspired by [Auger](https://auger.com) — an AI-native supply chain control tower that collapses the gap between signal and execution.*
-
----
-
-## What is Auger?
-
-Auger is a next-generation supply chain AI platform (raised ~$100M, founded by Dave Clark — former Amazon Worldwide Consumer CEO and Flexport CEO). Its thesis: traditional supply chain tools surface dashboards and alerts but leave humans to manually interpret them and decide what to do. Auger collapses that gap by connecting real-time signals directly to AI reasoning that generates specific, auditable action recommendations.
-
-| Auger Concept | What it means |
-|---|---|
-| **Control Tower** | Single pane of glass across all suppliers, orders, ports, and freight lanes |
-| **Deviation Detection** | Automated alerts when orders deviate from expected lead times or freight rates |
-| **AI Reasoning** | LLM explains *why* a deviation occurred and proposes trade-off options |
-| **Ontology Layer** | Business rules (SLA limits, capacity caps, preferred routes) injected into every AI call |
-| **Action Execution** | AI recommendations can be approved and executed — logged as auditable records |
-
-This project implements all five concepts end-to-end in a fully Dockerised stack.
+> Prototype inspired by [Auger](https://auger.com) — an AI-native supply chain control tower that collapses the gap between signal and execution.
 
 ---
 
-## How This Project Maps to Auger
+## What This Does
 
-| Auger Feature | This Implementation |
+An end-to-end supply chain AI platform running entirely in Docker. It replicates Auger's five core capabilities:
+
+| Auger Concept | This Implementation |
 |---|---|
-| Control Tower UI | Next.js 14 dashboard — KPI cards, deviation feed, network graph, risk forecast |
-| Real-time signal ingest | Kafka producer → consumer → Delta Lake bronze layer (50+ events/min, supplier state machine) |
-| Deviation detection | Dagster pipeline auto-generates deviations; seeded alerts for immediate testing |
-| AI root-cause reasoning | Claude Sonnet 4.6 streaming SSE — reads deviation + ontology → structured analysis + token usage |
-| Ontology / business rules | `ontology_constraints` table; rules injected into every `/ai/analyze` call |
-| Action execution + audit | `POST /alerts/{id}/dismiss` creates `PendingAction` record; `/actions` shows full log |
-| Risk forecasting | `gold_forecasted_risks` — time-decay ML scoring: `delay_probability × order_value × urgency` |
-| Network visibility | `/network` endpoint reads PlantPorts.csv → 19 plants, 11 ports, 22 routes; SVG graph |
-| Data quality gate | Great Expectations validation on every silver layer promotion |
-| Medallion lakehouse | Dagster 14-asset pipeline: bronze → silver → quality gate → dbt → gold |
-| CI/CD | GitHub Actions: Docker build + Python lint + pytest + TypeScript type-check on every push |
+| **Control Tower** | Next.js 14 dashboard — KPI cards, deviation feed, network graph, risk forecast |
+| **Deviation Detection** | pg_writer consumes Kafka events live; 120 alerts seeded for instant demo |
+| **AI Reasoning** | Claude Sonnet 4.6 via `tool_use` — structured root cause + trade-off options |
+| **Ontology Layer** | 7 business rules injected into every AI call |
+| **Action Execution** | Every executed recommendation persisted as an auditable `PendingAction` |
 
 **Operator flow:**
 ```
 Alert fires in Deviation Feed
-    → Operator clicks "Analyze with AI"
-    → Claude streams: root cause + 3 trade-off options
-    → Operator clicks "Execute Recommendation"
-    → PendingAction written to DB (deviation_id, type, payload, status=COMPLETED)
-    → Actions Log panel updates in real time
+  → Click "Analyze with AI"
+  → Claude streams root cause + 3 trade-off options (structured tool_use output)
+  → Click "Execute Recommendation"
+  → PendingAction written to DB → Actions Log updates in real time
 ```
 
 ---
 
-## What This Builds
+## Prerequisites
 
-An end-to-end supply chain AI platform running entirely in Docker:
+- Docker Desktop with Compose v2 — that's it
+- Anthropic API key — only `/ai/analyze` needs it; everything else works without it
 
-- **Real-time event ingestion** — Kafka producer streams 50+ supply chain events/min with causality chains (DELAY → STOCKOUT) and a per-supplier state machine (NORMAL → DEGRADING → CRITICAL)
-- **Medallion data lake** — Dagster orchestrates bronze → silver → gold pipeline across 14 assets
-- **Data quality gate** — Great Expectations validation on every silver layer promotion
-- **dbt transforms** — SQL staging + mart models run as a Dagster asset
-- **AI reasoning** — Claude Sonnet 4.6 analyses deviations, streams root cause + trade-off options; token usage and wall-clock time surfaced per analysis
-- **Time-decay ML risk scoring** — `gold_forecasted_risks` uses `weight = exp(-days_old/90)` to compute per-supplier delay probability, confidence score, and a composite risk score (`order_value × delay_probability × urgency`)
-- **Action audit trail** — every "Execute Recommendation" click is persisted as a PendingAction
-- **Supply chain network graph** — interactive Plant → Port topology (19 plants, 11 ports)
-- **Live dashboard** — Next.js control tower with WebSocket, KPI cards, deviation feed, network SVG; every panel wrapped in an ErrorBoundary + Suspense skeleton
-- **CI/CD** — GitHub Actions: Docker build validation, ruff lint, pytest, TypeScript type-check on every push
+---
+
+## Quick Start (Minimal Stack — Recommended for Demo)
+
+Runs Postgres + Redis + FastAPI + Next.js. Auto-migrates and seeds on startup.
+
+```bash
+git clone https://github.com/ujjwalredd/Supply-Chain.git
+cd supply-chain-os
+cp .env.example .env
+# Edit .env: set ANTHROPIC_API_KEY=sk-ant-...
+
+docker compose -f docker-compose.minimal.yml up --build -d
+```
+
+Wait ~30 seconds for the API to finish migrations and seeding, then open:
+
+| URL | What |
+|---|---|
+| http://localhost:3000 | Dashboard (live with seeded data) |
+| http://localhost:8000/docs | API Swagger |
+
+The dashboard loads immediately with **8 suppliers · 120 orders · 20 deviations · 7 ontology constraints** — no extra steps.
+
+Always use `-f docker-compose.minimal.yml` with this stack:
+```bash
+docker compose -f docker-compose.minimal.yml ps
+docker compose -f docker-compose.minimal.yml logs fastapi -f
+docker compose -f docker-compose.minimal.yml down
+```
+
+---
+
+## Full Stack (10 Services — Includes Kafka, Dagster, MinIO)
+
+```bash
+docker compose up --build -d
+docker compose ps
+```
+
+Wait for all containers to be healthy (Kafka takes ~60s):
+
+| Container | Status |
+|---|---|
+| supply-chain-postgres | Up (healthy) |
+| supply-chain-redis | Up (healthy) |
+| supply-chain-kafka | Up (healthy) |
+| supply-chain-minio | Up (healthy) |
+| supply-chain-api | Up (healthy) |
+| supply-chain-pg-writer | Up |
+| supply-chain-producer | Up |
+| supply-chain-dagster-webserver | Up |
+| supply-chain-dagster-daemon | Up |
+| supply-chain-dashboard | Up |
+
+| Service | URL |
+|---|---|
+| Dashboard | http://localhost:3000 |
+| API + Swagger | http://localhost:8000/docs |
+| Dagster UI | http://localhost:3001 |
+| MinIO Console | http://localhost:9001 (login: `minioadmin` / `minioadmin`) |
+| PostgreSQL | localhost:5433 |
+
+The API auto-migrates and seeds on every start — no manual seed step needed.
+
+### Load the Brunel dataset + run the pipeline
+
+```bash
+# Download Brunel University LogisticsDataset (OrderList, FreightRates, etc.)
+docker compose run --rm fastapi python scripts/download_supply_chain_data.py
+
+# Ingest CSVs into the bronze data lake
+docker compose run --rm fastapi python -m ingestion.batch_loader
+```
+
+Then open **http://localhost:3001** → Assets → Materialize all.
+This runs the 14-asset medallion pipeline: bronze → silver → quality gate → dbt → gold.
+
+After the pipeline completes, sync gold to Postgres:
+```bash
+docker compose exec fastapi python scripts/sync_gold_to_postgres.py
+```
+
+And upload to MinIO for browsing:
+```bash
+docker compose exec fastapi python scripts/sync_data_to_minio.py
+```
+
+---
+
+## Architecture
+
+```
+Kafka Producer ──────────────────────────────────────────────────────────────┐
+(50+ events/min,                                                              │
+ DELAY->STOCKOUT causality,                                                   │
+ supplier state machine)                                                      │
+        │                                                                     │
+        ├──> pg_writer ──> PostgreSQL ──> FastAPI ──> Next.js :3000           │
+        │    (deviation          │         :8000       Dashboard               │
+        │     detection,         │                                            │
+        │     trust scores)      └──> Redis pub/sub ──> WebSocket broadcast   │
+        │                                                                     │
+        └──> Delta Lake bronze ──> DAGSTER (14 assets) ──────────────────────┘
+                                   silver + quality gate
+                                   dbt transforms
+                                   gold_forecasted_risks
+                                        │
+                                        └──> MinIO :9001 (data lake browser)
+
+CSV Sources (OrderList, FreightRates, PlantPorts, WhCapacities, ProductsPerPlant)
+──> ingestion.batch_loader ──> bronze ──> same Dagster pipeline above
+```
+
+---
+
+## API Reference
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/health` | Health check |
+| `GET` | `/orders` | Orders (filter: status, supplier_id, limit, offset) |
+| `GET` | `/suppliers` | All suppliers |
+| `GET` | `/suppliers/risk` | Supplier risk rankings |
+| `GET` | `/alerts` | Deviation alerts (filter: executed, severity, limit) |
+| `POST` | `/alerts/{id}/dismiss` | Execute recommendation → creates PendingAction |
+| `GET` | `/actions` | Audit log of all executed recommendations |
+| `GET` | `/forecasts` | At-risk orders from gold layer |
+| `GET` | `/forecasts/summary` | Forecast summary |
+| `GET` | `/network` | Plant → Port topology |
+| `GET` | `/ontology/constraints` | Business rules injected into AI calls |
+| `POST` | `/ai/analyze` | Claude analysis via tool_use (full JSON) |
+| `POST` | `/ai/analyze/stream` | Claude analysis (SSE streaming) |
+
+### AI Analysis
+
+```bash
+# Structured output via tool_use
+curl -X POST http://localhost:8000/ai/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"deviation_id":"DEV-0001","deviation_type":"DELAY","severity":"HIGH"}'
+
+# SSE streaming
+curl -N -X POST http://localhost:8000/ai/analyze/stream \
+  -H "Content-Type: application/json" \
+  -d '{"deviation_id":"DEV-0001","deviation_type":"DELAY","severity":"HIGH"}'
+```
+
+SSE stream ends with:
+```
+data: {"done": true, "usage": {"input_tokens": 312, "output_tokens": 487, "analysis_time_ms": 4231}}
+```
+
+---
+
+## v2.0 Changes
+
+### pg_writer — Operational Data Path
+`ingestion/pg_writer.py` consumes Kafka events, upserts orders/suppliers to Postgres, detects deviations, updates supplier trust scores, and publishes to Redis in real time. v1 only wrote to Delta Lake — the live dashboard had no real-time data.
+
+Deviation thresholds:
+
+| Type | Condition | Severity |
+|---|---|---|
+| DELAY | delay_days > 0 | MEDIUM |
+| DELAY | delay_days > 7 | HIGH |
+| DELAY | delay_days > 14 | CRITICAL |
+| STOCKOUT | inventory_level < 10 | MEDIUM |
+| STOCKOUT | inventory_level < 5 | HIGH |
+| ANOMALY | order_value > $100,000 | MEDIUM |
+
+### Redis Pub/Sub WebSocket
+v1 used an in-process set that broke with `--workers > 1`. v2 routes all WebSocket broadcasts through Redis (`deviations` channel), making it multi-worker safe.
+
+### Claude tool_use Structured Output
+v1 called Claude with free-form text and tried `json.loads()` with markdown-stripping fallbacks. v2 uses `tool_use` with a typed JSON schema — guaranteed structured output, no parsing fragility.
+
+### Migration 002 + Auto-seeding Entrypoint
+`alembic/versions/002_add_pending_actions.py` — the table existed in models.py but had no migration in v1, causing the API to crash on the first `POST /alerts/{id}/dismiss`. The entrypoint now runs `alembic upgrade head` + `seed_db.py` automatically on every start.
+
+### Test Suite — 43 tests, 0 warnings
+- `tests/test_pg_writer.py` — 12 tests covering all deviation detection cases
+- `tests/test_reasoning_engine.py` — 6 tests covering tool_use extraction, API error fallback, schema validation
 
 ---
 
@@ -69,374 +222,27 @@ An end-to-end supply chain AI platform running entirely in Docker:
 
 | Asset | Layer | Description |
 |---|---|---|
-| `bronze_orders` | Bronze | Ingest OrderList.csv → Parquet |
-| `bronze_freight_rates` | Bronze | Ingest FreightRates.csv → Parquet |
-| `bronze_wh_capacities` | Bronze | Ingest WhCapacities.csv → Parquet |
-| `bronze_plant_ports` | Bronze | Ingest PlantPorts.csv → Parquet |
-| `bronze_products_per_plant` | Bronze | Ingest ProductsPerPlant.csv → Parquet |
-| `silver_orders` | Silver | Clean + validate orders (drop nulls, cast types) |
-| `silver_freight_rates` | Silver | Clean freight rates — remove extreme outliers |
-| `silver_wh_capacities` | Silver | Normalise warehouse capacity values |
+| `bronze_orders` | Bronze | OrderList.csv → Parquet |
+| `bronze_freight_rates` | Bronze | FreightRates.csv → Parquet |
+| `bronze_wh_capacities` | Bronze | WhCapacities.csv → Parquet |
+| `bronze_plant_ports` | Bronze | PlantPorts.csv → Parquet |
+| `bronze_products_per_plant` | Bronze | ProductsPerPlant.csv → Parquet |
+| `silver_orders` | Silver | Clean + validate orders |
+| `silver_freight_rates` | Silver | Remove extreme outliers |
+| `silver_wh_capacities` | Silver | Normalise capacity values |
 | `quality_gate_silver_orders` | Quality | Great Expectations: not_null, value ranges, status in_set |
-| `dbt_transforms` | Transform | `dbt run` — staging models + fct_shipments + dim_suppliers |
-| `gold_orders_ai_ready` | Gold | Enrich orders with risk score, delay flag, lead time |
-| `gold_deviations` | Gold | Identify deviations (delay_days > threshold) |
-| `gold_supplier_risk` | Gold | Aggregate trust scores, avg delay, on-time rate per supplier |
-| `gold_forecasted_risks` | Gold | Time-decay ML: `delay_probability × order_value × urgency` risk score + per-supplier confidence |
+| `dbt_transforms` | Transform | `dbt run` — staging + fct_shipments + dim_suppliers |
+| `gold_orders_ai_ready` | Gold | Enrich with risk score, delay flag, lead time |
+| `gold_deviations` | Gold | Identify deviations above threshold |
+| `gold_supplier_risk` | Gold | Trust scores, avg delay, on-time rate per supplier |
+| `gold_forecasted_risks` | Gold | Time-decay ML: `delay_probability × order_value × urgency` |
 
----
-
-## Dashboard Panels
-
-| Panel | Data Source | Description |
-|---|---|---|
-| **KPI Cards** | `/orders` aggregate | Pipeline value, on-time %, delayed count, critical alerts |
-| **Deviation Feed** | `/alerts` WebSocket | Live alert list — click any row to open AI reasoning modal |
-| **AI Reasoning Modal** | `/ai/analyze/stream` SSE | Claude streams root cause + trade-off options; Cancel mid-stream, Copy output, token count badge |
-| **Supplier Risk** | `/suppliers/risk` | Bar chart ranked by trust score (Great Expectations validated) |
-| **Risk Forecast** | `/forecasts` | At-risk orders scored by `delay_probability × order_value × urgency` |
-| **Actions Log** | `/actions` | Every executed recommendation with timestamp + status |
-| **Orders Table** | `/orders` | All 9,215+ orders — filterable by status, supplier |
-| **Supply Chain Network** | `/network` | Interactive SVG: Plant → Port topology, hover for products |
-| **Ontology Constraints** | `/ontology/constraints` | Hard limits injected into every AI call |
-
----
-
-## API Reference
-
-### Core Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/health` | Service health check |
-| `GET` | `/orders` | List orders (filter: `status`, `supplier_id`, `limit`, `offset`) |
-| `POST` | `/orders` | Create a new order |
-| `GET` | `/suppliers` | List all suppliers |
-| `GET` | `/suppliers/risk` | Supplier risk rankings (trust score, delay stats) |
-| `GET` | `/alerts` | List deviation alerts (filter: `executed`, `severity`, `limit`) |
-| `POST` | `/alerts/{id}/dismiss` | Execute recommendation → creates PendingAction |
-| `GET` | `/actions` | Audit log of all executed recommendations |
-| `POST` | `/actions` | Manually create a pending action |
-| `GET` | `/forecasts` | At-risk order predictions from gold layer |
-| `GET` | `/forecasts/summary` | Forecast summary stats |
-| `GET` | `/network` | Plant → Port topology (nodes + edges + stats) |
-| `GET` | `/ontology/constraints` | Business rules injected into AI calls |
-| `POST` | `/ai/analyze` | Claude analysis (full JSON response) |
-| `POST` | `/ai/analyze/stream` | Claude analysis (SSE streaming) |
-
-### AI Analysis Request
-
-```json
-POST /ai/analyze
-{
-  "deviation_id": "DEV-0001",
-  "deviation_type": "DELAY",
-  "severity": "HIGH"
-}
+Time-decay model:
 ```
-
-### AI Streaming (SSE)
-
-```bash
-curl -N -X POST http://localhost:8000/ai/analyze/stream \
-  -H "Content-Type: application/json" \
-  -d '{"deviation_id":"DEV-0001","deviation_type":"DELAY","severity":"HIGH"}'
-```
-
-Each token arrives as:
-```
-data: {"token": "The root cause..."}
-```
-
-After the last token, a final done event is sent:
-```
-data: {"done": true, "usage": {"input_tokens": 312, "output_tokens": 487, "analysis_time_ms": 4231}}
-```
-
-The dashboard uses `AbortController` to cancel mid-stream and displays the token count badge once the done event arrives.
-
----
-
-## Ontology Constraints
-
-The ontology layer is what separates Auger-style AI from raw LLM chatbots. Every `/ai/analyze` call receives the current constraints as hard rules the AI must respect.
-
-### Brunel University LogisticsDataset (Source Data)
-
-| Dataset | Rows | Key Columns |
-|---|---|---|
-| `OrderList.csv` | 9,215 | Order_ID, Origin_Port, Carrier, Service_Level, Ship_ahead_day, Ship_Late_Day, Customer, Product_ID, Plant_Code, Destination_Port, Unit_quantity, Weight |
-| `FreightRates.csv` | 1,532 | Carrier, orig_port_cd, dest_port_cd, svc_cd, minimum_cost, rate, mode_dsc, tpt_day_cnt,effdt, expdt |
-| `PlantPorts.csv` | 22 | Plant_Code, Ports |
-| `WhCapacities.csv` | 19 | Plant_ID, Daily_Capacity |
-| `ProductsPerPlant.csv` | 1,968 | Plant_Code, Product_ID |
-
-### Derived Constraint Categories
-
-| Category | Example Rule |
-|---|---|
-| **Lead Time SLA** | Max acceptable delay before escalation (e.g., 5 days) |
-| **Carrier Preference** | Preferred freight carrier per route |
-| **Capacity Cap** | Daily warehouse throughput limits per plant |
-| **Service Level** | Standard vs. Express routing constraints |
-| **Port Restrictions** | Certain plant→port routes disallowed |
-
-### Seeded Defaults (from `seed_db.py`)
-
-| Constraint | Default Value |
-|---|---|
-| `max_delay_days` | 5 |
-| `preferred_carrier` | "V444" |
-| `capacity_limit_per_day` | 1000 units |
-
----
-
-## Skills Demonstrated
-
-| Domain | Technology / Technique |
-|---|---|
-| **Data Engineering** | Medallion lakehouse, Delta Lake, PySpark, Parquet, batch + stream ingest |
-| **Orchestration** | Dagster 14 software-defined assets, 6-hour schedule, sensor-ready |
-| **Data Quality** | Great Expectations — not_null, between, in_set checks on silver layer |
-| **SQL / dbt** | Staging models, fact + dimension mart models, incremental-ready patterns |
-| **ML Scoring** | Time-decay weighted delay probability (`exp(-days/90)`), per-supplier confidence, composite risk score |
-| **Event Simulation** | Kafka supplier state machine (NORMAL→DEGRADING→CRITICAL), causality chains (DELAY→STOCKOUT) |
-| **AI / LLM** | Claude Sonnet 4.6 streaming SSE, structured JSON output, RAG-style ontology injection, token usage tracking |
-| **Backend** | FastAPI, SQLAlchemy 2.0, Alembic migrations, Pydantic v2, WebSocket, SSE |
-| **Frontend** | Next.js 14 App Router, TailwindCSS, Recharts, SVG network graph, AbortController, ErrorBoundary |
-| **Streaming** | Kafka producer/consumer, 12% base anomaly rate (up to 60% for CRITICAL suppliers), Delta Lake bronze sink |
-| **Infrastructure** | Docker Compose 10-service stack, MinIO S3-compatible, Redis, PostgreSQL 15 |
-| **CI/CD** | GitHub Actions — Docker build, ruff, pytest, TypeScript type-check on every push to `main` |
-| **Audit Trail** | PendingAction model — every AI recommendation execution is persisted and queryable |
-
----
-
-## Prerequisites
-
-- **Docker Desktop** (with Compose v2) — that's it
-- **Anthropic API key** — only needed for AI analysis (`/ai/analyze`). Everything else works without it.
-
----
-
-## End-to-End Setup (run this once)
-
-### Step 1 — Clone and configure
-
-```bash
-git clone https://github.com/ujjwalredd/Supply-Chain.git
-cd supply-chain-os
-cp .env.example .env
-```
-
-Open `.env` and set your API key:
-```
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
-> Everything else in `.env` works with the defaults. Don't change port numbers unless you have conflicts.
-
----
-
-### Step 2 — Start the full stack
-
-```bash
-docker compose up --build -d
-```
-
-This builds and starts **10 containers**. First build takes ~5 minutes (downloading images + compiling deps).
-
-Wait until all containers are healthy:
-```bash
-docker compose ps
-```
-
-Expected output — all should show `Up` or `Up (healthy)`:
-```
-supply-chain-api                 Up
-supply-chain-dagster-daemon      Up
-supply-chain-dagster-webserver   Up
-supply-chain-dashboard           Up
-supply-chain-kafka               Up (healthy)
-supply-chain-minio               Up (healthy)
-supply-chain-minio-init          Exited (0)      ← normal, init runs once then exits
-supply-chain-postgres            Up (healthy)
-supply-chain-producer            Up
-supply-chain-redis               Up (healthy)
-supply-chain-zookeeper           Up (healthy)
-```
-
-**Service URLs:**
-
-| Service | URL | Notes |
-|---------|-----|-------|
-| **Dashboard** | http://localhost:3000 | Main control tower UI |
-| **API + Swagger** | http://localhost:8000/docs | All REST endpoints |
-| **Dagster UI** | http://localhost:3001 | Pipeline orchestration |
-| **MinIO Console** | http://localhost:9001 | Data lake browser (login: `minioadmin` / `minioadmin`) |
-| **PostgreSQL** | localhost:5433 | Mapped to 5433 to avoid local conflicts |
-
----
-
-### Step 3 — Seed the database
-
-```bash
-docker compose exec fastapi python scripts/seed_db.py
-```
-
-Inserts sample data: **5 suppliers · 50 orders · 10 deviation alerts · 3 ontology constraints**
-
----
-
-### Step 4 — Load the real dataset
-
-Download the Brunel University LogisticsDataset (OrderList, FreightRates, PlantPorts, WhCapacities, ProductsPerPlant):
-
-```bash
-docker compose run --rm fastapi python scripts/download_supply_chain_data.py
-```
-
-Ingest all CSVs into the bronze data lake:
-
-```bash
-docker compose run --rm fastapi python -m ingestion.batch_loader
-```
-
-Expected output:
-```
-INFO: Wrote 9215 rows to bronze/orders (Parquet)
-INFO: Wrote 1532 rows to bronze/freight_rates
-INFO: Wrote 19 rows to bronze/wh_capacities
-INFO: Wrote 22 rows to bronze/plant_ports
-INFO: Wrote 1968 rows to bronze/products_per_plant
-```
-
----
-
-### Step 5 — Run the Dagster pipeline
-
-Open **http://localhost:3001**, then:
-
-1. Click **Assets** in the left sidebar
-2. Click **Materialize all** (top right)
-3. Watch the 14 assets run in order: bronze → silver → quality gate → dbt → gold
-
-Or trigger via CLI:
-```bash
-docker compose exec dagster-webserver dagster asset materialize \
-  --select "*" \
-  -w /opt/dagster/app/workspace.yaml
-```
-
-The pipeline runs automatically every **6 hours** after setup.
-
----
-
-### Step 6 — Sync data to PostgreSQL
-
-After the pipeline runs, sync the gold layer to Postgres so the API and dashboard serve real data:
-
-```bash
-docker compose exec fastapi python scripts/sync_gold_to_postgres.py
-```
-
-Expected output:
-```
-INFO: Orders: 9215 inserted, 0 skipped
-INFO: Sync complete. Total new rows inserted: 9215
-```
-
-Safe to re-run any time — uses `INSERT ... ON CONFLICT DO NOTHING`.
-
----
-
-### Step 7 — Upload data lake to MinIO
-
-Make the MinIO Console show the real Parquet files:
-
-```bash
-docker compose exec fastapi python scripts/sync_data_to_minio.py
-```
-
-Then open **http://localhost:9001** → bucket `supply-chain-lakehouse` → browse bronze/silver/gold folders.
-
----
-
-### Step 8 — Open the dashboard
-
-**http://localhost:3000**
-
-What you'll see:
-
-| Panel | Data |
-|-------|------|
-| **KPI Cards** | Pipeline value, on-time %, delayed orders, critical alerts |
-| **Deviation Feed** | Live alert list — click any row to open AI reasoning |
-| **Supplier Risk** | Bar chart ranked by trust score |
-| **Risk Forecast** | Orders predicted to be late (from gold_forecasted_risks) |
-| **Actions Log** | Every executed recommendation with timestamp |
-| **Orders Table** | All 9,215+ orders — filterable by status, supplier |
-| **Supply Chain Network** | Interactive SVG: Plant → Port topology, hover for products |
-| **Ontology Constraints** | Hard limits injected into every AI call |
-
----
-
-### Step 9 — Test AI reasoning
-
-Click any deviation in the feed → **Analyze with AI** → Claude streams root cause + options in real time.
-
-![AI Analysis — Claude streaming root cause and trade-off options in real time](assets/ai-analysis.gif)
-
-Or via curl:
-```bash
-# Get a deviation ID first
-curl -s "http://localhost:8000/alerts?limit=1&executed=false" | python3 -m json.tool
-
-# Run AI analysis
-curl -X POST http://localhost:8000/ai/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"deviation_id":"DEV-0001","deviation_type":"DELAY","severity":"HIGH"}'
-```
-
----
-
-## Verify Everything Works
-
-Run this full smoke test to confirm all endpoints respond correctly:
-
-```bash
-# Health
-curl http://localhost:8000/health
-# → {"status":"ok","service":"supply-chain-api"}
-
-# Orders (should show 9000+ after sync)
-curl "http://localhost:8000/orders?limit=3" | python3 -m json.tool
-
-# Supplier risk
-curl http://localhost:8000/suppliers/risk
-
-# Active alerts
-curl "http://localhost:8000/alerts?executed=false&limit=5"
-
-# Ontology constraints
-curl http://localhost:8000/ontology/constraints
-
-# Network graph (19 plants, 11 ports, 22 routes)
-curl http://localhost:8000/network | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['stats'])"
-# → {'plant_count': 19, 'port_count': 11, 'edge_count': 22}
-
-# Risk forecast
-curl http://localhost:8000/forecasts/summary
-
-# Actions log
-curl http://localhost:8000/actions
-
-# Execute a recommendation → creates PendingAction
-DEV=$(curl -s "http://localhost:8000/alerts?limit=1&executed=false" | python3 -c "import json,sys; print(json.load(sys.stdin)[0]['deviation_id'])")
-curl -X POST "http://localhost:8000/alerts/${DEV}/dismiss"
-# → {"status":"ok","executed":true,"action_id":1}
-
-# Confirm action was logged
-curl http://localhost:8000/actions | python3 -m json.tool
+weight      = exp(-days_old / 90)
+delay_prob  = Σ(is_delayed × weight) / Σ(weight)
+confidence  = 1 − 1/√n_orders
+risk_score  = order_value × delay_prob × (1 / days_to_delivery)
 ```
 
 ---
@@ -445,198 +251,49 @@ curl http://localhost:8000/actions | python3 -m json.tool
 
 | Variable | Default | Description |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | *(required for AI)* | Claude API key — only `/ai/analyze` needs this |
-| `DATABASE_URL` | `postgresql://supplychain:supplychain_secret@postgres:5432/supply_chain_db` | Postgres connection string |
-| `POSTGRES_PORT` | `5433` | Host port for Postgres (avoids conflicts with local installs) |
-| `KAFKA_BOOTSTRAP_SERVERS` | `kafka:9092` | Kafka broker address (internal Docker DNS) |
-| `MINIO_ENDPOINT_URL` | `http://minio:9000` | MinIO S3 endpoint (internal) |
-| `MINIO_ROOT_USER` | `minioadmin` | MinIO access key |
-| `MINIO_ROOT_PASSWORD` | `minioadmin` | MinIO secret key |
-| `S3_STORAGE_BUCKET` | `supply-chain-lakehouse` | MinIO bucket name |
-| `DATA_ROOT` | `/app/data` | Root path for bronze/silver/gold Parquet files |
-| `BRONZE_PATH` | `$DATA_ROOT/bronze` | Bronze layer path |
-| `SILVER_PATH` | `$DATA_ROOT/silver` | Silver layer path |
-| `GOLD_PATH` | `$DATA_ROOT/gold` | Gold layer path |
-| `REDIS_URL` | `redis://redis:6379` | Redis for WebSocket pub/sub |
-
----
-
-## Recent Improvements
-
-### 1. Time-Decay ML Risk Scoring (`gold_forecasted_risks`)
-
-Replaced the flat ">20% delay rate" heuristic with a proper weighted model:
-
-```
-weight          = exp(-days_old / 90)          # recent delays count more (half-life ≈ 62 days)
-delay_prob      = Σ(is_delayed × weight) / Σ(weight)   per supplier
-confidence      = 1 − 1/√n_orders             # more orders → more certain
-risk_score      = order_value × delay_prob × (1 / days_to_delivery)
-```
-
-Dagster metadata now surfaces `avg_risk_score` and `avg_model_confidence` per run.
-Orders are flagged at-risk if `delay_probability > 0.15` **or** `risk_score > 500`.
-
----
-
-### 2. Anomaly Causality Chains + Supplier State Machine (`ingestion/producer.py`)
-
-Kafka events now simulate realistic compounding failures:
-
-| State | Anomaly rate | Trigger |
-|---|---|---|
-| NORMAL | 12% (baseline) | 2 anomalies in window |
-| DEGRADING | 21.6% | 5 anomalies in window |
-| CRITICAL | 36% | Stays until recovery |
-
-When a DELAY fires, there is a **30% chance** a downstream STOCKOUT from the same supplier is queued 1–2 ticks later. Causality events carry a `causality_chain: "DELAY→STOCKOUT (SUP-XXX)"` field.
-
----
-
-### 3. Token Usage Tracking
-
-The SSE stream now ends with a `done` event:
-
-```json
-{"done": true, "usage": {"input_tokens": 312, "output_tokens": 487, "analysis_time_ms": 4231}}
-```
-
-The structured `/ai/analyze` endpoint returns `input_tokens` and `output_tokens` in its JSON response.
-
----
-
-### 4. AI Reasoning Panel — Abort + Copy + Token Badge (`AIReasoningPanel.tsx`)
-
-Three new controls in the analysis modal:
-
-- **Cancel button** — appears during streaming; uses `AbortController` to stop the SSE fetch mid-flight
-- **Copy button** (header) — copies the full analysis text to clipboard; shows a ✓ check for 2 seconds
-- **Token badge** (header) — shows `N tokens · X.Xs` once the `done` SSE event arrives
-
----
-
-### 5. Error Boundaries + Loading Skeletons (`dashboard/app/page.tsx`)
-
-Every dashboard panel is now isolated:
-
-```tsx
-<ErrorBoundary label="Risk Forecast">
-  <Suspense fallback={<PanelSkeleton rows={6} />}>
-    <RiskForecast />
-  </Suspense>
-</ErrorBoundary>
-```
-
-- `ErrorBoundary` — catches render errors, shows a Retry button, logs the panel name to console
-- `PanelSkeleton` — animated pulse placeholder shown while data loads
-
----
-
-### 6. GitHub Actions CI (`.github/workflows/ci.yml`)
-
-Four jobs run on every push to `main` or `ujjwal`:
-
-| Job | What it checks |
-|---|---|
-| `docker-build` | `docker compose build --parallel` |
-| `python-lint` | `ruff check` — E, F, W rules |
-| `python-tests` | `pytest tests/` |
-| `frontend-typecheck` | `tsc --noEmit` + `next lint` |
-
----
-
-## Architecture
-
-```
-CSV Sources ──────────────────────────────────────────────────────────┐
-(OrderList, FreightRates,                                             │
- WhCapacities, PlantPorts,       Kafka Events                         │
- ProductsPerPlant)               (50+/min, state machine              │
-       │                          DELAY→STOCKOUT causality)           │
-       └──────────────────────────┴───────────────────────────────────▼
-                                                         DAGSTER (14 assets)
-                                                         bronze → silver → gold
-                                                         quality gate + dbt
-                                                         gold_forecasted_risks
-                                                         (time-decay ML scoring)
-                                                                    │
-                    ┌───────────────────────────────────────────────┘
-                    ▼
-  ┌──────────────────────────┐  ┌──────────────────────┐   ┌─────────────────┐
-  │  Next.js :3000           │  │  FastAPI :8000       │   │  PostgreSQL     │
-  │  KPI cards               │  │  /orders             │◀─▶│  orders         │
-  │  Deviation feed          │◀▶│  /suppliers          │   │  deviations     │
-  │  Risk forecast           │  │  /alerts             │   │  suppliers      │
-  │  Actions log             │  │  /actions            │   │  pending_actions│
-  │  Network graph           │  │  /forecasts          │   │  ontology       │
-  │  AI modal (abort/copy/   │  │  /network            │   └─────────────────┘
-  │   token badge)           │  │  /ai/analyze/stream  │              │
-  │  [ErrorBoundary/Suspense]│  │  → done + usage      │              ▼
-  └──────────────────────────┘  └──────────────────────┘   Claude Sonnet 4.6
-                                            │               stream + token count
-                                            ▼
-                                   MinIO :9001 (data lake browser)
-
-  GitHub Actions CI ────────────────────────────────────────────────────────
-  push to main/ujjwal → docker build + ruff lint + pytest + tsc --noEmit
-```
+| `ANTHROPIC_API_KEY` | — | Claude API key (only `/ai/analyze` needs this) |
+| `CLAUDE_MODEL` | `claude-sonnet-4-6` | Claude model |
+| `DATABASE_URL` | `postgresql://supplychain:supplychain_secret@postgres:5432/supply_chain_db` | Postgres |
+| `REDIS_URL` | `redis://redis:6379/0` | Redis for WebSocket pub/sub |
+| `CORS_ORIGINS` | `http://localhost:3000,http://localhost:3001` | Allowed CORS origins |
+| `KAFKA_BOOTSTRAP_SERVERS` | `kafka:9092` | Kafka broker |
+| `PG_WRITER_BATCH_SIZE` | `10` | Events per batch in pg_writer |
+| `POSTGRES_PORT` | `5433` | Host port for Postgres |
+| `UVICORN_WORKERS` | `1` | Worker count (Redis pub/sub is multi-worker safe) |
 
 ---
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|------------|
+|---|---|
 | Backend | Python 3.11, FastAPI, SQLAlchemy 2.0, Alembic, Pydantic v2 |
-| Streaming | Kafka, WebSocket, SSE |
-| Data | PostgreSQL 15, Delta Lake, PySpark, dbt, Pandas, PyArrow |
+| Streaming | Kafka, Redis pub/sub, WebSocket, SSE |
+| AI | Anthropic Claude Sonnet 4.6 — tool_use + SSE streaming |
+| Data | PostgreSQL 15, Delta Lake, dbt, Pandas, PyArrow |
 | Orchestration | Dagster (14 software-defined assets, 6-hour schedule) |
 | Quality | Great Expectations |
-| AI | Anthropic Claude Sonnet 4.6 — streaming + structured JSON |
 | Frontend | Next.js 14 App Router, TailwindCSS, Recharts, SVG graph |
-| Infrastructure | Docker Compose, MinIO (S3-compatible), Redis |
+| Infrastructure | Docker Compose, MinIO, Redis |
+| CI/CD | GitHub Actions — Docker build + ruff + pytest (43 tests) + tsc |
 
 ---
 
-## Troubleshooting
+## Skills Demonstrated
 
-**Containers not healthy after `docker compose up`**
-```bash
-docker compose logs <service-name> --tail=30
-# Common fix: wait 60s for Kafka + Postgres to fully start, then:
-docker compose restart fastapi
-```
-
-**AI returns 503**
-`ANTHROPIC_API_KEY` missing in `.env`. Only `/ai/analyze` is affected — everything else works.
-
-**Seed script: duplicate key error**
-```bash
-# Check what's already in the DB
-docker compose exec postgres psql -U supplychain -d supply_chain_db -c "SELECT COUNT(*) FROM orders;"
-# If data exists, the seed already ran — this is fine
-```
-
-**Dagster pipeline: `pyarrow` not found**
-```bash
-docker compose build dagster-webserver dagster-daemon
-docker compose up -d dagster-webserver dagster-daemon
-```
-
-**Sync reports 0 rows**
-Run steps 4 → 5 → 6 in order. The sync reads from bronze (or gold if pipeline ran).
-
-**Port conflicts**
-Postgres uses host port **5433** (not 5432). If any port is taken, update it in `.env`:
-```
-POSTGRES_PORT=5434
-```
-
-**MinIO Console empty**
-Run `docker compose exec fastapi python scripts/sync_data_to_minio.py` to upload local Parquet files.
-
-**Dagster UI blank / not loading**
-Takes 1–2 minutes after Postgres + Kafka are healthy. Reload http://localhost:3001.
+| Domain | Technology |
+|---|---|
+| Data Engineering | Medallion lakehouse, Delta Lake, Parquet, batch + stream ingest |
+| Orchestration | Dagster 14 SDAs, 6-hour schedule |
+| Data Quality | Great Expectations on silver layer |
+| SQL / dbt | Staging + fact + dimension models |
+| ML Scoring | Time-decay delay probability, per-supplier confidence, composite risk score |
+| Event Simulation | Kafka state machine (NORMAL→DEGRADING→CRITICAL), causality chains |
+| AI / LLM | Claude tool_use structured output, SSE streaming, ontology injection |
+| Backend | FastAPI async, SQLAlchemy 2.0, Alembic, Pydantic v2, WebSocket |
+| Frontend | Next.js 14 App Router, Recharts, ErrorBoundary, AbortController |
+| Infrastructure | Docker Compose, Redis, MinIO, PostgreSQL 15 |
+| CI/CD | GitHub Actions — build, lint, test, type-check |
 
 ---
 
@@ -644,84 +301,94 @@ Takes 1–2 minutes after Postgres + Kafka are healthy. Reload http://localhost:
 
 ```
 supply-chain-os/
-├── api/                          # FastAPI backend
-│   ├── main.py                   # App entry, WebSocket, router registration
-│   ├── models.py                 # Order, Supplier, Deviation, OntologyConstraint, PendingAction
+├── api/
+│   ├── main.py                   # FastAPI app, Redis subscriber loop, WebSocket, CORS
+│   ├── models.py                 # Order, Supplier, Deviation, PendingAction, OntologyConstraint
 │   ├── schemas.py                # Pydantic request/response types
 │   └── routers/
-│       ├── orders.py             # GET/POST /orders
-│       ├── suppliers.py          # /suppliers, /suppliers/risk
-│       ├── alerts.py             # /alerts, /alerts/{id}/dismiss → creates PendingAction
-│       ├── actions.py            # /actions (audit log)
-│       ├── forecasts.py          # /forecasts (at-risk orders from gold layer)
-│       ├── network.py            # /network (Plant → Port topology)
-│       ├── ontology.py           # /ontology/constraints
-│       └── ai.py                 # /ai/analyze + /ai/analyze/stream (Claude SSE)
+│       ├── orders.py, suppliers.py, alerts.py, actions.py
+│       ├── forecasts.py, network.py, ontology.py
+│       └── ai.py                 # /ai/analyze (tool_use) + /ai/analyze/stream (SSE)
 ├── dashboard/                    # Next.js 14
-│   ├── app/page.tsx              # Control tower — all panels (ErrorBoundary + Suspense per section)
-│   ├── components/
-│   │   ├── KPICards.tsx
-│   │   ├── DeviationFeed.tsx     # Real-time WebSocket + polling
-│   │   ├── SupplierRisk.tsx      # Recharts bar chart
-│   │   ├── RiskForecast.tsx      # At-risk orders from /forecasts
-│   │   ├── ActionsLog.tsx        # Executed recommendations log
-│   │   ├── SupplyChainGraph.tsx  # SVG Plant → Port network
-│   │   ├── OrderTable.tsx        # Filterable orders table
-│   │   ├── OntologyGraph.tsx     # Hard constraints list
-│   │   ├── AIReasoningPanel.tsx  # Streaming Claude modal (abort, copy, token badge)
-│   │   ├── ErrorBoundary.tsx     # Class component — isolates panel render failures
-│   │   └── PanelSkeleton.tsx     # Animated pulse placeholder for Suspense fallbacks
-│   ├── hooks/useWebSocket.ts
-│   └── lib/api.ts                # Typed fetch client (AbortSignal + onDone callback)
-├── pipeline/                     # Dagster
-│   ├── assets_medallion.py       # 14 assets: bronze×5 silver×3 quality dbt gold×5
+│   ├── app/page.tsx              # Control tower (ErrorBoundary + Suspense per panel)
+│   └── components/
+│       ├── KPICards, DeviationFeed, SupplierRisk, RiskForecast
+│       ├── ActionsLog, SupplyChainGraph, OrderTable, OntologyGraph
+│       ├── AIReasoningPanel.tsx  # Streaming modal (abort, copy, token badge)
+│       ├── ErrorBoundary.tsx
+│       └── PanelSkeleton.tsx
+├── pipeline/
+│   ├── assets_medallion.py       # 14 Dagster assets
 │   └── definitions_medallion.py  # Definitions + 6-hour schedule
 ├── ingestion/
-│   ├── producer.py               # Kafka: 50+ events/min, state machine, causality chains
+│   ├── producer.py               # Kafka producer: 50+ events/min, state machine, causality
 │   ├── consumer.py               # Kafka → Delta Lake bronze
-│   └── batch_loader.py           # CSV → bronze Parquet (all 5 datasets)
+│   ├── pg_writer.py              # Kafka → PostgreSQL + Redis pub/sub (v2)
+│   ├── schemas.py                # OrderEvent Pydantic model
+│   └── batch_loader.py           # CSV → bronze Parquet
 ├── reasoning/
-│   └── engine.py                 # Claude Sonnet 4.6: stream + structured analysis + token tracking
-├── transforms/                   # dbt
-│   └── models/
-│       ├── staging/              # stg_orders.sql, stg_suppliers.sql
-│       └── marts/                # fct_shipments.sql, dim_suppliers.sql
-├── quality/
-│   └── validations.py            # Great Expectations checks (not_null, between, in_set)
+│   └── engine.py                 # Claude tool_use + stream + token tracking
+├── transforms/dbt/models/        # staging/, marts/
+├── quality/validations.py        # Great Expectations checks
 ├── scripts/
-│   ├── seed_db.py                # Sample data: 50 orders, 5 suppliers, 10 deviations
-│   ├── sync_gold_to_postgres.py  # Gold/bronze Parquet → Postgres (idempotent upsert)
-│   ├── sync_data_to_minio.py     # Local Parquet → MinIO bucket (boto3)
+│   ├── seed_db.py                # 8 suppliers, 120 orders, 20 deviations, 7 constraints
+│   ├── sync_gold_to_postgres.py
+│   ├── sync_data_to_minio.py
 │   └── download_supply_chain_data.py
+├── tests/
+│   ├── test_pg_writer.py         # 12 deviation detection tests
+│   └── test_reasoning_engine.py  # 6 Claude tool_use tests
 ├── alembic/versions/
 │   ├── 001_initial_schema.py
-│   └── 002_pending_actions.py
+│   └── 002_add_pending_actions.py
 ├── docker/
-│   ├── FastAPI.Dockerfile
+│   ├── FastAPI.Dockerfile        # Runs entrypoint.sh
 │   ├── Dagster.Dockerfile
 │   ├── Nextjs.Dockerfile
-│   └── Producer.Dockerfile
-├── .github/
-│   └── workflows/
-│       └── ci.yml                # CI: docker build + ruff + pytest + tsc on every push
-├── docker-compose.yml            # Full stack (10 services)
-├── docker-compose.minimal.yml    # Minimal: Postgres + Redis + API + Dashboard
-├── requirements-dagster.txt      # pyarrow, pandas, deltalake, dbt, great-expectations
+│   ├── Producer.Dockerfile
+│   └── entrypoint.sh             # alembic upgrade + seed + uvicorn
+├── .github/workflows/ci.yml      # CI: docker build + ruff + pytest + tsc
+├── docker-compose.yml            # Full 10-service stack
+├── docker-compose.minimal.yml    # Postgres + Redis + API + Dashboard
+├── requirements.txt              # includes requirements-api.txt + requirements-ingestion.txt
 ├── requirements-api.txt
+├── requirements-ingestion.txt
+├── requirements-dagster.txt
 └── .env.example
 ```
 
 ---
 
-## Minimal Stack (no Kafka / Dagster)
+## Troubleshooting
 
-If you just want the API + dashboard without the full pipeline:
-
+**Port 5432 already in use**
+Local Postgres is running. Both compose files map Postgres to host port `5433` — this should not conflict. If it does:
 ```bash
-docker compose -f docker-compose.minimal.yml up --build -d
-docker compose -f docker-compose.minimal.yml exec fastapi python scripts/seed_db.py
-open http://localhost:3000
+# Check what's on 5432
+lsof -i :5432
 ```
+
+**API container unhealthy / crashing**
+```bash
+docker compose logs fastapi --tail=40
+# or for minimal stack:
+docker compose -f docker-compose.minimal.yml logs fastapi --tail=40
+```
+
+**AI returns 503**
+`ANTHROPIC_API_KEY` not set in `.env`. All other endpoints work without it.
+
+**Dagster UI blank**
+Takes 1–2 minutes after Postgres + Kafka are healthy. Reload http://localhost:3001.
+
+**MinIO Console empty**
+Run the sync script after the Dagster pipeline completes:
+```bash
+docker compose exec fastapi python scripts/sync_data_to_minio.py
+```
+
+**pg-writer restarting**
+Check logs: `docker compose logs pg-writer --tail=20`. Usually a Kafka not-ready race — it will self-recover once Kafka is fully healthy.
 
 ---
 

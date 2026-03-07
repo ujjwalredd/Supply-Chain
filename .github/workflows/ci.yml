@@ -18,13 +18,13 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build all services
-        run: docker compose build --parallel
+        run: docker compose build
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || 'ci-placeholder' }}
+          ANTHROPIC_API_KEY: ci-placeholder
           POSTGRES_PASSWORD: ci_secret
           DAGSTER_POSTGRES_PASSWORD: ci_secret
 
-  # ── Python lint + type check ────────────────────────────────────────────
+  # ── Python lint ─────────────────────────────────────────────────────────
   python-lint:
     name: Python lint
     runs-on: ubuntu-latest
@@ -36,7 +36,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install linting tools
+      - name: Install ruff
         run: pip install ruff
 
       - name: Run ruff
@@ -44,7 +44,7 @@ jobs:
 
   # ── Python unit tests ───────────────────────────────────────────────────
   python-tests:
-    name: Python tests
+    name: Python tests (43 tests, no live services required)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,21 +54,15 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
+          cache-dependency-path: requirements-api.txt
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx
+        run: pip install -r requirements-api.txt pytest pytest-asyncio httpx
 
       - name: Run tests
         run: pytest tests/ -q --tb=short
         env:
           ANTHROPIC_API_KEY: ci-placeholder
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5432
-          POSTGRES_USER: supplychain
-          POSTGRES_PASSWORD: ci_secret
-          POSTGRES_DB: supply_chain_db
 
   # ── Next.js type-check ──────────────────────────────────────────────────
   frontend-typecheck:

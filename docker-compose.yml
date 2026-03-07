@@ -232,7 +232,7 @@ services:
       NEXT_PUBLIC_WS_URL: ws://localhost:8000
     # No volume mount: use built image so .next is preserved (mount overwrote it and broke npm start)
 
-  # --- DATA INGESTION (optional - can run separately) ---
+  # --- DATA INGESTION ---
   producer:
     build:
       context: .
@@ -245,6 +245,27 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_TOPIC: supply-chain-events
     command: ["python", "ingestion/producer.py"]
+
+  pg-writer:
+    build:
+      context: .
+      dockerfile: docker/Producer.Dockerfile
+    container_name: supply-chain-pg-writer
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: supply-chain-events
+      DATABASE_URL: postgresql://${POSTGRES_USER:-supplychain}:${POSTGRES_PASSWORD:-supplychain_secret}@postgres:5432/${POSTGRES_DB:-supply_chain_db}
+      REDIS_URL: redis://redis:6379/0
+      PG_WRITER_BATCH_SIZE: "10"
+    command: ["python", "ingestion/pg_writer.py"]
 
 volumes:
   postgres_data:

@@ -1,9 +1,8 @@
-"""Add pending_actions table (Feature 4: execute recommendation).
+"""Add pending_actions table.
 
 Revision ID: 002
 Revises: 001
-Create Date: 2026-02-27
-
+Create Date: 2025-03-01
 """
 from typing import Sequence, Union
 
@@ -18,6 +17,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if "pending_actions" in inspector.get_table_names():
+        return
     op.create_table(
         "pending_actions",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),

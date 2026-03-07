@@ -15,7 +15,9 @@ COPY ingestion/ ingestion/
 COPY alembic/ alembic/
 COPY alembic.ini .
 COPY scripts/ scripts/
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 ENV PYTHONPATH=/app
 
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["/entrypoint.sh"]

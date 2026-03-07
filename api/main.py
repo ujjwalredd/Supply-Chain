@@ -2,11 +2,13 @@
 Supply Chain AI Operating System — FastAPI backend.
 
 REST API + WebSocket for real-time dashboard updates.
+Redis pub/sub powers multi-worker broadcast (falls back to in-process set).
 """
 
 import asyncio
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -21,16 +23,46 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# In-memory broadcast for deviations (use Redis pub/sub in multi-worker prod)
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+REDIS_CHANNEL = "deviations"
+
+# Allowed origins — restrict to frontend URL in production
+_CORS_ORIGINS_RAW = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")
+CORS_ORIGINS = [o.strip() for o in _CORS_ORIGINS_RAW.split(",") if o.strip()]
+
+# In-process fallback subscriber set (used when Redis is unavailable)
 _deviation_subscribers: set[WebSocket] = set()
+
+# Redis async client (set during startup)
+_redis_client = None
+
+
+async def _get_async_redis():
+    """Return async Redis client or None if unavailable."""
+    try:
+        import redis.asyncio as aioredis
+        client = aioredis.from_url(REDIS_URL, decode_responses=True)
+        await client.ping()
+        return client
+    except Exception as e:
+        logger.warning("Redis unavailable, using in-process WebSocket broadcast: %s", e)
+        return None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
+    global _redis_client
     logger.info("Starting Supply Chain API...")
     await init_db()
+    _redis_client = await _get_async_redis()
+    if _redis_client:
+        # Start Redis subscriber task for broadcasting to connected WebSocket clients
+        asyncio.create_task(_redis_subscriber_loop())
+        logger.info("Redis pub/sub enabled on channel '%s'", REDIS_CHANNEL)
     yield
+    if _redis_client:
+        await _redis_client.aclose()
     logger.info("Shutting down Supply Chain API...")
 
 
@@ -45,7 +77,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict in production
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -61,9 +93,22 @@ app.include_router(forecasts.router, prefix="/forecasts", tags=["forecasts"])
 app.include_router(network.router, prefix="/network", tags=["network"])
 
 
-async def broadcast_deviation(deviation: dict) -> None:
-    """Broadcast deviation to all connected WebSocket clients."""
-    payload = json.dumps({"type": "deviation", "data": deviation})
+async def _redis_subscriber_loop() -> None:
+    """Subscribe to Redis channel and forward messages to WebSocket clients."""
+    if not _redis_client:
+        return
+    try:
+        pubsub = _redis_client.pubsub()
+        await pubsub.subscribe(REDIS_CHANNEL)
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                await _broadcast_raw(message["data"])
+    except Exception as e:
+        logger.warning("Redis subscriber loop error: %s", e)
+
+
+async def _broadcast_raw(payload: str) -> None:
+    """Broadcast raw JSON string to all connected WebSocket clients."""
     disconnected = set()
     for ws in _deviation_subscribers:
         try:
@@ -72,6 +117,18 @@ async def broadcast_deviation(deviation: dict) -> None:
             disconnected.add(ws)
     for ws in disconnected:
         _deviation_subscribers.discard(ws)
+
+
+async def broadcast_deviation(deviation: dict) -> None:
+    """Broadcast a deviation dict. Uses Redis if available, else in-process."""
+    payload = json.dumps({"type": "deviation", "data": deviation})
+    if _redis_client:
+        try:
+            await _redis_client.publish(REDIS_CHANNEL, payload)
+            return
+        except Exception as e:
+            logger.warning("Redis publish failed, falling back to in-process: %s", e)
+    await _broadcast_raw(payload)
 
 
 @app.websocket("/ws")
@@ -86,6 +143,8 @@ async def websocket_endpoint(websocket: WebSocket):
             if msg.get("type") == "ping":
                 await websocket.send_text(json.dumps({"type": "pong"}))
     except WebSocketDisconnect:
+        pass
+    finally:
         _deviation_subscribers.discard(websocket)
         logger.info("WebSocket client disconnected")
 

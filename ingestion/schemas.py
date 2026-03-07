@@ -1,6 +1,6 @@
 """Pydantic schemas for supply chain events."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -25,7 +25,7 @@ class OrderEvent(BaseModel):
     )
     inventory_level: float = Field(..., ge=0, le=100, description="Inventory level %")
     created_at: str = Field(
-        default_factory=lambda: datetime.utcnow().isoformat() + "Z",
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(),
         description="Event timestamp",
     )
     event_type: str = Field(
