@@ -44,12 +44,19 @@ class AIAnalysisOutput(BaseModel):
     output_tokens: int = Field(0, description="Claude output token count")
 
 
-SYSTEM_PROMPT = """You are an expert supply chain analyst for a control tower. Your job is to analyze deviations (delays, stockouts, anomalies) and recommend actions. You have access to:
+SYSTEM_PROMPT = """You are an expert supply chain analyst for a control tower. Analyze deviations and recommend corrective actions.
+
+You have access to:
 - Order data: product, quantity, value, expected vs actual delivery, delay days, status
 - Supplier history: trust score, delayed orders %, avg delay days
 - Ontology constraints: hard limits like max_delay_days, min_inventory_level, max_single_supplier_dependency
 
-Always consider ontology constraints when evaluating trade-offs. If a constraint is violated, highlight it in root_cause. Use confidence 0-1 for each option."""
+Output rules:
+- Write in clear, professional prose. No emojis. No symbols like ●, ◆, or →.
+- Do not use markdown headers (## or **). Use plain paragraph breaks instead.
+- Be concise and factual. Avoid filler phrases like "Great news" or "It is important to note".
+- If an ontology constraint is violated, name it explicitly in the root cause.
+- Express confidence as a decimal between 0.0 and 1.0 for each trade-off option."""
 
 # Tool schema for structured output — Claude fills this via tool_use instead of free-form JSON
 _ANALYSIS_TOOL = {
@@ -139,16 +146,15 @@ def stream_analysis(
         supplier or {},
         ontology_constraints or [],
     )
-    prompt = f"""Analyze this supply chain deviation and provide:
-1. Root cause
-2. Financial impact
-3. Trade-off options with pros/cons and confidence
-4. Primary recommendation
-5. Whether it can be auto-executed
+    prompt = f"""Analyze this supply chain deviation. Write in plain prose — no emojis, no markdown symbols, no headers. Use paragraph breaks between sections.
 
-{context}
+Cover these areas in order:
+Root cause — what caused this deviation and whether any ontology constraints are violated.
+Financial impact — estimated dollar exposure and operational risk.
+Options — two or three trade-off options, each with pros, cons, and a confidence score (0.0 to 1.0).
+Recommendation — your primary recommended action with rationale.
 
-Provide a clear, actionable analysis."""
+{context}"""
 
     try:
         with client.messages.stream(

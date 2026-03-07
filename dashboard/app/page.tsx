@@ -9,6 +9,8 @@ import { OntologyGraph } from "@/components/OntologyGraph";
 import { ActionsLog } from "@/components/ActionsLog";
 import { RiskForecast } from "@/components/RiskForecast";
 import { SupplyChainGraph } from "@/components/SupplyChainGraph";
+import { DeviationTrendChart } from "@/components/DeviationTrendChart";
+import { SupplierHeatmap } from "@/components/SupplierHeatmap";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PanelSkeleton } from "@/components/PanelSkeleton";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -89,6 +91,20 @@ export default function ControlTowerPage() {
           <ErrorBoundary label="Supplier Risk">
             <Suspense fallback={<PanelSkeleton rows={5} />}>
               <SupplierRisk />
+            </Suspense>
+          </ErrorBoundary>
+        </Section>
+
+        {/* Analytics row */}
+        <Section title="Analytics" cols={2}>
+          <ErrorBoundary label="Deviation Trend">
+            <Suspense fallback={<PanelSkeleton rows={5} height="h-5" />}>
+              <DeviationTrendChart />
+            </Suspense>
+          </ErrorBoundary>
+          <ErrorBoundary label="Supplier Health">
+            <Suspense fallback={<PanelSkeleton rows={6} />}>
+              <SupplierHeatmap />
             </Suspense>
           </ErrorBoundary>
         </Section>

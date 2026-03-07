@@ -1,10 +1,11 @@
 """Alerts (deviations) API router."""
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_db
@@ -36,6 +37,40 @@ async def list_alerts(
     result = await db.execute(q)
     deviations = result.scalars().all()
     return [DeviationRead.model_validate(d) for d in deviations]
+
+
+@router.get("/trend")
+async def deviation_trend(
+    days: int = Query(7, ge=1, le=30),
+    db: AsyncSession = Depends(get_db),
+):
+    """Deviation counts per day for the last N days, grouped by severity."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    result = await db.execute(
+        select(
+            func.date(Deviation.detected_at).label("day"),
+            Deviation.severity,
+            func.count().label("count"),
+        )
+        .where(Deviation.detected_at >= cutoff)
+        .group_by(func.date(Deviation.detected_at), Deviation.severity)
+        .order_by(func.date(Deviation.detected_at))
+    )
+    rows = result.all()
+
+    today = datetime.now(timezone.utc).date()
+    date_range = [(today - timedelta(days=i)).isoformat() for i in range(days - 1, -1, -1)]
+    data: dict[str, dict] = {
+        d: {"date": d, "CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "total": 0}
+        for d in date_range
+    }
+    for row in rows:
+        day_str = str(row.day)
+        if day_str in data:
+            sev = row.severity if row.severity in ("CRITICAL", "HIGH", "MEDIUM") else "MEDIUM"
+            data[day_str][sev] += row.count
+            data[day_str]["total"] += row.count
+    return list(data.values())
 
 
 @router.get("/{deviation_id}", response_model=DeviationRead)

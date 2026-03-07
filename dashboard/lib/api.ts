@@ -173,4 +173,22 @@ export async function fetchNetworkGraph() {
   return res.json();
 }
 
+export async function fetchOntologyConstraints() {
+  const res = await fetch(`${API_BASE}/ontology/constraints`);
+  if (!res.ok) throw new Error("Failed to fetch constraints");
+  return res.json();
+}
+
+export async function fetchDeviationTrend(days = 7) {
+  const res = await fetch(`${API_BASE}/alerts/trend?days=${days}`);
+  if (!res.ok) throw new Error("Failed to fetch deviation trend");
+  return res.json();
+}
+
+export async function fetchActionsStats() {
+  const res = await fetch(`${API_BASE}/actions/stats`);
+  if (!res.ok) throw new Error("Failed to fetch action stats");
+  return res.json();
+}
+
 export { WS_URL };

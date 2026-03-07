@@ -10,7 +10,7 @@ Auger (raised ~$100M, founded by Dave Clark — former Amazon Worldwide Consumer
 
 | Auger Capability | This Implementation |
 |---|---|
-| **Control Tower** | Next.js 14 dashboard — KPI cards, deviation feed, supplier risk, network graph |
+| **Control Tower** | Next.js 14 dashboard — 5 KPI cards (incl. MTTR), deviation feed, deviation trend chart, supplier heatmap, risk forecast, actions log, network graph |
 | **Real-time Signal Ingest** | Kafka producer → pg_writer → PostgreSQL (50+ events/min with causality chains) |
 | **Deviation Detection** | Automatic: DELAY / STOCKOUT / ANOMALY with severity levels (MEDIUM / HIGH / CRITICAL) |
 | **AI Root-Cause Reasoning** | Claude Sonnet 4.6 via forced `tool_use` — 100% structured output, no JSON fallback |
@@ -120,6 +120,13 @@ Auger (raised ~$100M, founded by Dave Clark — former Amazon Worldwide Consumer
  │  • WebSocket exponential backoff — min(1s×2^n, 30s) on reconnect                 │
  │  • Dashboard v3 — sticky topnav with live pill, severity-colored left bars,      │
  │                   shimmer skeleton loaders, rgba border system, clean dark UI    │
+ │  • AI output humanized — no emojis, no markdown noise, plain professional prose  │
+ │  • AI panel: ontology constraints shown, copy button, token + latency footer     │
+ │  • Deviation trend chart — 7-day stacked bar (CRITICAL / HIGH / MEDIUM)          │
+ │  • Supplier health heatmap — trust score grid with progress bars                 │
+ │  • MTTR KPI card — avg time from detection to resolution (server-computed)       │
+ │  • /alerts/trend endpoint — daily deviation counts grouped by severity           │
+ │  • /actions/stats endpoint — MTTR computed via SQL join on deviations table      │
  └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -439,8 +446,10 @@ curl -X POST http://localhost:8000/ai/analyze \
 | `GET` | `/suppliers` | All suppliers |
 | `GET` | `/suppliers/risk` | Supplier risk rankings (trust score, delay stats) |
 | `GET` | `/alerts` | Deviation alerts — filter: `executed`, `severity`, `limit` |
+| `GET` | `/alerts/trend` | Deviation counts per day for last N days, grouped by severity |
 | `POST` | `/alerts/{id}/dismiss` | Execute recommendation → creates `PendingAction` |
 | `GET` | `/actions` | Audit log of all executed recommendations |
+| `GET` | `/actions/stats` | MTTR — avg minutes from deviation detection to resolution |
 | `GET` | `/forecasts` | At-risk orders from gold layer |
 | `GET` | `/forecasts/summary` | Forecast summary stats |
 | `GET` | `/network` | Plant → Port topology (nodes, edges, stats) |
@@ -566,7 +575,9 @@ supply-chain-os/
 │       ├── SupplyChainGraph.tsx   # SVG Plant → Port network
 │       ├── OrderTable.tsx         # Filterable orders table
 │       ├── OntologyGraph.tsx      # Constraints list
-│       ├── AIReasoningPanel.tsx   # Streaming modal (abort, copy, token badge)
+│       ├── DeviationTrendChart.tsx # 7-day stacked bar chart by severity
+│       ├── SupplierHeatmap.tsx    # Supplier trust score heatmap grid
+│       ├── AIReasoningPanel.tsx   # Streaming modal — constraints shown, copy, token/latency
 │       ├── ErrorBoundary.tsx      # Isolates panel render failures
 │       └── PanelSkeleton.tsx      # Animated Suspense fallback
 ├── ingestion/

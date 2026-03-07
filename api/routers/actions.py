@@ -5,16 +5,38 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, join as sql_join, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_db
-from api.models import PendingAction
+from api.models import Deviation, PendingAction
 from api.schemas import PendingActionCreate, PendingActionRead
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/stats")
+async def actions_stats(db: AsyncSession = Depends(get_db)):
+    """MTTR: avg time (minutes) from deviation detection to action execution."""
+    j = sql_join(PendingAction, Deviation, PendingAction.deviation_id == Deviation.deviation_id)
+    result = await db.execute(
+        select(
+            func.count().label("total"),
+            func.avg(
+                func.extract("epoch", PendingAction.created_at - Deviation.detected_at)
+            ).label("avg_resolve_seconds"),
+        )
+        .select_from(j)
+        .where(PendingAction.status == "COMPLETED")
+    )
+    row = result.one()
+    avg_secs = float(row.avg_resolve_seconds or 0)
+    return {
+        "total_completed": int(row.total or 0),
+        "mttr_minutes": round(avg_secs / 60, 1),
+    }
 
 
 @router.get("", response_model=list[PendingActionRead])

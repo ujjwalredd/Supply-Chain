@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { fetchActionsStats } from "@/lib/api";
 
 type KPIData = {
   pipeline_value?: number;
@@ -12,6 +13,7 @@ type KPIData = {
 
 export function KPICards() {
   const [data, setData] = useState<KPIData>({});
+  const [mttr, setMttr] = useState<number | null>(null);
   const { lastMessage } = useWebSocket((msg) => {
     if (msg.type === "kpi" && msg.data) setData(msg.data as KPIData);
   });
@@ -40,6 +42,12 @@ export function KPICards() {
     const id = setInterval(fetchKPIs, 30000);
     return () => clearInterval(id);
   }, [lastMessage]);
+
+  useEffect(() => {
+    fetchActionsStats()
+      .then((s) => setMttr(s.mttr_minutes ?? null))
+      .catch(() => setMttr(null));
+  }, []);
 
   const onTimePct = data.on_time_pct ?? 0;
   const delayed = data.delayed_count ?? 0;
@@ -74,10 +82,22 @@ export function KPICards() {
       valueColor: critical > 0 ? "text-destructive" : "text-foreground",
       accentColor: critical > 0 ? "#f87171" : "#34d399",
     },
+    {
+      label: "Avg Resolution",
+      value: mttr === null
+        ? "N/A"
+        : mttr < 1 ? "<1m"
+        : mttr < 60 ? `${Math.round(mttr)}m`
+        : mttr < 1440 ? `${(mttr / 60).toFixed(1)}h`
+        : `${(mttr / 1440).toFixed(1)}d`,
+      sub: "mean time to resolve",
+      valueColor: mttr === null ? "text-mutedForeground" : mttr <= 30 ? "text-success" : mttr <= 240 ? "text-warning" : "text-destructive",
+      accentColor: mttr === null ? "#52526a" : mttr <= 30 ? "#34d399" : mttr <= 240 ? "#fbbf24" : "#f87171",
+    },
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
       {stats.map((s) => (
         <div
           key={s.label}
