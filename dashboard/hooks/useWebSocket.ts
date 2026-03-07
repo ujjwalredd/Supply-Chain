@@ -14,6 +14,7 @@ export function useWebSocket(onMessage?: (msg: WebSocketMessage) => void) {
   const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectRef = useRef<NodeJS.Timeout | null>(null);
+  const retriesRef = useRef(0);
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
 
@@ -21,10 +22,13 @@ export function useWebSocket(onMessage?: (msg: WebSocketMessage) => void) {
     const ws = new WebSocket(`${WS_URL}/ws`);
     ws.onopen = () => {
       setConnected(true);
+      retriesRef.current = 0;
     };
     ws.onclose = () => {
       setConnected(false);
-      reconnectRef.current = setTimeout(connect, 3000);
+      const delay = Math.min(1000 * Math.pow(2, retriesRef.current), 30000);
+      retriesRef.current += 1;
+      reconnectRef.current = setTimeout(connect, delay);
     };
     ws.onerror = () => {
       setConnected(false);

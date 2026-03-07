@@ -26,10 +26,10 @@ function relativeTime(iso: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-const severityColor: Record<string, string> = {
-  CRITICAL: "text-destructive",
-  HIGH: "text-warning",
-  MEDIUM: "text-mutedForeground",
+const SEV: Record<string, { color: string; dot: string; text: string }> = {
+  CRITICAL: { color: "#f87171", dot: "bg-destructive",   text: "text-destructive" },
+  HIGH:     { color: "#fbbf24", dot: "bg-warning",       text: "text-warning" },
+  MEDIUM:   { color: "#7c6af7", dot: "bg-accent",        text: "text-accent" },
 };
 
 export function DeviationFeed() {
@@ -67,34 +67,69 @@ export function DeviationFeed() {
     } catch {}
   };
 
+  const active = deviations.filter((d) => !d.executed);
+
   return (
     <>
-      <div className="bg-card rounded-lg border border-border overflow-hidden">
-        <div className="px-4 py-3 border-b border-border">
-          <p className="text-sm font-medium text-foreground">Deviations</p>
-        </div>
-        <div className="divide-y divide-border max-h-[340px] overflow-y-auto">
-          {deviations.length === 0 && (
-            <p className="text-xs text-mutedForeground px-4 py-6">No active deviations.</p>
+      <div className="rounded-xl overflow-hidden flex flex-col" style={{ background: "#111117", border: "1px solid rgba(255,255,255,0.07)" }}>
+        {/* Header */}
+        <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+          <div>
+            <p className="text-sm font-semibold text-foreground">Deviations</p>
+            <p className="text-[11px] text-mutedForeground mt-0.5">Active supply chain alerts</p>
+          </div>
+          {active.length > 0 && (
+            <span className="text-[11px] font-semibold tabular-nums px-2 py-0.5 rounded-md" style={{ background: "rgba(248,113,113,0.1)", color: "#f87171" }}>
+              {active.length} active
+            </span>
           )}
-          {deviations.map((d) => (
-            <button
-              key={d.deviation_id}
-              type="button"
-              onClick={() => setSelected(d)}
-              className={`w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted transition-colors ${d.executed ? "opacity-50" : ""}`}
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">{d.order_id}</p>
-                <p className={`text-xs mt-0.5 ${severityColor[d.severity] ?? "text-mutedForeground"}`}>
-                  {d.type} · {d.severity}
-                </p>
+        </div>
+
+        {/* List */}
+        <div className="overflow-y-auto max-h-[360px]">
+          {active.length === 0 && (
+            <div className="px-5 py-10 text-center">
+              <div className="h-8 w-8 rounded-full mx-auto mb-3 flex items-center justify-center" style={{ background: "rgba(52,211,153,0.1)" }}>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 7L5.5 10L11.5 4" stroke="#34d399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
               </div>
-              <span className="text-xs text-mutedForeground shrink-0 ml-4">
-                {relativeTime(d.detected_at)}
-              </span>
-            </button>
-          ))}
+              <p className="text-xs text-mutedForeground">No active deviations</p>
+            </div>
+          )}
+          {active.map((d, idx) => {
+            const sev = SEV[d.severity] ?? SEV.MEDIUM;
+            return (
+              <button
+                key={d.deviation_id}
+                type="button"
+                onClick={() => setSelected(d)}
+                className="w-full text-left group transition-colors"
+                style={{ background: "transparent", borderBottom: idx < active.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.02)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+              >
+                <div className="flex items-stretch">
+                  {/* Severity bar */}
+                  <div className="w-0.5 shrink-0 my-0 rounded-r-full" style={{ background: sev.color }} />
+                  <div className="flex items-center justify-between px-4 py-3.5 w-full min-w-0">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[10px] font-bold uppercase tracking-widest ${sev.text}`}>
+                          {d.severity}
+                        </span>
+                        <span className="text-[11px] text-mutedForeground">{d.type}</span>
+                      </div>
+                      <p className="text-sm font-medium text-foreground truncate font-mono">{d.order_id}</p>
+                    </div>
+                    <span className="text-[11px] text-mutedForeground shrink-0 ml-4 group-hover:text-foreground transition-colors">
+                      {relativeTime(d.detected_at)}
+                    </span>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 

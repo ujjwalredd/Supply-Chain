@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from api.database import init_db
 from api.routers import actions, ai, alerts, forecasts, network, orders, ontology, suppliers
@@ -82,6 +83,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 app.include_router(orders.router, prefix="/orders", tags=["orders"])
 app.include_router(suppliers.router, prefix="/suppliers", tags=["suppliers"])

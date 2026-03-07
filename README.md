@@ -1,4 +1,4 @@
-# Supply Chain AI Operating System — v2.0
+# Supply Chain AI Operating System — v3.0
 
 > Prototype inspired by [Auger](https://auger.com) — an AI-native supply chain control tower that collapses the gap between signal and execution.
 
@@ -13,10 +13,13 @@ Auger (raised ~$100M, founded by Dave Clark — former Amazon Worldwide Consumer
 | **Control Tower** | Next.js 14 dashboard — KPI cards, deviation feed, supplier risk, network graph |
 | **Real-time Signal Ingest** | Kafka producer → pg_writer → PostgreSQL (50+ events/min with causality chains) |
 | **Deviation Detection** | Automatic: DELAY / STOCKOUT / ANOMALY with severity levels (MEDIUM / HIGH / CRITICAL) |
-| **AI Root-Cause Reasoning** | Claude Sonnet 4.6 via `tool_use` — structured analysis, no fragile JSON parsing |
+| **AI Root-Cause Reasoning** | Claude Sonnet 4.6 via forced `tool_use` — 100% structured output, no JSON fallback |
+| **AI Response Cache** | Redis-backed 1-hour TTL per deviation — eliminates duplicate API calls |
 | **Ontology Layer** | 7 business rules injected into every AI call as hard constraints |
 | **Action Execution** | Every recommendation click persisted as an auditable `PendingAction` |
 | **Risk Forecasting** | Time-decay ML scoring: `delay_probability × order_value × urgency` |
+| **Slack Alerting** | Webhook notification for every CRITICAL deviation |
+| **Observability** | Prometheus `/metrics` endpoint via `prometheus-fastapi-instrumentator` |
 | **Data Lake** | Dagster 14-asset medallion pipeline: bronze → silver → quality gate → dbt → gold |
 
 ---
@@ -81,13 +84,13 @@ Auger (raised ~$100M, founded by Dave Clark — former Amazon Worldwide Consumer
                              └──────┬──────┘
                                     │                 ┌────────────────┐
                         ┌───────────┴──────────┐      │ Claude Sonnet  │
-                        │      Redis :6379      │     │ 4.6            │
-                        │   pub/sub channel:    │     │                │
-                        │    "deviations"       │     │ tool_use →     │
-                        │                       │     │ structured     │
-                        │  pg_writer publishes  │     │ JSON output    │
-                        │  FastAPI subscribes   │     │                │
-                        └───────────┬───────────┘     │ SSE stream →   │
+                        │      Redis :6379     │      │ 4.6            │
+                        │   pub/sub channel:   │      │                │
+                        │    "deviations"      │      │ tool_use →     │
+                        │                      │      │ structured     │
+                        │  pg_writer publishes │      │ JSON output    │
+                        │  FastAPI subscribes  │      │                │
+                        └───────────┬──────────┘      │ SSE stream →   │
                                     │                 │ real-time      │
                                     ▼                 │ token feed     │
                              ┌─────────────┐          └───────┬────────┘
@@ -107,10 +110,22 @@ Auger (raised ~$100M, founded by Dave Clark — former Amazon Worldwide Consumer
                              │  Ontology   │
                              └─────────────┘
 
- ┌─────────────────────────────────────────────────────────────────────────────────┐
- │  CI/CD — GitHub Actions (every push to main / ujjwal)                           │
- │  ① docker compose build  ② ruff check .  ③ pytest (43 tests)  ④ tsc --noEmit │
- └─────────────────────────────────────────────────────────────────────────────────┘
+ ┌──────────────────────────────────────────────────────────────────────────────────┐
+ │  CI/CD — GitHub Actions                                                          │
+ │  ① docker compose build  ② ruff check .  ③ pytest (43 tests)  ④ tsc --noEmit  │
+ └──────────────────────────────────────────────────────────────────────────────────┘
+
+ ┌──────────────────────────────────────────────────────────────────────────────────┐
+ │  v3.0 IMPROVEMENTS                                                               │
+ │  • Forced tool_use (tool_choice=tool) — Claude always returns structured output  │
+ │  • Redis AI cache (1h TTL) — eliminates redundant Claude calls                   │
+ │  • Trust score incremental mean — proper weighted history, not running average   │
+ │  • Slack webhook — CRITICAL deviations notify on-call instantly                  │
+ │  • Prometheus /metrics — drop into Grafana for real monitoring                   │
+ │  • WebSocket exponential backoff — min(1s×2^n, 30s) on reconnect                 │
+ │  • Dashboard v3 — dot-grid bg, section labels, colored KPI accent bars,          │
+ │                   severity/status pill badges, live-pulse indicator              │
+ └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---

@@ -127,12 +127,38 @@ async def analyze_stream(
     )
 
 
+async def _get_redis_cache():
+    """Return a Redis async client for caching, or None if unavailable."""
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    try:
+        import redis.asyncio as aioredis
+        client = aioredis.from_url(redis_url, decode_responses=True)
+        await client.ping()
+        return client
+    except Exception:
+        return None
+
+
 @router.post("/analyze", response_model=dict)
 async def analyze_structured_endpoint(
     body: AnalyzeBody,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get structured AI analysis (root cause, options, recommendation)."""
+    """Get structured AI analysis (root cause, options, recommendation). Results cached 1h in Redis."""
+    cache_key = f"ai:analysis:{body.deviation_id}:{body.deviation_type}:{body.severity}"
+
+    # Check Redis cache first
+    redis = await _get_redis_cache()
+    if redis:
+        try:
+            cached = await redis.get(cache_key)
+            if cached:
+                logger.info("AI cache hit for %s", body.deviation_id)
+                await redis.aclose()
+                return json.loads(cached)
+        except Exception as e:
+            logger.warning("Redis cache read failed: %s", e)
+
     order_data, supplier_data, constraints = await _fetch_context(
         db, body.order_id, body.deviation_id
     )
@@ -144,4 +170,15 @@ async def analyze_structured_endpoint(
         "context": body.context or {},
     }
     result = analyze_structured(deviation, order_data, supplier_data, constraints)
-    return result.model_dump()
+    result_dict = result.model_dump()
+
+    # Store in Redis with 1-hour TTL
+    if redis:
+        try:
+            await redis.set(cache_key, json.dumps(result_dict), ex=3600)
+        except Exception as e:
+            logger.warning("Redis cache write failed: %s", e)
+        finally:
+            await redis.aclose()
+
+    return result_dict

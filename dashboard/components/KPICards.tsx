@@ -41,35 +41,63 @@ export function KPICards() {
     return () => clearInterval(id);
   }, [lastMessage]);
 
+  const onTimePct = data.on_time_pct ?? 0;
+  const delayed = data.delayed_count ?? 0;
+  const critical = data.critical_delays ?? 0;
+
   const stats = [
     {
       label: "Pipeline Value",
       value: `$${((data.pipeline_value ?? 0) / 1_000_000).toFixed(1)}M`,
-      color: "text-foreground",
+      sub: "total order value",
+      valueColor: "text-foreground",
+      accentColor: "#7c6af7",
     },
     {
-      label: "On-Time",
-      value: `${(data.on_time_pct ?? 0).toFixed(1)}%`,
-      color: "text-foreground",
+      label: "On-Time Rate",
+      value: `${onTimePct.toFixed(1)}%`,
+      sub: onTimePct >= 90 ? "on track" : onTimePct >= 75 ? "needs attention" : "at risk",
+      valueColor: onTimePct >= 90 ? "text-success" : onTimePct >= 75 ? "text-warning" : "text-destructive",
+      accentColor: onTimePct >= 90 ? "#34d399" : onTimePct >= 75 ? "#fbbf24" : "#f87171",
     },
     {
-      label: "Delayed",
-      value: `${data.delayed_count ?? 0}`,
-      color: (data.delayed_count ?? 0) > 0 ? "text-warning" : "text-foreground",
+      label: "Delayed Orders",
+      value: String(delayed),
+      sub: delayed > 0 ? "require action" : "all on schedule",
+      valueColor: delayed > 0 ? "text-warning" : "text-foreground",
+      accentColor: delayed > 0 ? "#fbbf24" : "#34d399",
     },
     {
-      label: "Critical",
-      value: `${data.critical_delays ?? 0}`,
-      color: (data.critical_delays ?? 0) > 0 ? "text-destructive" : "text-foreground",
+      label: "Critical Alerts",
+      value: String(critical),
+      sub: critical > 0 ? "escalation required" : "no critical alerts",
+      valueColor: critical > 0 ? "text-destructive" : "text-foreground",
+      accentColor: critical > 0 ? "#f87171" : "#34d399",
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-border rounded-lg overflow-hidden">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       {stats.map((s) => (
-        <div key={s.label} className="bg-card px-5 py-4">
-          <p className="text-xs text-mutedForeground mb-1">{s.label}</p>
-          <p className={`text-2xl font-semibold tabular-nums ${s.color}`}>{s.value}</p>
+        <div
+          key={s.label}
+          className="relative bg-card rounded-xl overflow-hidden"
+          style={{ border: "1px solid rgba(255,255,255,0.07)" }}
+        >
+          {/* Left accent bar */}
+          <div
+            className="absolute left-0 top-0 bottom-0 w-0.5"
+            style={{ background: s.accentColor, opacity: 0.8 }}
+          />
+          <div className="px-5 py-5">
+            <p className="text-[11px] font-medium text-mutedForeground uppercase tracking-[0.08em] mb-3">
+              {s.label}
+            </p>
+            <p className={`text-[28px] font-bold tabular-nums leading-none ${s.valueColor}`}>
+              {s.value}
+            </p>
+            <p className="text-[11px] text-mutedForeground mt-2">{s.sub}</p>
+          </div>
         </div>
       ))}
     </div>

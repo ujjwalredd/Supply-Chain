@@ -49,6 +49,7 @@ DATABASE_URL = os.getenv(
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 REDIS_CHANNEL = "deviations"
 BATCH_SIZE = int(os.getenv("PG_WRITER_BATCH_SIZE", "10"))
+SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "")
 
 # Deviation thresholds (match pipeline/assets.py logic)
 DELAY_HIGH_THRESHOLD = 7     # > 7 days = HIGH
@@ -262,16 +263,42 @@ def _insert_deviations(session, deviations: list[dict]) -> list[dict]:
     return inserted
 
 
+def _send_slack_alert(deviation: dict) -> None:
+    """Send a Slack webhook notification for CRITICAL deviations."""
+    if not SLACK_WEBHOOK_URL:
+        return
+    try:
+        import urllib.request
+        message = (
+            f":rotating_light: *CRITICAL Supply Chain Alert*\n"
+            f"*Type:* {deviation['type']}\n"
+            f"*Order:* {deviation['order_id']}\n"
+            f"*Action:* {deviation.get('recommended_action', 'N/A')}"
+        )
+        data = json.dumps({"text": message}).encode()
+        req = urllib.request.Request(
+            SLACK_WEBHOOK_URL,
+            data=data,
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(req, timeout=5)
+    except Exception as e:
+        logger.warning("Slack alert failed: %s", e)
+
+
 def _publish_deviations(redis_client, deviations: list[dict]) -> None:
     """Publish detected deviations to Redis channel for WebSocket broadcast."""
-    if not redis_client or not deviations:
+    if not deviations:
         return
     for d in deviations:
-        payload = json.dumps({"type": "deviation", "data": d})
-        try:
-            redis_client.publish(REDIS_CHANNEL, payload)
-        except Exception as e:
-            logger.warning("Redis publish failed: %s", e)
+        if redis_client:
+            payload = json.dumps({"type": "deviation", "data": d})
+            try:
+                redis_client.publish(REDIS_CHANNEL, payload)
+            except Exception as e:
+                logger.warning("Redis publish failed: %s", e)
+        if d.get("severity") == "CRITICAL":
+            _send_slack_alert(d)
 
 
 def _update_supplier_stats(session, events: list[OrderEvent]) -> None:
@@ -296,7 +323,9 @@ def _update_supplier_stats(session, events: list[OrderEvent]) -> None:
                 SET
                     total_orders = total_orders + :total_inc,
                     delayed_orders = delayed_orders + :delayed_inc,
-                    avg_delay_days = (avg_delay_days + :avg_delay) / 2.0,
+                    avg_delay_days = (
+                        avg_delay_days * total_orders + :avg_delay * :total_inc
+                    ) / GREATEST(1, total_orders + :total_inc),
                     trust_score = GREATEST(0.0, LEAST(1.0,
                         1.0 - ((delayed_orders + :delayed_inc)::float
                                / GREATEST(1, total_orders + :total_inc)) * 0.5

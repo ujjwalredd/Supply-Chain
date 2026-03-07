@@ -225,7 +225,7 @@ def analyze_structured(
             max_tokens=1024,
             system=SYSTEM_PROMPT,
             tools=[_ANALYSIS_TOOL],
-            tool_choice={"type": "auto"},
+            tool_choice={"type": "tool", "name": "supply_chain_analysis"},
             messages=[{"role": "user", "content": prompt}],
         )
 
@@ -241,34 +241,8 @@ def analyze_structured(
                 result.output_tokens = output_tokens
                 return result
 
-        # Fallback: Claude responded with text instead of a tool call
-        text = ""
-        for block in response.content:
-            if hasattr(block, "text"):
-                text += block.text
-        if text.strip():
-            clean = text.strip()
-            if "```" in clean:
-                for part in clean.split("```"):
-                    part = part.strip().lstrip("json").strip()
-                    try:
-                        data = json.loads(part)
-                        result = AIAnalysisOutput.model_validate(data)
-                        result.input_tokens = input_tokens
-                        result.output_tokens = output_tokens
-                        return result
-                    except Exception:
-                        continue
-            try:
-                data = json.loads(clean)
-                result = AIAnalysisOutput.model_validate(data)
-                result.input_tokens = input_tokens
-                result.output_tokens = output_tokens
-                return result
-            except Exception:
-                pass
-
-        logger.warning("Claude returned no tool_use block and no parseable JSON")
+        # tool_choice=tool forces Claude to always call the tool, so no fallback needed
+        logger.warning("Claude returned no tool_use block (unexpected with forced tool_choice)")
         return AIAnalysisOutput(
             root_cause="Analysis unavailable — Claude did not return structured output",
             financial_impact="Unknown",
