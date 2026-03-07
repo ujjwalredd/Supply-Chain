@@ -359,7 +359,6 @@ def run() -> None:
         enable_auto_commit=True,
         group_id="pg-writer",
         value_deserializer=lambda v: json.loads(v.decode("utf-8")),
-        consumer_timeout_ms=5000,
     )
 
     logger.info(
