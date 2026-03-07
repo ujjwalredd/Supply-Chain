@@ -28,7 +28,7 @@ Auger (raised ~$100M, founded by Dave Clark — former Amazon Worldwide Consumer
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                           SUPPLY CHAIN AI OS — v2.0                                 │
+│                           SUPPLY CHAIN AI OS — v3.0                                 │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 
  ┌────────────────-─┐     ┌─────────────────────────────────────────────────────────┐
@@ -112,7 +112,7 @@ Auger (raised ~$100M, founded by Dave Clark — former Amazon Worldwide Consumer
 
  ┌──────────────────────────────────────────────────────────────────────────────────┐
  │  CI/CD — GitHub Actions                                                          │
- │  ① docker compose build  ② ruff check .  ③ pytest (43 tests)  ④ tsc --noEmit  │
+ │  ① docker compose build  ② ruff check .  ③ pytest (43 tests)  ④ tsc --noEmit   │
  └──────────────────────────────────────────────────────────────────────────────────┘
 
  ┌──────────────────────────────────────────────────────────────────────────────────┐
@@ -123,8 +123,8 @@ Auger (raised ~$100M, founded by Dave Clark — former Amazon Worldwide Consumer
  │  • Slack webhook — CRITICAL deviations notify on-call instantly                  │
  │  • Prometheus /metrics — drop into Grafana for real monitoring                   │
  │  • WebSocket exponential backoff — min(1s×2^n, 30s) on reconnect                 │
- │  • Dashboard v3 — dot-grid bg, section labels, colored KPI accent bars,          │
- │                   severity/status pill badges, live-pulse indicator              │
+ │  • Dashboard v3 — sticky topnav with live pill, severity-colored left bars,      │
+ │                   shimmer skeleton loaders, rgba border system, clean dark UI   │
  └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
