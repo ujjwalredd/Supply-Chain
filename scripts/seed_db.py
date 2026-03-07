@@ -77,8 +77,6 @@ def seed() -> None:
         orders_added = 0
         order_ids_for_deviations: list[str] = []
 
-        statuses = ["PENDING", "IN_TRANSIT", "DELIVERED", "DELAYED", "CANCELLED"]
-
         for i in range(120):
             order_id = f"ORD-{base_ts.strftime('%Y%m%d')}-{i+1:06d}"
             if db.get(Order, order_id):

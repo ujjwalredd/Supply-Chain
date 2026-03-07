@@ -1,9 +1,5 @@
 """Unit tests for ingestion/pg_writer.py — no live Kafka or Postgres required."""
 
-from datetime import datetime, timezone
-
-import pytest
-
 from ingestion.pg_writer import _detect_deviations
 from ingestion.schemas import OrderEvent
 
