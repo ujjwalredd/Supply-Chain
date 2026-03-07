@@ -111,11 +111,6 @@ Auger (raised ~$100M, founded by Dave Clark — former Amazon Worldwide Consumer
                              └─────────────┘
 
  ┌──────────────────────────────────────────────────────────────────────────────────┐
- │  CI/CD — GitHub Actions                                                          │
- │  ① docker compose build  ② ruff check .  ③ pytest (43 tests)  ④ tsc --noEmit   │
- └──────────────────────────────────────────────────────────────────────────────────┘
-
- ┌──────────────────────────────────────────────────────────────────────────────────┐
  │  v3.0 IMPROVEMENTS                                                               │
  │  • Forced tool_use (tool_choice=tool) — Claude always returns structured output  │
  │  • Redis AI cache (1h TTL) — eliminates redundant Claude calls                   │
@@ -124,7 +119,7 @@ Auger (raised ~$100M, founded by Dave Clark — former Amazon Worldwide Consumer
  │  • Prometheus /metrics — drop into Grafana for real monitoring                   │
  │  • WebSocket exponential backoff — min(1s×2^n, 30s) on reconnect                 │
  │  • Dashboard v3 — sticky topnav with live pill, severity-colored left bars,      │
- │                   shimmer skeleton loaders, rgba border system, clean dark UI   │
+ │                   shimmer skeleton loaders, rgba border system, clean dark UI    │
  └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
