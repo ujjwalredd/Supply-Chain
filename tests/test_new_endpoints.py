@@ -1,6 +1,6 @@
 """Tests for /alerts/trend and /actions/stats endpoints."""
 
-from datetime import date, timedelta
+from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
