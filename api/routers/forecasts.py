@@ -2,6 +2,7 @@
 
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -13,9 +14,18 @@ router = APIRouter()
 
 GOLD_PATH = os.getenv("GOLD_PATH", "data/gold")
 
+# Module-level cache: avoid re-reading parquet on every request (TTL = 5 min)
+_FORECAST_CACHE: list[dict[str, Any]] = []
+_FORECAST_CACHE_AT: float = 0.0
+_FORECAST_CACHE_TTL: float = 300.0
+
 
 def _read_forecasted_risks() -> list[dict[str, Any]]:
-    """Read forecasted_risks parquet from gold layer."""
+    """Read forecasted_risks parquet from gold layer, cached for 5 minutes."""
+    global _FORECAST_CACHE, _FORECAST_CACHE_AT
+    if _FORECAST_CACHE and (time.monotonic() - _FORECAST_CACHE_AT) < _FORECAST_CACHE_TTL:
+        return _FORECAST_CACHE
+
     parquet_file = Path(GOLD_PATH) / "forecasted_risks" / "data.parquet"
     if not parquet_file.exists():
         logger.warning("forecasted_risks parquet not found at %s", parquet_file)
@@ -23,7 +33,6 @@ def _read_forecasted_risks() -> list[dict[str, Any]]:
     try:
         import pandas as pd
         df = pd.read_parquet(parquet_file)
-        # Keep only essential columns for the API
         keep = [c for c in [
             "order_id", "supplier_id", "days_to_delivery", "risk_score",
             "delay_probability", "confidence", "risk_reason",
@@ -32,10 +41,11 @@ def _read_forecasted_risks() -> list[dict[str, Any]]:
         ] if c in df.columns]
         df = df[keep].copy()
         df = df.fillna("")
-        # Convert datetime columns to ISO strings for JSON serialisation
         for col in df.select_dtypes(include=["datetime64[ns, UTC]", "datetime64[ns]"]).columns:
             df[col] = df[col].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-        return df.to_dict(orient="records")
+        _FORECAST_CACHE = df.to_dict(orient="records")
+        _FORECAST_CACHE_AT = time.monotonic()
+        return _FORECAST_CACHE
     except Exception as exc:
         logger.warning("Could not read forecasted_risks parquet: %s", exc)
         return []
@@ -44,7 +54,7 @@ def _read_forecasted_risks() -> list[dict[str, Any]]:
 @router.get("")
 async def list_forecasted_risks(
     limit: int = Query(50, ge=1, le=500),
-    min_risk_score: float = Query(0.0, description="Filter to orders with risk_score >= N"),
+    min_risk_score: float = Query(0.0, ge=0.0, le=1.0, description="Filter to orders with risk_score >= N"),
 ):
     """
     Return orders predicted to be at risk of delay, ranked by risk_score.

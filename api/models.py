@@ -1,11 +1,15 @@
 """SQLAlchemy models for operational database."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class Base(DeclarativeBase):
@@ -33,7 +37,7 @@ class Order(Base):
     delay_days: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(32), index=True)
     inventory_level: Mapped[float] = mapped_column(Float)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     deviations = relationship("Deviation", back_populates="order")
 
@@ -52,9 +56,9 @@ class Supplier(Base):
     avg_delay_days: Mapped[float] = mapped_column(Float, default=0.0)
     contract_terms: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     capacity_limits: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
 
 
@@ -71,7 +75,7 @@ class Deviation(Base):
     ai_analysis: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     recommended_action: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     executed: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     order = relationship("Order", back_populates="deviations")
 
@@ -87,7 +91,7 @@ class OntologyConstraint(Base):
     constraint_type: Mapped[str] = mapped_column(String(64))
     value: Mapped[float] = mapped_column(Float)
     hard_limit: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class PendingAction(Base):
@@ -101,5 +105,5 @@ class PendingAction(Base):
     description: Mapped[str] = mapped_column(Text)
     payload: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="PENDING")  # PENDING | COMPLETED | CANCELLED
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

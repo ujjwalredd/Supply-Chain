@@ -10,10 +10,17 @@ import pytest
 from api.routers.forecasts import _read_forecasted_risks
 
 
+def _reset_cache():
+    """Reset module-level cache so each test starts fresh."""
+    import api.routers.forecasts as fr
+    fr._FORECAST_CACHE = []
+    fr._FORECAST_CACHE_AT = 0.0
+
+
 def test_read_forecasted_risks_returns_empty_when_no_file():
     """Should return [] when the parquet file is missing."""
+    _reset_cache()
     with patch.dict(os.environ, {"GOLD_PATH": "/nonexistent/path/that/does/not/exist"}):
-        # Re-import to pick up new env var (module-level var already set, patch directly)
         import api.routers.forecasts as fr_module
         original = fr_module.GOLD_PATH
         fr_module.GOLD_PATH = "/nonexistent/path/that/does/not/exist"
@@ -26,7 +33,7 @@ def test_read_forecasted_risks_returns_empty_when_no_file():
 
 def test_read_forecasted_risks_reads_parquet(tmp_path):
     """Should parse a valid parquet and return records."""
-    # Build minimal parquet matching the expected schema
+    _reset_cache()
     df = pd.DataFrame([{
         "order_id": "ORD001",
         "supplier_id": "PLANT01",
@@ -63,6 +70,7 @@ def test_read_forecasted_risks_reads_parquet(tmp_path):
 
 def test_read_forecasted_risks_handles_missing_columns(tmp_path):
     """Should tolerate parquet with only a subset of expected columns."""
+    _reset_cache()
     df = pd.DataFrame([{
         "order_id": "ORD002",
         "supplier_id": "PLANT02",
@@ -85,6 +93,7 @@ def test_read_forecasted_risks_handles_missing_columns(tmp_path):
 
 def test_read_forecasted_risks_multiple_rows(tmp_path):
     """Multiple rows should all be returned."""
+    _reset_cache()
     rows = [
         {"order_id": f"ORD{i:03d}", "supplier_id": "PLANT03",
          "risk_score": float(1000 - i * 100), "delay_probability": 0.3}

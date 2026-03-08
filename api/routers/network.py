@@ -3,6 +3,7 @@
 import csv
 import logging
 import os
+import time
 from pathlib import Path
 
 from fastapi import APIRouter
@@ -12,6 +13,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "data/source"))
+
+# Module-level cache: CSVs rarely change, cache for 10 minutes
+_NETWORK_CACHE: dict | None = None
+_NETWORK_CACHE_AT: float = 0.0
+_NETWORK_CACHE_TTL: float = 600.0
 
 
 def _load_plant_ports() -> list[dict]:
@@ -44,38 +50,28 @@ def _load_products_per_plant() -> list[dict]:
     return rows
 
 
-@router.get("")
-async def get_network_graph():
-    """
-    Feature 6: Return Plant → Port supply chain topology as nodes + edges.
-
-    Nodes: plants, ports
-    Edges: plant→port (from PlantPorts.csv)
-    """
+def _build_graph() -> dict:
+    """Build the network graph from CSVs. Result is cached at call site."""
     plant_ports = _load_plant_ports()
     products_per_plant = _load_products_per_plant()
 
     nodes: dict[str, dict] = {}
     edges: list[dict] = []
 
-    # Build plant→port edges
     for row in plant_ports:
         plant = row.get("Plant_Code") or row.get("Plant Code") or row.get("plant_code") or row.get("Plant") or ""
         port = row.get("Ports") or row.get("Shipping Port") or row.get("port") or row.get("Port") or ""
         if not plant or not port:
             continue
-
         plant_id = f"plant:{plant}"
         port_id = f"port:{port}"
-
         if plant_id not in nodes:
             nodes[plant_id] = {"id": plant_id, "label": plant, "type": "plant"}
         if port_id not in nodes:
             nodes[port_id] = {"id": port_id, "label": port, "type": "port"}
-
         edges.append({"source": plant_id, "target": port_id, "label": "ships_via"})
 
-    # Add products per plant as metadata on plant nodes
+    # Build plant→products mapping in a single pass
     plant_products: dict[str, list[str]] = {}
     for row in products_per_plant:
         plant = row.get("Plant Code") or row.get("plant_code") or row.get("Plant") or ""
@@ -85,7 +81,7 @@ async def get_network_graph():
 
     for plant_id, products in plant_products.items():
         if plant_id in nodes:
-            nodes[plant_id]["products"] = products[:10]  # cap at 10
+            nodes[plant_id]["products"] = products[:10]
 
     return {
         "nodes": list(nodes.values()),
@@ -96,3 +92,19 @@ async def get_network_graph():
             "edge_count": len(edges),
         },
     }
+
+
+@router.get("")
+async def get_network_graph():
+    """
+    Feature 6: Return Plant → Port supply chain topology as nodes + edges.
+
+    Nodes: plants, ports
+    Edges: plant→port (from PlantPorts.csv)
+    """
+    global _NETWORK_CACHE, _NETWORK_CACHE_AT
+    if _NETWORK_CACHE and (time.monotonic() - _NETWORK_CACHE_AT) < _NETWORK_CACHE_TTL:
+        return _NETWORK_CACHE
+    _NETWORK_CACHE = _build_graph()
+    _NETWORK_CACHE_AT = time.monotonic()
+    return _NETWORK_CACHE

@@ -561,7 +561,7 @@ docker compose logs pg-writer --tail=20
 Usually a Kafka timing issue on first boot — it self-recovers once Kafka is fully ready. If it persists: `docker compose restart pg-writer`.
 
 **`docker compose` uses wrong file**
-Using `docker compose` with no `-f` flag always uses `docker-compose.yml` (the full stack). That is correct.
+Using `docker compose` with no `-f` flag always uses `docker-compose.yml` (the full 11-service stack). That is correct — the minimal compose file has been removed.
 
 ---
 
@@ -637,7 +637,7 @@ supply-chain-os/
 │   └── entrypoint.sh              # alembic upgrade head → seed_db → uvicorn
 ├── .github/
 │   └── workflows/ci.yml           # docker build + ruff + pytest (50) + tsc --noEmit
-├── docker-compose.yml             # Full 10-service production stack
+├── docker-compose.yml             # Full 11-service production stack (incl. Grafana)
 ├── requirements-api.txt           # FastAPI + SQLAlchemy + Anthropic + Redis + ...
 ├── requirements-ingestion.txt     # Kafka + Pydantic + Delta Lake + SQLAlchemy + Redis
 ├── requirements-dagster.txt       # Dagster + PySpark + dbt + Great Expectations

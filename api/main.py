@@ -34,8 +34,9 @@ CORS_ORIGINS = [o.strip() for o in _CORS_ORIGINS_RAW.split(",") if o.strip()]
 # In-process fallback subscriber set (used when Redis is unavailable)
 _deviation_subscribers: set[WebSocket] = set()
 
-# Redis async client (set during startup)
+# Redis async client and subscriber task (set during startup)
 _redis_client = None
+_subscriber_task: asyncio.Task | None = None
 
 
 async def _get_async_redis():
@@ -53,15 +54,20 @@ async def _get_async_redis():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
-    global _redis_client
+    global _redis_client, _subscriber_task
     logger.info("Starting Supply Chain API...")
     await init_db()
     _redis_client = await _get_async_redis()
     if _redis_client:
-        # Start Redis subscriber task for broadcasting to connected WebSocket clients
-        asyncio.create_task(_redis_subscriber_loop())
+        _subscriber_task = asyncio.create_task(_redis_subscriber_loop())
         logger.info("Redis pub/sub enabled on channel '%s'", REDIS_CHANNEL)
     yield
+    if _subscriber_task:
+        _subscriber_task.cancel()
+        try:
+            await _subscriber_task
+        except asyncio.CancelledError:
+            pass
     if _redis_client:
         await _redis_client.aclose()
     logger.info("Shutting down Supply Chain API...")
@@ -97,17 +103,26 @@ app.include_router(network.router, prefix="/network", tags=["network"])
 
 
 async def _redis_subscriber_loop() -> None:
-    """Subscribe to Redis channel and forward messages to WebSocket clients."""
+    """Subscribe to Redis channel and forward messages to WebSocket clients.
+    Auto-restarts on error with exponential backoff (max 30 s).
+    """
     if not _redis_client:
         return
-    try:
-        pubsub = _redis_client.pubsub()
-        await pubsub.subscribe(REDIS_CHANNEL)
-        async for message in pubsub.listen():
-            if message["type"] == "message":
-                await _broadcast_raw(message["data"])
-    except Exception as e:
-        logger.warning("Redis subscriber loop error: %s", e)
+    backoff = 1.0
+    while True:
+        try:
+            pubsub = _redis_client.pubsub()
+            await pubsub.subscribe(REDIS_CHANNEL)
+            backoff = 1.0  # reset on successful connection
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    await _broadcast_raw(message["data"])
+        except asyncio.CancelledError:
+            return
+        except Exception as e:
+            logger.warning("Redis subscriber loop error (retrying in %.0fs): %s", backoff, e)
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 30.0)
 
 
 async def _broadcast_raw(payload: str) -> None:
