@@ -44,7 +44,7 @@ jobs:
 
   # ── Python unit tests ───────────────────────────────────────────────────
   python-tests:
-    name: Python tests (43 tests, no live services required)
+    name: Python tests (50 tests, no live services required)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
