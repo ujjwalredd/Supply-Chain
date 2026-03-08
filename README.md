@@ -359,7 +359,7 @@ pip install -r requirements-api.txt pytest pytest-asyncio httpx
 pytest tests/ -v
 ```
 
-Expected — all 43 pass, 0 warnings:
+Expected — all 43 pass:
 
 ```
 tests/test_pg_writer.py::test_no_deviation_on_clean_event           PASSED
@@ -381,7 +381,6 @@ tests/test_reasoning_engine.py::test_analysis_tool_schema_has_required_fields PA
 tests/test_reasoning_engine.py::test_analysis_tool_options_schema             PASSED
 tests/test_reasoning_engine.py::test_stream_analysis_yields_tokens            PASSED
 ... (43 total)
-43 passed in X.XXs
 ```
 
 ### API Smoke Test (stack must be running)
