@@ -32,9 +32,13 @@ const SEV: Record<string, { color: string; dot: string; text: string }> = {
   MEDIUM:   { color: "#7c6af7", dot: "bg-accent",        text: "text-accent" },
 };
 
+const SEVERITIES = ["ALL", "CRITICAL", "HIGH", "MEDIUM"] as const;
+type SeverityFilter = typeof SEVERITIES[number];
+
 export function DeviationFeed() {
   const [deviations, setDeviations] = useState<Deviation[]>([]);
   const [selected, setSelected] = useState<Deviation | null>(null);
+  const [sevFilter, setSevFilter] = useState<SeverityFilter>("ALL");
 
   const loadAlerts = useCallback(async () => {
     try {
@@ -67,7 +71,8 @@ export function DeviationFeed() {
     } catch {}
   };
 
-  const active = deviations.filter((d) => !d.executed);
+  const allActive = deviations.filter((d) => !d.executed);
+  const active = sevFilter === "ALL" ? allActive : allActive.filter((d) => d.severity === sevFilter);
 
   return (
     <>
@@ -78,11 +83,34 @@ export function DeviationFeed() {
             <p className="text-sm font-semibold text-foreground">Deviations</p>
             <p className="text-[11px] text-mutedForeground mt-0.5">Active supply chain alerts</p>
           </div>
-          {active.length > 0 && (
+          {allActive.length > 0 && (
             <span className="text-[11px] font-semibold tabular-nums px-2 py-0.5 rounded-md" style={{ background: "rgba(248,113,113,0.1)", color: "#f87171" }}>
-              {active.length} active
+              {allActive.length} active
             </span>
           )}
+        </div>
+
+        {/* Severity filter tabs */}
+        <div className="flex gap-1 px-5 py-2.5" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+          {SEVERITIES.map((sev) => {
+            const isActive = sevFilter === sev;
+            const sevColor = sev === "CRITICAL" ? "#f87171" : sev === "HIGH" ? "#fbbf24" : sev === "MEDIUM" ? "#7c6af7" : "#a0a0b0";
+            return (
+              <button
+                key={sev}
+                type="button"
+                onClick={() => setSevFilter(sev)}
+                className="px-2.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide transition-colors"
+                style={{
+                  background: isActive ? (sev === "ALL" ? "rgba(255,255,255,0.1)" : `${sevColor}22`) : "transparent",
+                  color: isActive ? (sev === "ALL" ? "#e0e0f0" : sevColor) : "rgba(160,160,176,0.6)",
+                  border: `1px solid ${isActive ? (sev === "ALL" ? "rgba(255,255,255,0.15)" : `${sevColor}44`) : "transparent"}`,
+                }}
+              >
+                {sev}
+              </button>
+            );
+          })}
         </div>
 
         {/* List */}

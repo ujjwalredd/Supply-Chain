@@ -186,13 +186,17 @@ def seed() -> None:
             ).scalar_one_or_none()
             if existing:
                 continue
+            # Set created_at close to detected_at so MTTR is realistic (5–25 min)
+            resolution_minutes = 5 + (j - 10) * 5  # 5, 10, 15, 20, 25
+            action_created_at = dev.detected_at + timedelta(minutes=resolution_minutes)
             db.add(PendingAction(
                 deviation_id=dev_id,
                 action_type="EXECUTE_RECOMMENDATION",
                 description=dev.recommended_action or "AI recommendation executed",
                 payload={"deviation_type": dev.type, "severity": dev.severity},
                 status="COMPLETED",
-                completed_at=base_ts - timedelta(hours=j),
+                created_at=action_created_at,
+                completed_at=action_created_at + timedelta(minutes=2),
             ))
             actions_added += 1
 

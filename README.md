@@ -127,6 +127,12 @@ Auger (raised ~$100M, founded by Dave Clark — former Amazon Worldwide Consumer
  │  • MTTR KPI card — avg time from detection to resolution (server-computed)       │
  │  • /alerts/trend endpoint — daily deviation counts grouped by severity           │
  │  • /actions/stats endpoint — MTTR computed via SQL join on deviations table      │
+ │  • AI panel converted to right-side drawer (420px) — no more full-screen modal   │
+ │  • Severity filter (ALL/CRITICAL/HIGH/MEDIUM) on Deviation feed                  │
+ │  • CSV export button on Order table — downloads visible rows as dated .csv       │
+ │  • Grafana dashboard (port 3002) — pre-built supply chain panels, PostgreSQL     │
+ │    datasource auto-provisioned; stat cards, barchart, supplier table, alert log  │
+ │  • Seed timestamps fixed — MTTR now realistic (~15 min vs hours before)          │
  └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -269,9 +275,16 @@ supply-chain-dashboard         Up             ← port 3000
 | Dashboard | http://localhost:3000 |
 | API + Swagger | http://localhost:8000/docs |
 | Dagster UI | http://localhost:3001 |
+| Grafana | http://localhost:3002 (admin / admin) |
 | MinIO Console | http://localhost:9001 |
 
 MinIO login: `minioadmin` / `minioadmin`
+
+### Grafana Dashboard
+
+Pre-built supply chain dashboard auto-provisioned with a PostgreSQL datasource. Includes stat cards, 7-day deviation bar chart, supplier trust score table, and active alert log.
+
+![Grafana Dashboard](assets/Grafana.png)
 
 ---
 
@@ -359,7 +372,7 @@ pip install -r requirements-api.txt pytest pytest-asyncio httpx
 pytest tests/ -v
 ```
 
-Expected — all 43 pass:
+Expected — all 50 pass:
 
 ```
 tests/test_pg_writer.py::test_no_deviation_on_clean_event           PASSED
@@ -380,7 +393,14 @@ tests/test_reasoning_engine.py::test_analyze_structured_no_api_key            PA
 tests/test_reasoning_engine.py::test_analysis_tool_schema_has_required_fields PASSED
 tests/test_reasoning_engine.py::test_analysis_tool_options_schema             PASSED
 tests/test_reasoning_engine.py::test_stream_analysis_yields_tokens            PASSED
-... (43 total)
+tests/test_new_endpoints.py::test_alerts_trend_returns_7_days       PASSED
+tests/test_new_endpoints.py::test_alerts_trend_fills_severity_counts PASSED
+tests/test_new_endpoints.py::test_alerts_trend_unknown_severity_maps_to_medium PASSED
+tests/test_new_endpoints.py::test_alerts_trend_days_param_controls_length PASSED
+tests/test_new_endpoints.py::test_actions_stats_returns_mttr        PASSED
+tests/test_new_endpoints.py::test_actions_stats_no_completed_actions PASSED
+tests/test_new_endpoints.py::test_actions_stats_mttr_rounds_to_one_decimal PASSED
+... (50 total)
 ```
 
 ### API Smoke Test (stack must be running)
@@ -616,7 +636,7 @@ supply-chain-os/
 │   ├── Producer.Dockerfile        # Used by both producer and pg-writer
 │   └── entrypoint.sh              # alembic upgrade head → seed_db → uvicorn
 ├── .github/
-│   └── workflows/ci.yml           # docker build + ruff + pytest (43) + tsc --noEmit
+│   └── workflows/ci.yml           # docker build + ruff + pytest (50) + tsc --noEmit
 ├── docker-compose.yml             # Full 10-service production stack
 ├── requirements-api.txt           # FastAPI + SQLAlchemy + Anthropic + Redis + ...
 ├── requirements-ingestion.txt     # Kafka + Pydantic + Delta Lake + SQLAlchemy + Redis

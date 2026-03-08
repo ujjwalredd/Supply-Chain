@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { fetchOrders } from "@/lib/api";
+import { Download } from "lucide-react";
 
 type Order = {
   order_id: string;
@@ -19,6 +20,28 @@ const statusBadge: Record<string, { bg: string; color: string }> = {
   PENDING:    { bg: "rgba(255,255,255,0.05)", color: "#52526a" },
   CANCELLED:  { bg: "rgba(255,255,255,0.05)", color: "#52526a" },
 };
+
+function exportCSV(orders: Order[]) {
+  const header = ["Order ID", "Supplier", "Product", "Order Value", "Delay Days", "Status"];
+  const rows = orders.map((o) => [
+    o.order_id,
+    o.supplier_id,
+    o.product,
+    (o.order_value ?? 0).toFixed(2),
+    String(o.delay_days ?? 0),
+    o.status,
+  ]);
+  const csv = [header, ...rows]
+    .map((r) => r.map((v) => `"${v.replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export function OrderTable() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -40,20 +63,35 @@ export function OrderTable() {
           <p className="text-sm font-semibold text-foreground">Orders</p>
           <p className="text-[11px] text-mutedForeground mt-0.5">{orders.length} orders shown</p>
         </div>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="text-[11px] font-medium text-mutedForeground rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent transition-colors"
-          style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}
-          aria-label="Filter by status"
-        >
-          <option value="">All statuses</option>
-          <option value="PENDING">Pending</option>
-          <option value="IN_TRANSIT">In Transit</option>
-          <option value="DELIVERED">Delivered</option>
-          <option value="DELAYED">Delayed</option>
-          <option value="CANCELLED">Cancelled</option>
-        </select>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => exportCSV(orders)}
+            disabled={orders.length === 0}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors disabled:opacity-40"
+            style={{ background: "rgba(124,106,247,0.12)", color: "#7c6af7", border: "1px solid rgba(124,106,247,0.2)" }}
+            onMouseEnter={(e) => { if (orders.length > 0) (e.currentTarget as HTMLElement).style.background = "rgba(124,106,247,0.2)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(124,106,247,0.12)"; }}
+            title="Export visible orders as CSV"
+          >
+            <Download className="h-3 w-3" />
+            Export CSV
+          </button>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="text-[11px] font-medium text-mutedForeground rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent transition-colors"
+            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}
+            aria-label="Filter by status"
+          >
+            <option value="">All statuses</option>
+            <option value="PENDING">Pending</option>
+            <option value="IN_TRANSIT">In Transit</option>
+            <option value="DELIVERED">Delivered</option>
+            <option value="DELAYED">Delayed</option>
+            <option value="CANCELLED">Cancelled</option>
+          </select>
+        </div>
       </div>
 
       <div className="overflow-x-auto max-h-[320px] overflow-y-auto">

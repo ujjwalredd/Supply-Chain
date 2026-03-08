@@ -1,0 +1,148 @@
+{
+  "id": null,
+  "uid": "supply-chain-os",
+  "title": "Supply Chain OS",
+  "tags": ["supply-chain"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-7d", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Total Orders",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "uid": "supply_chain_pg" },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS value FROM orders",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "purple", "value": null }] } } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Delayed Orders",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "datasource": { "uid": "supply_chain_pg" },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS value FROM orders WHERE delay_days > 0",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 10 }] } } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Active Deviations",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "datasource": { "uid": "supply_chain_pg" },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS value FROM deviations WHERE executed = false",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 3 }, { "color": "red", "value": 8 }] } } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Critical Alerts",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "datasource": { "uid": "supply_chain_pg" },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS value FROM deviations WHERE severity = 'CRITICAL' AND executed = false",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } } }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "MTTR (minutes)",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "datasource": { "uid": "supply_chain_pg" },
+      "targets": [
+        {
+          "rawSql": "SELECT ROUND(AVG(EXTRACT(EPOCH FROM (pa.created_at - d.detected_at)) / 60.0)::numeric, 1) AS value FROM pending_actions pa JOIN deviations d ON pa.deviation_id = d.deviation_id WHERE pa.status = 'COMPLETED'",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "m", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 60 }, { "color": "red", "value": 240 }] } } }
+    },
+    {
+      "id": 6,
+      "type": "barchart",
+      "title": "Deviations by Severity (Last 7 Days)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "uid": "supply_chain_pg" },
+      "targets": [
+        {
+          "rawSql": "SELECT DATE(detected_at) AS time, severity, COUNT(*) AS count FROM deviations WHERE detected_at >= NOW() - INTERVAL '7 days' GROUP BY DATE(detected_at), severity ORDER BY time",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "xField": "time", "stacking": "normal", "fillOpacity": 80 },
+      "fieldConfig": { "defaults": { "custom": { "lineWidth": 1, "fillOpacity": 80 } } }
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Supplier Trust Scores",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "uid": "supply_chain_pg" },
+      "targets": [
+        {
+          "rawSql": "SELECT name, region, ROUND(trust_score::numeric * 100, 1) AS trust_pct, total_orders, delayed_orders, ROUND(avg_delay_days::numeric, 1) AS avg_delay FROM suppliers ORDER BY trust_score ASC",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": { "sortBy": [{ "displayName": "trust_pct", "desc": false }] },
+      "fieldConfig": {
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "trust_pct" }, "properties": [{ "id": "custom.displayMode", "value": "color-background" }, { "id": "thresholds", "value": { "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 70 }, { "color": "green", "value": 85 }] } }] }
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Recent Active Deviations",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "datasource": { "uid": "supply_chain_pg" },
+      "targets": [
+        {
+          "rawSql": "SELECT d.deviation_id, d.order_id, d.type, d.severity, d.detected_at, d.recommended_action FROM deviations d WHERE d.executed = false ORDER BY d.detected_at DESC LIMIT 20",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "severity" }, "properties": [{ "id": "custom.displayMode", "value": "color-text" }, { "id": "mappings", "value": [{ "type": "value", "options": { "CRITICAL": { "color": "red" }, "HIGH": { "color": "orange" }, "MEDIUM": { "color": "purple" } } }] }] }
+        ]
+      }
+    }
+  ]
+}
