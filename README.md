@@ -1,7 +1,8 @@
 # Supply Chain AI Operating System — v4.0 
 
-Landing page: https://supply-chain-silk.vercel.app
-!(assets/landing_page.png)
+**Landing page:** [https://supply-chain-silk.vercel.app](https://supply-chain-silk.vercel.app)
+
+![Landing page](assets/landing_page.png)
 
 > Prototype inspired by [Auger](https://auger.com) — an AI-native supply chain control tower that collapses the gap between signal and execution.
 
