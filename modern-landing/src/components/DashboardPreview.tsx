@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Network, ChevronRight, Cpu, CheckCircle2 } from 'lucide-react';
+import { AnimatedNumber, AnimatedDecimal } from './AnimatedNumber';
+import { TiltCard } from './TiltCard';
 
 const staggerItem = {
   hidden: { opacity: 0, y: 20 },
@@ -74,22 +76,35 @@ export function DashboardPreview() {
                   
                   {/* KPIs */}
                   <div className="grid grid-cols-3 gap-6">
-                    {[
-                      { label: 'Pipeline Value', value: '$84.2M', sub: '+1.2% this week', alert: false },
-                      { label: 'Avg Resolution Time', value: '0.1s', sub: 'vs 48hrs manual', alert: false },
-                      { label: 'Critical Deviations', value: '3', sub: 'Requires Review', alert: true },
-                    ].map((kpi, i) => (
-                      <motion.div 
-                        initial={{ opacity: 0, y: 20 }} 
-                        animate={{ opacity: 1, y: 0 }} 
-                        transition={{ delay: 0.1 * i, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                        key={i} className={`p-5 rounded-xl border bg-white shadow-sm ${kpi.alert ? 'border-danger/30' : 'border-black/5'}`}
-                      >
-                        <div className="text-xs text-steel font-medium mb-1">{kpi.label}</div>
-                        <div className={`text-2xl font-semibold tracking-tight ${kpi.alert ? 'text-danger' : 'text-ink'}`}>{kpi.value}</div>
-                        <div className={`text-[10px] mt-2 font-medium ${kpi.alert ? 'text-danger/80' : 'text-steel'}`}>{kpi.sub}</div>
-                      </motion.div>
-                    ))}
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.5, ease: [0.16,1,0.3,1] }}
+                    >
+                      <TiltCard className="p-5 rounded-xl border bg-white shadow-sm border-black/5 h-full">
+                        <div className="text-xs text-steel font-medium mb-1">Pipeline Value</div>
+                        <div className="text-2xl font-semibold tracking-tight text-ink">$<AnimatedDecimal value={84.2} />M</div>
+                        <div className="text-[10px] mt-2 font-medium text-steel">+1.2% this week</div>
+                      </TiltCard>
+                    </motion.div>
+                    
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2, duration: 0.5, ease: [0.16,1,0.3,1] }}
+                    >
+                      <TiltCard className="p-5 rounded-xl border bg-white shadow-sm border-black/5 h-full">
+                        <div className="text-xs text-steel font-medium mb-1">Avg Resolution Time</div>
+                        <div className="text-2xl font-semibold tracking-tight text-ink"><AnimatedDecimal value={0.1} />s</div>
+                        <div className="text-[10px] mt-2 font-medium text-steel">vs 48hrs manual</div>
+                      </TiltCard>
+                    </motion.div>
+                    
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3, duration: 0.5, ease: [0.16,1,0.3,1] }}
+                    >
+                      <TiltCard className="p-5 rounded-xl border bg-white shadow-sm border-danger/30 h-full">
+                        <div className="text-xs text-steel font-medium mb-1">Critical Deviations</div>
+                        <div className="text-2xl font-semibold tracking-tight text-danger"><AnimatedNumber value={3} /></div>
+                        <div className="text-[10px] mt-2 font-medium text-danger/80">Requires Review</div>
+                      </TiltCard>
+                    </motion.div>
                   </div>
 
                   {/* Main Chart / Heatmap Space */}

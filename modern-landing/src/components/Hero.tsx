@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { Github } from 'lucide-react';
+import { MagneticButton } from './MagneticButton';
 
 const smoothTransition = { duration: 1, ease: [0.16, 1, 0.3, 1] as any };
 
@@ -49,14 +50,14 @@ export function Hero() {
           className="flex flex-col sm:flex-row items-center justify-center gap-4"
         >
           {/* Replaced View Ontology with explicit GitHub Codebase Link */}
-          <a 
-            href="https://github.com/ujjwalredd/Supply-Chain" 
-            target="_blank" 
+          <MagneticButton
+            href="https://github.com/ujjwalredd/Supply-Chain"
+            target="_blank"
             rel="noopener noreferrer"
             className="flex items-center justify-center gap-2 bg-ink text-paper px-6 py-3 rounded-lg font-medium hover:bg-black transition-all duration-300 min-w-[200px] shadow-md hover:shadow-lg hover:-translate-y-0.5"
           >
             <Github size={18} /> View Code on GitHub
-          </a>
+          </MagneticButton>
         </motion.div>
 
         {/* Integration Ticker */}
