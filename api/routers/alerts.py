@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_db
-from api.models import Deviation, PendingAction
+from api.models import Deviation, Order, PendingAction
 from api.schemas import DeviationRead
 
 logger = logging.getLogger(__name__)
@@ -73,6 +73,56 @@ async def deviation_trend(
     return list(data.values())
 
 
+@router.get("/clusters")
+async def deviation_clusters(
+    days: int = Query(30, ge=7, le=90),
+    db: AsyncSession = Depends(get_db),
+):
+    """Group deviations by (type, supplier_id) to surface patterns over N days."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    result = await db.execute(
+        select(
+            Deviation.type,
+            Order.supplier_id,
+            func.count(Deviation.deviation_id).label("count"),
+            func.max(Deviation.detected_at).label("last_seen"),
+        )
+        .join(Order, Deviation.order_id == Order.order_id)
+        .where(Deviation.detected_at >= cutoff)
+        .group_by(Deviation.type, Order.supplier_id)
+        .order_by(func.count(Deviation.deviation_id).desc())
+        .limit(50)
+    )
+    rows = result.all()
+
+    # Get critical counts separately
+    crit_result = await db.execute(
+        select(
+            Deviation.type,
+            Order.supplier_id,
+            func.count(Deviation.deviation_id).label("critical_count"),
+        )
+        .join(Order, Deviation.order_id == Order.order_id)
+        .where(Deviation.detected_at >= cutoff)
+        .where(Deviation.severity == "CRITICAL")
+        .group_by(Deviation.type, Order.supplier_id)
+    )
+    crit_map = {(r.type, r.supplier_id): r.critical_count for r in crit_result.all()}
+
+    clusters = []
+    for row in rows:
+        clusters.append({
+            "type": row.type,
+            "supplier_id": row.supplier_id,
+            "count": row.count,
+            "critical_count": crit_map.get((row.type, row.supplier_id), 0),
+            "last_seen": row.last_seen.isoformat() if row.last_seen else None,
+        })
+
+    return {"days": days, "clusters": clusters}
+
+
 @router.get("/{deviation_id}", response_model=DeviationRead)
 async def get_alert(deviation_id: str, db: AsyncSession = Depends(get_db)):
     """Get deviation by ID."""
@@ -88,7 +138,7 @@ async def dismiss_alert(
     deviation_id: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """Mark deviation as executed and create a PendingAction record (Feature 4)."""
+    """Mark deviation as executed and create a PendingAction record."""
     result = await db.execute(select(Deviation).where(Deviation.deviation_id == deviation_id))
     deviation = result.scalar_one_or_none()
     if not deviation:
@@ -96,7 +146,6 @@ async def dismiss_alert(
     deviation.executed = True
     now = datetime.now(timezone.utc)
 
-    # Create a pending action so the dismissal is tracked with a timestamp
     action = PendingAction(
         deviation_id=deviation_id,
         action_type="DISMISSED",

@@ -77,6 +77,29 @@ const NAV_ITEMS = [
       </svg>
     ),
   },
+  {
+    href: "/scorecard",
+    label: "Scorecard",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+        <path d="M2 11L5.5 7L8.5 9.5L12 5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+        <circle cx="5.5" cy="7" r="1" fill="currentColor" opacity="0.6"/>
+        <circle cx="8.5" cy="9.5" r="1" fill="currentColor" opacity="0.6"/>
+        <circle cx="12" cy="5" r="1" fill="currentColor" opacity="0.6"/>
+      </svg>
+    ),
+  },
+  {
+    href: "/whatif",
+    label: "What-If",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+        <path d="M7.5 2C7.5 2 5 4 5 7C5 8.5 6 9.5 7.5 9.5C9 9.5 10 8.5 10 7C10 4 7.5 2Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+        <path d="M7.5 9.5V12.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+        <path d="M6 12.5H9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+      </svg>
+    ),
+  },
 ];
 
 export function Sidebar() {
@@ -96,11 +119,11 @@ export function Sidebar() {
       <div className="px-5 py-5 flex items-center gap-3" style={{ borderBottom: "1px solid #e2e8f0" }}>
         <div
           className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0"
-          style={{ background: "rgba(99,102,241,0.10)", border: "1px solid rgba(99,102,241,0.20)" }}
+          style={{ background: "rgba(0,112,243,0.08)", border: "1px solid rgba(0,112,243,0.20)" }}
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M7 0.8L13 4V10L7 13.2L1 10V4L7 0.8Z" stroke="#6366f1" strokeWidth="1.2" strokeLinejoin="round"/>
-            <circle cx="7" cy="7" r="2" fill="#6366f1"/>
+            <path d="M7 0.8L13 4V10L7 13.2L1 10V4L7 0.8Z" stroke="#0070F3" strokeWidth="1.2" strokeLinejoin="round"/>
+            <circle cx="7" cy="7" r="2" fill="#0070F3"/>
           </svg>
         </div>
         <div>
@@ -120,11 +143,11 @@ export function Sidebar() {
               className="sidebar-link"
               style={
                 isActive
-                  ? { background: "rgba(99,102,241,0.08)", color: "#6366f1" }
+                  ? { background: "rgba(0,112,243,0.08)", color: "#0070F3" }
                   : {}
               }
             >
-              <span style={{ color: isActive ? "#6366f1" : "#94a3b8" }}>{item.icon}</span>
+              <span style={{ color: isActive ? "#0070F3" : "#94a3b8" }}>{item.icon}</span>
               {item.label}
             </Link>
           );

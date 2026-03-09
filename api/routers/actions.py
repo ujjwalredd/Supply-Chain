@@ -9,7 +9,7 @@ from sqlalchemy import func, join as sql_join, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_db
-from api.models import Deviation, PendingAction
+from api.models import Deviation, Order, PendingAction
 from api.schemas import PendingActionCreate, PendingActionRead
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,61 @@ async def actions_stats(
         "mttr_minutes": round(avg_secs / 60, 1),
         "window_days": days,
     }
+
+
+@router.get("/audit")
+async def actions_audit(
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    """Enriched audit log: every action with linked deviation + order context."""
+    j = sql_join(
+        PendingAction,
+        Deviation,
+        PendingAction.deviation_id == Deviation.deviation_id,
+        isouter=True,
+    )
+    j2 = sql_join(j, Order, Deviation.order_id == Order.order_id, isouter=True)
+
+    result = await db.execute(
+        select(
+            PendingAction.id,
+            PendingAction.action_type,
+            PendingAction.description,
+            PendingAction.status,
+            PendingAction.created_at,
+            PendingAction.completed_at,
+            Deviation.deviation_id,
+            Deviation.type.label("deviation_type"),
+            Deviation.severity,
+            Order.order_id,
+            Order.supplier_id,
+            Order.order_value,
+            Order.product,
+        )
+        .select_from(j2)
+        .order_by(PendingAction.created_at.desc())
+        .limit(limit)
+    )
+
+    rows = []
+    for row in result.all():
+        rows.append({
+            "id": row.id,
+            "action_type": row.action_type,
+            "description": row.description,
+            "status": row.status,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+            "deviation_id": row.deviation_id,
+            "deviation_type": row.deviation_type,
+            "severity": row.severity,
+            "order_id": row.order_id,
+            "supplier_id": row.supplier_id,
+            "order_value": float(row.order_value) if row.order_value else None,
+            "product": row.product,
+        })
+    return rows
 
 
 @router.get("", response_model=list[PendingActionRead])

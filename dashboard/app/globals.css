@@ -2,22 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── CSS Variables ─────────────────────────────────────────────────── */
 :root {
-  --background: #f8fafc;
-  --surface: #ffffff;
-  --surface-raised: #f1f5f9;
-  --border: #e2e8f0;
-  --border-strong: #cbd5e1;
-  --text: #0f172a;
-  --text-muted: #64748b;
-  --accent: #6366f1;
-  --accent-dim: rgba(99, 102, 241, 0.10);
-  --success: #10b981;
-  --success-dim: rgba(16, 185, 129, 0.10);
-  --warning: #f59e0b;
-  --warning-dim: rgba(245, 158, 11, 0.10);
-  --danger: #ef4444;
-  --danger-dim: rgba(239, 68, 68, 0.10);
+  --accent: #0070F3;
+  --accent-dim: rgba(0, 112, 243, 0.08);
+  --success: #10B981;
+  --success-dim: rgba(16, 185, 129, 0.08);
+  --warning: #F59E0B;
+  --warning-dim: rgba(245, 158, 11, 0.08);
+  --danger: #EF4444;
+  --danger-dim: rgba(239, 68, 68, 0.08);
+  --ink: #09090B;
+  --steel: #71717A;
 }
 
 html {
@@ -28,8 +24,8 @@ html {
 }
 
 body {
-  background-color: var(--background);
-  color: var(--text);
+  background-color: #FAFAFA;
+  color: #09090B;
   min-height: 100vh;
   overflow-x: hidden;
 }
@@ -37,31 +33,76 @@ body {
 /* ── Focus ─────────────────────────────────────────────────────────── */
 *:focus { outline: none; }
 *:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid #0070F3;
   outline-offset: 2px;
   border-radius: 4px;
 }
 
-/* ── Scrollbar ──────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 99px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.2); }
+/* ── Scrollbar — landing style ──────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #FAFAFA; }
+::-webkit-scrollbar-thumb { background: #E4E4E7; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #D4D4D8; }
+
+/* ── Glass card (landing pattern) ──────────────────────────────────── */
+.glass-card {
+  background: rgba(255, 255, 255, 0.80);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 10px 20px -5px rgba(0,0,0,0.02);
+}
+
+/* Hover lift — matches landing's 700ms spring */
+.card-hover {
+  transition: transform 700ms cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 700ms cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 700ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 32px -4px rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.10);
+}
+
+/* ── Text gradient (landing heading style) ──────────────────────────── */
+.text-gradient {
+  background: linear-gradient(to bottom, #09090B 40%, #71717A 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Subtle grid background ─────────────────────────────────────────── */
+.grid-bg {
+  background-image:
+    linear-gradient(to right, rgba(0,0,0,0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0,0,0,0.03) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* ── Divider ────────────────────────────────────────────────────────── */
+.divider {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(to right, transparent, rgba(0,0,0,0.08), transparent);
+}
 
 /* ── Live pulse ─────────────────────────────────────────────────────── */
 @keyframes live-glow {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
-  50%       { opacity: 0.8; box-shadow: 0 0 0 5px rgba(16, 185, 129, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+  50%       { box-shadow: 0 0 0 5px rgba(16, 185, 129, 0); }
 }
 .live-dot { animation: live-glow 2s ease-in-out infinite; }
 
-/* ── Shimmer skeleton ───────────────────────────────────────────────── */
+/* ── Skeleton shimmer ───────────────────────────────────────────────── */
 @keyframes shimmer {
   0%   { background-position: -400px 0; }
   100% { background-position: 400px 0; }
 }
 .skeleton {
-  background: linear-gradient(90deg, #f1f5f9 25%, #e8edf3 50%, #f1f5f9 75%);
+  background: linear-gradient(90deg, #F4F4F5 25%, #EBEBEB 50%, #F4F4F5 75%);
   background-size: 400px 100%;
   animation: shimmer 1.4s ease infinite;
   border-radius: 6px;
@@ -74,32 +115,37 @@ body {
 }
 .animate-fade-up { animation: fade-up 0.2s ease both; }
 
-/* ── Sidebar ────────────────────────────────────────────────────────── */
+/* ── Sidebar nav link ───────────────────────────────────────────────── */
 .sidebar-link {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
+  padding: 7px 10px;
   border-radius: 8px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-muted);
-  transition: all 0.15s ease;
+  color: #71717A;
+  transition: all 200ms ease;
   text-decoration: none;
 }
 .sidebar-link:hover {
-  background: var(--surface-raised);
-  color: var(--text);
+  background: #F4F4F5;
+  color: #09090B;
 }
 .sidebar-link.active {
-  background: rgba(99, 102, 241, 0.08);
-  color: var(--accent);
+  background: rgba(0, 112, 243, 0.08);
+  color: #0070F3;
 }
 
-/* ── Card styles ────────────────────────────────────────────────────── */
-.panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+/* ── Flowing edge animation (network graph) ─────────────────────────── */
+@keyframes flow-dash {
+  to { stroke-dashoffset: -20; }
 }
+.edge-flow {
+  stroke-dasharray: 4 6;
+  animation: flow-dash 1.2s linear infinite;
+}
+
+/* ── Node drag cursor ───────────────────────────────────────────────── */
+.node-draggable { cursor: grab; }
+.node-draggable:active { cursor: grabbing; }

@@ -69,17 +69,17 @@ export function QueryBox() {
   return (
     <div
       className="rounded-xl overflow-hidden bg-surface"
-      style={{ border: "1px solid rgba(99,102,241,0.2)", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
+      style={{ border: "1px solid rgba(0,112,243,0.2)", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
     >
       {/* Header */}
       <div className="px-5 py-4 flex items-center justify-between border-b border-border">
         <div className="flex items-center gap-3">
           <div
             className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0"
-            style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.15)" }}
+            style={{ background: "rgba(0,112,243,0.08)", border: "1px solid rgba(0,112,243,0.15)" }}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M7 1L8.2 5.5H13L9.5 8L10.8 12.5L7 10L3.2 12.5L4.5 8L1 5.5H5.8L7 1Z" stroke="#6366f1" strokeWidth="1.1" strokeLinejoin="round"/>
+              <path d="M7 1L8.2 5.5H13L9.5 8L10.8 12.5L7 10L3.2 12.5L4.5 8L1 5.5H5.8L7 1Z" stroke="#0070F3" strokeWidth="1.1" strokeLinejoin="round"/>
             </svg>
           </div>
           <div>
@@ -114,7 +114,7 @@ export function QueryBox() {
             onClick={() => submit(inputRef.current?.value ?? "")}
             disabled={streaming}
             className="shrink-0 px-4 py-2.5 rounded-lg text-white text-sm font-medium flex items-center gap-2 transition-all disabled:opacity-60"
-            style={{ background: streaming ? "rgba(99,102,241,0.6)" : "#6366f1" }}
+            style={{ background: streaming ? "rgba(0,112,243,0.6)" : "#0070F3" }}
           >
             {streaming ? (
               <>
@@ -179,7 +179,7 @@ export function QueryBox() {
               <p className="text-[10px] text-mutedForeground mt-3 pt-2.5 border-t border-border">
                 {(usage.input_tokens ?? 0) + (usage.output_tokens ?? 0)} tokens
                 {usage.analysis_time_ms ? ` · ${(usage.analysis_time_ms / 1000).toFixed(1)}s` : ""}
-                {" · "}<span style={{ color: "#6366f1" }}>claude-sonnet-4-6</span>
+                {" · "}<span style={{ color: "#0070F3" }}>claude-sonnet-4-6</span>
               </p>
             )}
           </div>

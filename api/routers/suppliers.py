@@ -1,6 +1,7 @@
 """Suppliers API router."""
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_db
-from api.models import Order, Supplier
+from api.models import Deviation, Order, Supplier
 from api.schemas import SupplierRead, SupplierRisk
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,6 @@ async def list_supplier_risk(
     )
     suppliers = result.scalars().all()
 
-    # Compute per-supplier, per-product order counts in one query
     dep_result = await db.execute(
         select(
             Order.supplier_id,
@@ -51,12 +51,10 @@ async def list_supplier_risk(
             func.count().label("cnt"),
         ).group_by(Order.supplier_id, Order.product)
     )
-    # Build: supplier_id → {product → count}
     dep_map: dict[str, dict[str, int]] = {}
     for row in dep_result.all():
         dep_map.setdefault(row.supplier_id, {})[row.product] = row.cnt
 
-    # Total orders per product across all suppliers
     total_per_product: dict[str, int] = {}
     for prod_counts in dep_map.values():
         for prod, cnt in prod_counts.items():
@@ -64,7 +62,6 @@ async def list_supplier_risk(
 
     risks = []
     for s in suppliers:
-        # max dependency % = max over products of (this_supplier_orders / total_orders_for_product)
         prod_counts = dep_map.get(s.supplier_id, {})
         if prod_counts and total_per_product:
             max_dep = max(
@@ -88,6 +85,80 @@ async def list_supplier_risk(
             concentration_risk=concentration,
         ))
     return risks
+
+
+@router.get("/{supplier_id}/scorecard")
+async def supplier_scorecard(
+    supplier_id: str,
+    weeks: int = Query(12, ge=4, le=52),
+    db: AsyncSession = Depends(get_db),
+):
+    """Weekly performance metrics for a supplier over the last N weeks."""
+    result = await db.execute(select(Supplier).where(Supplier.supplier_id == supplier_id))
+    supplier = result.scalar_one_or_none()
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+
+    orders_result = await db.execute(
+        select(Order)
+        .where(Order.supplier_id == supplier_id)
+        .order_by(Order.created_at.asc())
+    )
+    orders = orders_result.scalars().all()
+
+    devs_result = await db.execute(
+        select(Deviation)
+        .join(Order, Deviation.order_id == Order.order_id)
+        .where(Order.supplier_id == supplier_id)
+        .order_by(Deviation.detected_at.asc())
+    )
+    deviations = devs_result.scalars().all()
+
+    today = datetime.now(timezone.utc).date()
+    weekly_data = []
+    for w in range(weeks - 1, -1, -1):
+        week_end = today - timedelta(weeks=w)
+        week_start = week_end - timedelta(days=6)
+
+        week_orders = [
+            o for o in orders
+            if week_start <= o.created_at.date() <= week_end
+        ]
+        total = len(week_orders)
+        delayed = sum(1 for o in week_orders if (o.delay_days or 0) > 0)
+        on_time_pct = round((total - delayed) / total * 100, 1) if total > 0 else None
+        avg_delay = round(
+            sum(o.delay_days or 0 for o in week_orders) / total, 1
+        ) if total > 0 else 0.0
+
+        dev_count = sum(
+            1 for d in deviations
+            if week_start <= d.detected_at.date() <= week_end
+        )
+
+        weekly_data.append({
+            "week": week_end.isoformat(),
+            "total_orders": total,
+            "on_time_pct": on_time_pct,
+            "avg_delay_days": avg_delay,
+            "deviation_count": dev_count,
+        })
+
+    return {
+        "supplier": {
+            "supplier_id": supplier.supplier_id,
+            "name": supplier.name,
+            "region": supplier.region,
+            "trust_score": supplier.trust_score,
+            "total_orders": supplier.total_orders,
+            "delayed_orders": supplier.delayed_orders,
+            "avg_delay_days": supplier.avg_delay_days,
+            "delay_rate_pct": round(
+                supplier.delayed_orders / supplier.total_orders * 100, 1
+            ) if supplier.total_orders > 0 else 0.0,
+        },
+        "weeks": weekly_data,
+    }
 
 
 @router.get("/{supplier_id}", response_model=SupplierRead)

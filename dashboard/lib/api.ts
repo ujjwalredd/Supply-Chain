@@ -204,6 +204,91 @@ export async function fetchQuerySuggestions(): Promise<string[]> {
   }
 }
 
+export async function fetchSupplierScorecard(supplierId: string, weeks = 12) {
+  const res = await fetch(`${API_BASE}/suppliers/${supplierId}/scorecard?weeks=${weeks}`);
+  if (!res.ok) throw new Error("Failed to fetch scorecard");
+  return res.json();
+}
+
+export async function fetchOrderTimeline(orderId: string) {
+  const res = await fetch(`${API_BASE}/orders/${orderId}/timeline`);
+  if (!res.ok) throw new Error("Failed to fetch order timeline");
+  return res.json();
+}
+
+export async function fetchDeviationClusters(days = 30) {
+  const res = await fetch(`${API_BASE}/alerts/clusters?days=${days}`);
+  if (!res.ok) throw new Error("Failed to fetch deviation clusters");
+  return res.json();
+}
+
+export async function fetchActionsAudit(limit = 50) {
+  const res = await fetch(`${API_BASE}/actions/audit?limit=${limit}`);
+  if (!res.ok) throw new Error("Failed to fetch audit log");
+  return res.json();
+}
+
+async function _streamSSE(
+  url: string,
+  body: unknown,
+  onToken: (token: string) => void,
+  options?: { signal?: AbortSignal; onDone?: (usage: StreamUsage & { count?: number }) => void }
+) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: options?.signal,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let message = `Request failed (${res.status})`;
+    try { const j = JSON.parse(text); if (j.detail) message = typeof j.detail === "string" ? j.detail : message; } catch {}
+    throw new Error(message);
+  }
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("No response body");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.token) onToken(data.token);
+            if (data.done && options?.onDone) options.onDone(data.usage ?? {});
+          } catch {}
+        }
+      }
+    }
+  } catch (err) {
+    if ((err as Error).name === "AbortError") return;
+    throw err;
+  }
+}
+
+export async function analyzeBulkStream(
+  body: { severity_filter?: string; limit?: number; include_executed?: boolean },
+  onToken: (token: string) => void,
+  options?: { signal?: AbortSignal; onDone?: (usage: StreamUsage & { count?: number }) => void }
+) {
+  return _streamSSE(`${API_BASE}/ai/analyze/bulk`, body, onToken, options);
+}
+
+export async function analyzeWhatIfStream(
+  body: { supplier_id: string; volume_shift_pct: number; target_supplier_id?: string; product?: string },
+  onToken: (token: string) => void,
+  options?: { signal?: AbortSignal; onDone?: (usage: StreamUsage) => void }
+) {
+  return _streamSSE(`${API_BASE}/ai/whatif/stream`, body, onToken, options);
+}
+
 export async function querySupplyChainStream(
   question: string,
   onToken: (token: string) => void,
