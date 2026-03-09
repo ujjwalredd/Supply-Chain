@@ -1,3 +1,4 @@
+import { Analytics } from "@vercel/analytics/react";
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { DashboardPreview } from './components/DashboardPreview';
@@ -25,6 +26,7 @@ export default function App() {
       <div className="relative z-10">
         <Footer />
       </div>
+      <Analytics />
     </div>
   );
 }
