@@ -37,13 +37,10 @@ export function DeviationTrendChart() {
 
   return (
     <div
-      className="rounded-xl overflow-hidden"
-      style={{ background: "#111117", border: "1px solid rgba(255,255,255,0.07)" }}
+      className="rounded-xl overflow-hidden bg-surface border border-border"
+      style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
     >
-      <div
-        className="px-5 py-4 flex items-center justify-between"
-        style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}
-      >
+      <div className="px-5 py-4 flex items-center justify-between border-b border-border">
         <div>
           <p className="text-sm font-semibold text-foreground">Deviation Trend</p>
           <p className="text-[11px] text-mutedForeground mt-0.5">Alert volume — last 7 days</p>
@@ -65,60 +62,58 @@ export function DeviationTrendChart() {
               <BarChart data={chartData} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
                 <XAxis
                   dataKey="label"
-                  tick={{ fontSize: 10, fill: "#52526a" }}
+                  tick={{ fontSize: 10, fill: "#94a3b8" }}
                   axisLine={false}
                   tickLine={false}
                 />
                 <YAxis
                   allowDecimals={false}
-                  tick={{ fontSize: 10, fill: "#52526a" }}
+                  tick={{ fontSize: 10, fill: "#94a3b8" }}
                   axisLine={false}
                   tickLine={false}
                   width={24}
                 />
                 <Tooltip
-                  cursor={{ fill: "rgba(255,255,255,0.025)" }}
+                  cursor={{ fill: "rgba(0,0,0,0.03)" }}
                   content={({ active, payload }) =>
                     active && payload?.[0] ? (
                       <div
                         className="rounded-lg px-3 py-2 text-xs"
                         style={{
-                          background: "#16161e",
-                          border: "1px solid rgba(255,255,255,0.1)",
+                          background: "#ffffff",
+                          border: "1px solid #e2e8f0",
+                          boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
                         }}
                       >
                         <p className="text-mutedForeground mb-1.5">{payload[0].payload.date}</p>
-                        <p style={{ color: "#f87171" }}>
+                        <p style={{ color: "#ef4444" }}>
                           Critical: {payload[0].payload.CRITICAL}
                         </p>
-                        <p style={{ color: "#fbbf24" }}>High: {payload[0].payload.HIGH}</p>
-                        <p style={{ color: "#7c6af7" }}>Medium: {payload[0].payload.MEDIUM}</p>
+                        <p style={{ color: "#f59e0b" }}>High: {payload[0].payload.HIGH}</p>
+                        <p style={{ color: "#6366f1" }}>Medium: {payload[0].payload.MEDIUM}</p>
                       </div>
                     ) : null
                   }
                 />
-                <Bar dataKey="CRITICAL" stackId="a" fill="#f87171" maxBarSize={36} />
-                <Bar dataKey="HIGH" stackId="a" fill="#fbbf24" maxBarSize={36} />
+                <Bar dataKey="CRITICAL" stackId="a" fill="#ef4444" maxBarSize={36} />
+                <Bar dataKey="HIGH" stackId="a" fill="#f59e0b" maxBarSize={36} />
                 <Bar
                   dataKey="MEDIUM"
                   stackId="a"
-                  fill="#7c6af7"
+                  fill="#6366f1"
                   maxBarSize={36}
                   radius={[3, 3, 0, 0]}
                 />
               </BarChart>
             </ResponsiveContainer>
-            <div className="flex items-center gap-4 px-3 mt-1">
+            <div className="flex items-center gap-5 px-3 mt-1">
               {[
-                { c: "#f87171", l: "Critical" },
-                { c: "#fbbf24", l: "High" },
-                { c: "#7c6af7", l: "Medium" },
+                { c: "#ef4444", l: "Critical" },
+                { c: "#f59e0b", l: "High" },
+                { c: "#6366f1", l: "Medium" },
               ].map((x) => (
                 <div key={x.l} className="flex items-center gap-1.5">
-                  <span
-                    className="h-2 w-2 rounded-full shrink-0"
-                    style={{ background: x.c }}
-                  />
+                  <span className="h-2 w-2 rounded-full shrink-0" style={{ background: x.c }} />
                   <span className="text-[10px] text-mutedForeground">{x.l}</span>
                 </div>
               ))}
