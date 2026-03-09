@@ -7,6 +7,7 @@ import { AIFeature } from './components/AIFeature';
 import { Architecture } from './components/Architecture';
 import { Footer } from './components/Footer';
 import { Capabilities } from './components/Capabilities';
+import { CommandPalette } from './components/CommandPalette';
 
 export default function App() {
   return (
@@ -23,6 +24,8 @@ export default function App() {
         <Architecture />
       </main>
       
+      <CommandPalette />
+
       <div className="relative z-10">
         <Footer />
       </div>

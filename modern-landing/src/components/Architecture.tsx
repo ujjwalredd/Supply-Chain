@@ -1,7 +1,17 @@
-import { motion } from 'framer-motion';
+import { useRef } from 'react';
+import { motion, useScroll, useTransform } from 'framer-motion';
 import { Database, Zap, Layers, Server } from 'lucide-react';
 
 export function Architecture() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  
+  const { scrollYProgress } = useScroll({
+    target: containerRef,
+    offset: ["start end", "center center"]
+  });
+
+  const pathDraw = useTransform(scrollYProgress, [0, 1], [0, 1]);
+
   const stack = [
     { name: 'Kafka Event Stream', desc: '50+ events/min. Supplier state machines & causality chains.', icon: Zap, color: 'text-warning border-warning/20 bg-warning/5' },
     { name: 'Dagster Pipeline', desc: '14-asset medallion lakehouse. Bronze, Silver, Gold transformations.', icon: Layers, color: 'text-success border-success/20 bg-success/5' },
@@ -10,7 +20,7 @@ export function Architecture() {
   ];
 
   return (
-    <section id="architecture" className="py-24 bg-surface">
+    <section id="architecture" className="py-24 bg-surface" ref={containerRef}>
       <div className="max-w-7xl mx-auto px-6 text-center">
         <motion.div
            initial={{ opacity: 0, y: 20 }}
@@ -28,20 +38,25 @@ export function Architecture() {
           {/* Animated Flow SVG */}
           <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-20 pointer-events-none hidden lg:block z-0">
             <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 1000 100">
-              {/* Background Tracks */}
-              <path d="M 125,50 L 375,50" stroke="#E4E4E7" strokeWidth="2" strokeDasharray="4 4" fill="none" />
-              <path d="M 375,50 L 625,50" stroke="#E4E4E7" strokeWidth="2" strokeDasharray="4 4" fill="none" />
-              <path d="M 625,50 L 875,50" stroke="#E4E4E7" strokeWidth="2" strokeDasharray="4 4" fill="none" />
+              {/* Background Tracks (Faint) */}
+              <path d="M 125,50 L 375,50" stroke="#E4E4E7" strokeWidth="2" strokeDasharray="4 4" fill="none" opacity="0.5" />
+              <path d="M 375,50 L 625,50" stroke="#E4E4E7" strokeWidth="2" strokeDasharray="4 4" fill="none" opacity="0.5" />
+              <path d="M 625,50 L 875,50" stroke="#E4E4E7" strokeWidth="2" strokeDasharray="4 4" fill="none" opacity="0.5" />
               
-              {/* Animated Packets */}
+              {/* Scroll Triggered Draw Tracks */}
+              <motion.path d="M 125,50 L 375,50" stroke="#0070F3" strokeWidth="2" fill="none" style={{ pathLength: pathDraw }} />
+              <motion.path d="M 375,50 L 625,50" stroke="#10B981" strokeWidth="2" fill="none" style={{ pathLength: pathDraw }} />
+              <motion.path d="M 625,50 L 875,50" stroke="#F59E0B" strokeWidth="2" fill="none" style={{ pathLength: pathDraw }} />
+              
+              {/* Persistent Animated Packets over the drawn lines */}
               <circle r="4" fill="#0070F3" className="shadow-lg">
                 <animateMotion dur="2.5s" repeatCount="indefinite" path="M 125,50 L 375,50" keyPoints="0;1" keyTimes="0;1" calcMode="linear" />
               </circle>
               <circle r="4" fill="#10B981">
-                <animateMotion dur="2.5s" repeatCount="indefinite" path="M 375,50 L 625,50" begin="0.5s" keyPoints="0;1" keyTimes="0;1" calcMode="linear" />
+                <animateMotion dur="2.5s" repeatCount="indefinite" path="M 375,50 L 625,50" begin="0.8s" keyPoints="0;1" keyTimes="0;1" calcMode="linear" />
               </circle>
               <circle r="4" fill="#F59E0B">
-                <animateMotion dur="2.5s" repeatCount="indefinite" path="M 625,50 L 875,50" begin="1s" keyPoints="0;1" keyTimes="0;1" calcMode="linear" />
+                <animateMotion dur="2.5s" repeatCount="indefinite" path="M 625,50 L 875,50" begin="1.6s" keyPoints="0;1" keyTimes="0;1" calcMode="linear" />
               </circle>
             </svg>
           </div>
