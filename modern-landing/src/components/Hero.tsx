@@ -59,6 +59,41 @@ export function Hero() {
           </a>
         </motion.div>
 
+        {/* Integration Ticker */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 1, delay: 0.6 }}
+          className="mt-20 md:mt-32 w-full max-w-5xl mx-auto overflow-hidden relative"
+        >
+          <div className="text-[10px] font-mono font-medium text-steel uppercase tracking-widest mb-6">
+            Powered by an Enterprise Data Stack
+          </div>
+          
+          {/* Gradients for fading effect on edges */}
+          <div className="absolute left-0 top-10 bottom-0 w-24 bg-gradient-to-r from-paper to-transparent z-10" />
+          <div className="absolute right-0 top-10 bottom-0 w-24 bg-gradient-to-l from-paper to-transparent z-10" />
+          
+          <div className="flex w-[200%] animate-infinite-scroll hover:[animation-play-state:paused] cursor-default">
+            {/* First Set */}
+            <div className="flex w-1/2 justify-around items-center min-w-max gap-12 sm:gap-20 px-6">
+              {['Kafka', 'PostgreSQL', 'Redis', 'Dagster', 'FastAPI', 'MinIO', 'Claude Sonnet', 'Next.js'].map((tech) => (
+                <span key={tech} className="text-xl sm:text-2xl font-bold tracking-tight text-ink/20 hover:text-ink/60 transition-colors duration-300">
+                  {tech}
+                </span>
+              ))}
+            </div>
+            {/* Duplicate Set for smooth infinite loop */}
+            <div className="flex w-1/2 justify-around items-center min-w-max gap-12 sm:gap-20 px-6">
+              {['Kafka', 'PostgreSQL', 'Redis', 'Dagster', 'FastAPI', 'MinIO', 'Claude Sonnet', 'Next.js'].map((tech) => (
+                <span key={`dup-${tech}`} className="text-xl sm:text-2xl font-bold tracking-tight text-ink/20 hover:text-ink/60 transition-colors duration-300">
+                  {tech}
+                </span>
+              ))}
+            </div>
+          </div>
+        </motion.div>
+
       </div>
     </section>
   );
