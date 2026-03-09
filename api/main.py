@@ -18,7 +18,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from api.database import init_db
-from api.routers import actions, ai, alerts, forecasts, network, orders, ontology, suppliers
+from api.routers import actions, ai, alerts, forecasts, network, orders, ontology, query, suppliers
 
 logging.basicConfig(
     level=logging.INFO,
@@ -113,6 +113,7 @@ app.include_router(ontology.router, prefix="/ontology", tags=["ontology"])
 app.include_router(actions.router, prefix="/actions", tags=["actions"])
 app.include_router(forecasts.router, prefix="/forecasts", tags=["forecasts"])
 app.include_router(network.router, prefix="/network", tags=["network"])
+app.include_router(query.router, prefix="/ai/query", tags=["ai"])
 
 
 async def _redis_subscriber_loop() -> None:
