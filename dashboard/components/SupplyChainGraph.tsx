@@ -25,7 +25,7 @@ type Graph = {
 const NODE_COLORS: Record<string, string> = {
   plant: "#6366f1",
   port: "#f59e0b",
-  supplier: "#22c55e",
+  supplier: "#10b981",
 };
 
 const NODE_R = 10;
@@ -63,22 +63,22 @@ export function SupplyChainGraph() {
 
   if (!graph) {
     return (
-      <div className="bg-card rounded-lg border border-border overflow-hidden">
-        <div className="px-4 py-3 border-b border-border">
-          <p className="text-sm font-medium text-foreground">Supply Chain Network</p>
+      <div className="bg-surface rounded-xl border border-border overflow-hidden" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
+        <div className="px-5 py-4 border-b border-border">
+          <p className="text-sm font-semibold text-foreground">Supply Chain Network</p>
         </div>
-        <p className="text-xs text-mutedForeground px-4 py-6">Loading network data…</p>
+        <p className="text-xs text-mutedForeground px-5 py-6">Loading network data…</p>
       </div>
     );
   }
 
   if (graph.nodes.length === 0) {
     return (
-      <div className="bg-card rounded-lg border border-border overflow-hidden">
-        <div className="px-4 py-3 border-b border-border">
-          <p className="text-sm font-medium text-foreground">Supply Chain Network</p>
+      <div className="bg-surface rounded-xl border border-border overflow-hidden" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
+        <div className="px-5 py-4 border-b border-border">
+          <p className="text-sm font-semibold text-foreground">Supply Chain Network</p>
         </div>
-        <p className="text-xs text-mutedForeground px-4 py-6">
+        <p className="text-xs text-mutedForeground px-5 py-6">
           No network data. Run the pipeline to load PlantPorts.csv.
         </p>
       </div>
@@ -88,25 +88,21 @@ export function SupplyChainGraph() {
   const positions = layoutNodes(graph.nodes);
 
   return (
-    <div className="bg-card rounded-lg border border-border overflow-hidden">
-      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-        <p className="text-sm font-medium text-foreground">Supply Chain Network</p>
-        <p className="text-xs text-mutedForeground">
+    <div className="bg-surface rounded-xl border border-border overflow-hidden" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
+      <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+        <p className="text-sm font-semibold text-foreground">Supply Chain Network</p>
+        <p className="text-[11px] text-mutedForeground">
           {graph.stats
             ? `${graph.stats.plant_count} plants · ${graph.stats.port_count} ports · ${graph.stats.edge_count} routes`
             : "Plant → Port topology"}
         </p>
       </div>
 
-      {/* Legend */}
-      <div className="flex items-center gap-6 px-4 pt-3 pb-1">
+      <div className="flex items-center gap-5 px-5 pt-3 pb-1">
         {Object.entries(NODE_COLORS).map(([type, color]) => (
           <div key={type} className="flex items-center gap-1.5">
-            <span
-              className="h-2.5 w-2.5 rounded-full"
-              style={{ background: color }}
-            />
-            <span className="text-xs text-mutedForeground capitalize">{type}</span>
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: color }} />
+            <span className="text-[11px] text-mutedForeground capitalize">{type}</span>
           </div>
         ))}
       </div>
@@ -131,7 +127,7 @@ export function SupplyChainGraph() {
                 y1={src.y}
                 x2={tgt.x}
                 y2={tgt.y}
-                stroke="#27272a"
+                stroke="#e2e8f0"
                 strokeWidth={1.5}
               />
             );
@@ -157,15 +153,11 @@ export function SupplyChainGraph() {
                   }
                 }}
               >
-                <circle
-                  r={NODE_R}
-                  fill={NODE_COLORS[n.type] ?? "#71717a"}
-                  opacity={0.9}
-                />
+                <circle r={NODE_R} fill={NODE_COLORS[n.type] ?? "#94a3b8"} opacity={0.85} />
                 <text
                   y={NODE_R + 12}
                   textAnchor="middle"
-                  fill="#a1a1aa"
+                  fill="#64748b"
                   fontSize={9}
                   fontFamily="monospace"
                 >
@@ -179,10 +171,10 @@ export function SupplyChainGraph() {
         {/* Tooltip */}
         {tooltip && (
           <div
-            className="absolute bg-card border border-border rounded px-3 py-2 text-xs pointer-events-none z-10"
-            style={{ left: tooltip.x + 12, top: tooltip.y - 12 }}
+            className="absolute bg-surface border border-border rounded-lg px-3 py-2 text-xs pointer-events-none z-10"
+            style={{ left: tooltip.x + 12, top: tooltip.y - 12, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}
           >
-            <p className="font-medium text-foreground">{tooltip.node.label}</p>
+            <p className="font-semibold text-foreground">{tooltip.node.label}</p>
             <p className="text-mutedForeground capitalize mt-0.5">{tooltip.node.type}</p>
             {tooltip.node.products && tooltip.node.products.length > 0 && (
               <p className="text-mutedForeground mt-1">

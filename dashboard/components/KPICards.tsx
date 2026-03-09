@@ -58,41 +58,46 @@ export function KPICards() {
       label: "Pipeline Value",
       value: `$${((data.pipeline_value ?? 0) / 1_000_000).toFixed(1)}M`,
       sub: "total order value",
-      valueColor: "text-foreground",
-      accentColor: "#7c6af7",
+      valueColor: "#0f172a",
+      accentColor: "#6366f1",
+      iconBg: "rgba(99,102,241,0.08)",
     },
     {
       label: "On-Time Rate",
       value: `${onTimePct.toFixed(1)}%`,
       sub: onTimePct >= 90 ? "on track" : onTimePct >= 75 ? "needs attention" : "at risk",
-      valueColor: onTimePct >= 90 ? "text-success" : onTimePct >= 75 ? "text-warning" : "text-destructive",
-      accentColor: onTimePct >= 90 ? "#34d399" : onTimePct >= 75 ? "#fbbf24" : "#f87171",
+      valueColor: onTimePct >= 90 ? "#10b981" : onTimePct >= 75 ? "#d97706" : "#ef4444",
+      accentColor: onTimePct >= 90 ? "#10b981" : onTimePct >= 75 ? "#f59e0b" : "#ef4444",
+      iconBg: onTimePct >= 90 ? "rgba(16,185,129,0.08)" : onTimePct >= 75 ? "rgba(245,158,11,0.08)" : "rgba(239,68,68,0.08)",
     },
     {
       label: "Delayed Orders",
       value: String(delayed),
-      sub: delayed > 0 ? "require action" : "all on schedule",
-      valueColor: delayed > 0 ? "text-warning" : "text-foreground",
-      accentColor: delayed > 0 ? "#fbbf24" : "#34d399",
+      sub: delayed > 0 ? "require attention" : "all on schedule",
+      valueColor: delayed > 0 ? "#d97706" : "#10b981",
+      accentColor: delayed > 0 ? "#f59e0b" : "#10b981",
+      iconBg: delayed > 0 ? "rgba(245,158,11,0.08)" : "rgba(16,185,129,0.08)",
     },
     {
       label: "Critical Alerts",
       value: String(critical),
       sub: critical > 0 ? "escalation required" : "no critical alerts",
-      valueColor: critical > 0 ? "text-destructive" : "text-foreground",
-      accentColor: critical > 0 ? "#f87171" : "#34d399",
+      valueColor: critical > 0 ? "#ef4444" : "#10b981",
+      accentColor: critical > 0 ? "#ef4444" : "#10b981",
+      iconBg: critical > 0 ? "rgba(239,68,68,0.08)" : "rgba(16,185,129,0.08)",
     },
     {
       label: "Avg Resolution",
-      value: mttr === null
-        ? "N/A"
+      value:
+        mttr === null ? "N/A"
         : mttr < 1 ? "<1m"
         : mttr < 60 ? `${Math.round(mttr)}m`
         : mttr < 1440 ? `${(mttr / 60).toFixed(1)}h`
         : `${(mttr / 1440).toFixed(1)}d`,
       sub: "mean time to resolve",
-      valueColor: mttr === null ? "text-mutedForeground" : mttr <= 30 ? "text-success" : mttr <= 240 ? "text-warning" : "text-destructive",
-      accentColor: mttr === null ? "#52526a" : mttr <= 30 ? "#34d399" : mttr <= 240 ? "#fbbf24" : "#f87171",
+      valueColor: mttr === null ? "#94a3b8" : mttr <= 30 ? "#10b981" : mttr <= 240 ? "#d97706" : "#ef4444",
+      accentColor: mttr === null ? "#94a3b8" : mttr <= 30 ? "#10b981" : mttr <= 240 ? "#f59e0b" : "#ef4444",
+      iconBg: "rgba(99,102,241,0.06)",
     },
   ];
 
@@ -101,19 +106,18 @@ export function KPICards() {
       {stats.map((s) => (
         <div
           key={s.label}
-          className="relative bg-card rounded-xl overflow-hidden"
-          style={{ border: "1px solid rgba(255,255,255,0.07)" }}
+          className="relative bg-surface rounded-xl overflow-hidden border border-border"
+          style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
         >
-          {/* Left accent bar */}
           <div
             className="absolute left-0 top-0 bottom-0 w-0.5"
-            style={{ background: s.accentColor, opacity: 0.8 }}
+            style={{ background: s.accentColor }}
           />
           <div className="px-5 py-5">
-            <p className="text-[11px] font-medium text-mutedForeground uppercase tracking-[0.08em] mb-3">
+            <p className="text-[10px] font-semibold text-mutedForeground uppercase tracking-[0.08em] mb-3">
               {s.label}
             </p>
-            <p className={`text-[28px] font-bold tabular-nums leading-none ${s.valueColor}`}>
+            <p className="text-[26px] font-bold tabular-nums leading-none" style={{ color: s.valueColor }}>
               {s.value}
             </p>
             <p className="text-[11px] text-mutedForeground mt-2">{s.sub}</p>

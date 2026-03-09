@@ -14,11 +14,11 @@ type Order = {
 };
 
 const statusBadge: Record<string, { bg: string; color: string }> = {
-  DELAYED:    { bg: "rgba(248,113,113,0.1)",  color: "#f87171" },
-  DELIVERED:  { bg: "rgba(52,211,153,0.1)",   color: "#34d399" },
-  IN_TRANSIT: { bg: "rgba(124,106,247,0.1)",  color: "#7c6af7" },
-  PENDING:    { bg: "rgba(255,255,255,0.05)", color: "#52526a" },
-  CANCELLED:  { bg: "rgba(255,255,255,0.05)", color: "#52526a" },
+  DELAYED:    { bg: "rgba(239,68,68,0.08)",   color: "#ef4444" },
+  DELIVERED:  { bg: "rgba(16,185,129,0.08)",  color: "#059669" },
+  IN_TRANSIT: { bg: "rgba(99,102,241,0.08)",  color: "#6366f1" },
+  PENDING:    { bg: "rgba(100,116,139,0.06)", color: "#64748b" },
+  CANCELLED:  { bg: "rgba(100,116,139,0.06)", color: "#64748b" },
 };
 
 function exportCSV(orders: Order[]) {
@@ -56,9 +56,12 @@ export function OrderTable() {
   }, [statusFilter]);
 
   return (
-    <div className="rounded-xl overflow-hidden" style={{ background: "#111117", border: "1px solid rgba(255,255,255,0.07)" }}>
+    <div
+      className="rounded-xl overflow-hidden bg-surface border border-border"
+      style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
+    >
       {/* Header */}
-      <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+      <div className="px-5 py-4 flex items-center justify-between border-b border-border">
         <div>
           <p className="text-sm font-semibold text-foreground">Orders</p>
           <p className="text-[11px] text-mutedForeground mt-0.5">{orders.length} orders shown</p>
@@ -68,10 +71,8 @@ export function OrderTable() {
             type="button"
             onClick={() => exportCSV(orders)}
             disabled={orders.length === 0}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors disabled:opacity-40"
-            style={{ background: "rgba(124,106,247,0.12)", color: "#7c6af7", border: "1px solid rgba(124,106,247,0.2)" }}
-            onMouseEnter={(e) => { if (orders.length > 0) (e.currentTarget as HTMLElement).style.background = "rgba(124,106,247,0.2)"; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(124,106,247,0.12)"; }}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors disabled:opacity-40 hover:bg-muted"
+            style={{ background: "rgba(99,102,241,0.08)", color: "#6366f1", border: "1px solid rgba(99,102,241,0.15)" }}
             title="Export visible orders as CSV"
           >
             <Download className="h-3 w-3" />
@@ -80,8 +81,7 @@ export function OrderTable() {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="text-[11px] font-medium text-mutedForeground rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent transition-colors"
-            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}
+            className="text-[11px] font-medium text-mutedForeground rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent bg-surfaceRaised border border-border"
             aria-label="Filter by status"
           >
             <option value="">All statuses</option>
@@ -94,14 +94,14 @@ export function OrderTable() {
         </div>
       </div>
 
-      <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
+      <div className="overflow-x-auto max-h-[380px] overflow-y-auto">
         <table className="w-full">
-          <thead>
-            <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <thead className="sticky top-0 bg-surfaceRaised">
+            <tr className="border-b border-border">
               {["Order ID", "Supplier", "Product", "Value", "Delay", "Status"].map((h, i) => (
                 <th
                   key={h}
-                  className={`py-2.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-mutedForeground ${i >= 3 ? "text-right" : "text-left"} ${i === 5 ? "text-left" : ""}`}
+                  className={`py-2.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-mutedForeground ${i >= 3 && i !== 5 ? "text-right" : "text-left"}`}
                   style={{ padding: "10px 16px" }}
                 >
                   {h}
@@ -115,10 +115,8 @@ export function OrderTable() {
               return (
                 <tr
                   key={o.order_id}
-                  className="transition-colors"
-                  style={{ borderBottom: idx < orders.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.02)"; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                  className="hover:bg-surfaceRaised transition-colors"
+                  style={{ borderBottom: idx < orders.length - 1 ? "1px solid #f1f5f9" : "none" }}
                 >
                   <td className="px-4 py-3 font-mono text-[11px] text-mutedForeground">{o.order_id}</td>
                   <td className="px-4 py-3 text-xs text-foreground">{o.supplier_id}</td>
@@ -127,7 +125,7 @@ export function OrderTable() {
                     ${(o.order_value ?? 0).toLocaleString()}
                   </td>
                   <td className="px-4 py-3 text-right text-xs tabular-nums">
-                    <span style={{ color: (o.delay_days ?? 0) > 0 ? "#fbbf24" : "#52526a" }}>
+                    <span style={{ color: (o.delay_days ?? 0) > 0 ? "#d97706" : "#94a3b8" }}>
                       {o.delay_days ?? 0}d
                     </span>
                   </td>

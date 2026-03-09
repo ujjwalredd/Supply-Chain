@@ -26,10 +26,10 @@ function relativeTime(iso: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-const SEV: Record<string, { color: string; dot: string; text: string }> = {
-  CRITICAL: { color: "#f87171", dot: "bg-destructive",   text: "text-destructive" },
-  HIGH:     { color: "#fbbf24", dot: "bg-warning",       text: "text-warning" },
-  MEDIUM:   { color: "#7c6af7", dot: "bg-accent",        text: "text-accent" },
+const SEV: Record<string, { color: string; bg: string; text: string; label: string }> = {
+  CRITICAL: { color: "#ef4444", bg: "rgba(239,68,68,0.08)",  text: "#ef4444",  label: "Critical" },
+  HIGH:     { color: "#f59e0b", bg: "rgba(245,158,11,0.08)", text: "#d97706",  label: "High" },
+  MEDIUM:   { color: "#6366f1", bg: "rgba(99,102,241,0.08)", text: "#6366f1",  label: "Medium" },
 };
 
 const SEVERITIES = ["ALL", "CRITICAL", "HIGH", "MEDIUM"] as const;
@@ -76,53 +76,66 @@ export function DeviationFeed() {
 
   return (
     <>
-      <div className="rounded-xl overflow-hidden flex flex-col" style={{ background: "#111117", border: "1px solid rgba(255,255,255,0.07)" }}>
+      <div className="rounded-xl overflow-hidden bg-surface border border-border" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
         {/* Header */}
-        <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+        <div className="px-5 py-4 flex items-center justify-between border-b border-border">
           <div>
-            <p className="text-sm font-semibold text-foreground">Deviations</p>
-            <p className="text-[11px] text-mutedForeground mt-0.5">Active supply chain alerts</p>
+            <p className="text-sm font-semibold text-foreground">Active Deviations</p>
+            <p className="text-[11px] text-mutedForeground mt-0.5">Click any row to trigger AI analysis</p>
           </div>
           {allActive.length > 0 && (
-            <span className="text-[11px] font-semibold tabular-nums px-2 py-0.5 rounded-md" style={{ background: "rgba(248,113,113,0.1)", color: "#f87171" }}>
+            <span
+              className="text-[11px] font-semibold tabular-nums px-2.5 py-1 rounded-full"
+              style={{ background: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.15)" }}
+            >
               {allActive.length} active
             </span>
           )}
         </div>
 
         {/* Severity filter tabs */}
-        <div className="flex gap-1 px-5 py-2.5" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+        <div className="flex gap-1.5 px-5 py-2.5 border-b border-border bg-surfaceRaised">
           {SEVERITIES.map((sev) => {
             const isActive = sevFilter === sev;
-            const sevColor = sev === "CRITICAL" ? "#f87171" : sev === "HIGH" ? "#fbbf24" : sev === "MEDIUM" ? "#7c6af7" : "#a0a0b0";
+            const sevColor =
+              sev === "CRITICAL" ? "#ef4444"
+              : sev === "HIGH" ? "#d97706"
+              : sev === "MEDIUM" ? "#6366f1"
+              : "#64748b";
             return (
               <button
                 key={sev}
                 type="button"
                 onClick={() => setSevFilter(sev)}
-                className="px-2.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide transition-colors"
+                className="px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all"
                 style={{
-                  background: isActive ? (sev === "ALL" ? "rgba(255,255,255,0.1)" : `${sevColor}22`) : "transparent",
-                  color: isActive ? (sev === "ALL" ? "#e0e0f0" : sevColor) : "rgba(160,160,176,0.6)",
-                  border: `1px solid ${isActive ? (sev === "ALL" ? "rgba(255,255,255,0.15)" : `${sevColor}44`) : "transparent"}`,
+                  background: isActive
+                    ? sev === "ALL" ? "rgba(15,23,42,0.07)" : `${sevColor}14`
+                    : "transparent",
+                  color: isActive ? (sev === "ALL" ? "#0f172a" : sevColor) : "#94a3b8",
+                  border: `1px solid ${isActive ? (sev === "ALL" ? "rgba(15,23,42,0.12)" : `${sevColor}30`) : "transparent"}`,
                 }}
               >
-                {sev}
+                {sev === "ALL" ? "All" : sev === "CRITICAL" ? "Critical" : sev === "HIGH" ? "High" : "Medium"}
               </button>
             );
           })}
         </div>
 
         {/* List */}
-        <div className="overflow-y-auto max-h-[360px]">
+        <div className="overflow-y-auto max-h-[400px]">
           {active.length === 0 && (
-            <div className="px-5 py-10 text-center">
-              <div className="h-8 w-8 rounded-full mx-auto mb-3 flex items-center justify-center" style={{ background: "rgba(52,211,153,0.1)" }}>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M2.5 7L5.5 10L11.5 4" stroke="#34d399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <div className="px-5 py-12 text-center">
+              <div
+                className="h-10 w-10 rounded-full mx-auto mb-3 flex items-center justify-center"
+                style={{ background: "rgba(16,185,129,0.08)" }}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 8L6.5 11.5L13 5" stroke="#10b981" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </div>
-              <p className="text-xs text-mutedForeground">No active deviations</p>
+              <p className="text-sm font-medium text-foreground">All clear</p>
+              <p className="text-[11px] text-mutedForeground mt-1">No active deviations</p>
             </div>
           )}
           {active.map((d, idx) => {
@@ -132,27 +145,30 @@ export function DeviationFeed() {
                 key={d.deviation_id}
                 type="button"
                 onClick={() => setSelected(d)}
-                className="w-full text-left group transition-colors"
-                style={{ background: "transparent", borderBottom: idx < active.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.02)"; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                className="w-full text-left transition-colors hover:bg-surfaceRaised"
+                style={{ borderBottom: idx < active.length - 1 ? "1px solid #f1f5f9" : "none" }}
               >
                 <div className="flex items-stretch">
-                  {/* Severity bar */}
-                  <div className="w-0.5 shrink-0 my-0 rounded-r-full" style={{ background: sev.color }} />
+                  <div className="w-0.5 shrink-0" style={{ background: sev.color }} />
                   <div className="flex items-center justify-between px-4 py-3.5 w-full min-w-0">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-[10px] font-bold uppercase tracking-widest ${sev.text}`}>
-                          {d.severity}
-                        </span>
-                        <span className="text-[11px] text-mutedForeground">{d.type}</span>
+                    <div className="min-w-0 flex items-center gap-3">
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider shrink-0"
+                        style={{ background: sev.bg, color: sev.text }}
+                      >
+                        {sev.label}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-medium text-foreground font-mono truncate">{d.order_id}</p>
+                        <p className="text-[10px] text-mutedForeground mt-0.5">{d.type.replace(/_/g, " ")}</p>
                       </div>
-                      <p className="text-sm font-medium text-foreground truncate font-mono">{d.order_id}</p>
                     </div>
-                    <span className="text-[11px] text-mutedForeground shrink-0 ml-4 group-hover:text-foreground transition-colors">
-                      {relativeTime(d.detected_at)}
-                    </span>
+                    <div className="flex items-center gap-3 shrink-0 ml-4">
+                      <span className="text-[10px] text-mutedForeground">{relativeTime(d.detected_at)}</span>
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="text-mutedForeground">
+                        <path d="M4.5 2.5L8 6L4.5 9.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </div>
                   </div>
                 </div>
               </button>

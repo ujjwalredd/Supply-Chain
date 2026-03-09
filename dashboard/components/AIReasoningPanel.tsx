@@ -43,7 +43,6 @@ export function AIReasoningPanel({
   }, []);
 
   const startAnalysis = useCallback(async () => {
-    // Cancel any in-flight request
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -69,7 +68,7 @@ export function AIReasoningPanel({
         }
       );
     } catch (e) {
-      if ((e as Error).name === "AbortError") return; // user cancelled
+      if ((e as Error).name === "AbortError") return;
       const msg = (e as Error).message;
       setError(msg);
       setText("");
@@ -92,42 +91,43 @@ export function AIReasoningPanel({
     } catch {}
   }, [text]);
 
+  const sevColor =
+    deviation.severity === "CRITICAL" ? "#ef4444"
+    : deviation.severity === "HIGH" ? "#d97706"
+    : "#6366f1";
+
   return (
     <>
-      {/* Backdrop — click to close */}
-      <div
-        className="fixed inset-0 z-40 bg-black/40"
-        onClick={onClose}
-        aria-hidden
-      />
+      {/* Backdrop */}
+      <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px]" onClick={onClose} aria-hidden />
 
       {/* Right-side drawer */}
       <div
-        className="fixed right-0 top-0 bottom-0 z-50 flex flex-col w-full max-w-[420px]"
-        style={{ background: "#111117", borderLeft: "1px solid rgba(255,255,255,0.08)" }}
+        className="fixed right-0 top-0 bottom-0 z-50 flex flex-col w-full max-w-[440px] bg-surface"
+        style={{ borderLeft: "1px solid #e2e8f0", boxShadow: "-4px 0 24px rgba(0,0,0,0.08)" }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="ai-panel-title"
       >
         {/* Header */}
-        <div
-          className="flex items-center justify-between px-4 py-3 shrink-0"
-          style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}
-        >
+        <div className="flex items-center justify-between px-5 py-4 shrink-0 border-b border-border">
           <div className="min-w-0">
-            <p id="ai-panel-title" className="text-sm font-semibold text-foreground">
-              AI Analysis
-            </p>
-            <p className="text-[11px] text-mutedForeground mt-0.5 truncate">
-              {deviation.order_id} · <span className="uppercase">{deviation.type}</span> · {deviation.severity}
+            <div className="flex items-center gap-2 mb-0.5">
+              <span
+                className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase"
+                style={{ background: `${sevColor}12`, color: sevColor }}
+              >
+                {deviation.severity}
+              </span>
+              <span className="text-[11px] text-mutedForeground uppercase">{deviation.type.replace(/_/g, " ")}</span>
+            </div>
+            <p id="ai-panel-title" className="text-sm font-semibold text-foreground font-mono truncate">
+              {deviation.order_id}
             </p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0 ml-3">
             {usage && (
-              <span
-                className="text-[10px] text-mutedForeground px-2 py-0.5 rounded"
-                style={{ background: "rgba(255,255,255,0.06)" }}
-              >
+              <span className="text-[10px] text-mutedForeground px-2 py-0.5 rounded bg-surfaceRaised border border-border">
                 {(usage.input_tokens ?? 0) + (usage.output_tokens ?? 0)}t
                 {usage.analysis_time_ms ? ` · ${(usage.analysis_time_ms / 1000).toFixed(1)}s` : ""}
               </span>
@@ -136,12 +136,8 @@ export function AIReasoningPanel({
               <button
                 type="button"
                 onClick={copyText}
-                className="p-1.5 rounded text-mutedForeground hover:text-foreground transition-colors"
-                style={{ background: "transparent" }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.06)"; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                className="p-1.5 rounded-lg text-mutedForeground hover:text-foreground hover:bg-surfaceRaised transition-colors"
                 aria-label="Copy analysis"
-                title="Copy to clipboard"
               >
                 {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
               </button>
@@ -149,10 +145,7 @@ export function AIReasoningPanel({
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded text-mutedForeground hover:text-foreground transition-colors"
-              style={{ background: "transparent" }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.06)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+              className="p-1.5 rounded-lg text-mutedForeground hover:text-foreground hover:bg-surfaceRaised transition-colors"
               aria-label="Close"
             >
               <X className="h-3.5 w-3.5" />
@@ -160,12 +153,12 @@ export function AIReasoningPanel({
           </div>
         </div>
 
-        {/* Body — scrollable */}
-        <div className="overflow-y-auto flex-1 px-4 py-4 space-y-4">
+        {/* Body */}
+        <div className="overflow-y-auto flex-1 px-5 py-5 space-y-4">
           {error && (
             <div
               className="p-3 rounded-lg flex items-start gap-3"
-              style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}
+              style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)" }}
               role="alert"
             >
               <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
@@ -175,8 +168,8 @@ export function AIReasoningPanel({
                 <button
                   type="button"
                   onClick={() => { setError(null); startAnalysis(); }}
-                  className="mt-2 px-2.5 py-1 rounded text-destructive text-[11px] font-medium transition-colors"
-                  style={{ background: "rgba(248,113,113,0.15)" }}
+                  className="mt-2 px-2.5 py-1 rounded-lg text-destructive text-[11px] font-medium transition-colors"
+                  style={{ background: "rgba(239,68,68,0.08)" }}
                 >
                   Retry
                 </button>
@@ -185,17 +178,26 @@ export function AIReasoningPanel({
           )}
 
           {!streaming && !text && !error && (
-            <div className="flex flex-col items-center gap-4 py-12">
-              <p className="text-xs text-mutedForeground text-center max-w-[280px]">
-                Run Claude&apos;s analysis for root cause, financial impact, and trade-off options.
-              </p>
+            <div className="flex flex-col items-center gap-4 py-14">
+              <div
+                className="h-12 w-12 rounded-xl flex items-center justify-center"
+                style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.15)" }}
+              >
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                  <path d="M10 2L12 8H18L13 12L15 18L10 14L5 18L7 12L2 8H8L10 2Z" stroke="#6366f1" strokeWidth="1.3" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-medium text-foreground">AI Deviation Analysis</p>
+                <p className="text-xs text-mutedForeground mt-1 max-w-[260px]">
+                  Root cause, financial impact, and trade-off options powered by Claude
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={startAnalysis}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium transition-colors"
-                style={{ background: "#7c6af7" }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#6b5ce7"; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "#7c6af7"; }}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-white text-sm font-medium transition-colors"
+                style={{ background: "#6366f1" }}
               >
                 <Play className="h-3.5 w-3.5" />
                 Run Analysis
@@ -205,17 +207,11 @@ export function AIReasoningPanel({
 
           {(streaming || text) && (
             <>
-              <div
-                className="rounded-lg p-3"
-                style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
-              >
+              <div className="rounded-lg p-4 bg-surfaceRaised border border-border">
                 <p className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-foreground">
                   {text}
                   {streaming && (
-                    <span
-                      className="inline-block w-1.5 h-[14px] ml-0.5 bg-accent animate-pulse align-middle"
-                      aria-hidden
-                    />
+                    <span className="inline-block w-1.5 h-[14px] ml-0.5 bg-accent animate-pulse align-middle" aria-hidden />
                   )}
                 </p>
               </div>
@@ -225,35 +221,42 @@ export function AIReasoningPanel({
                   <button
                     type="button"
                     onClick={cancelAnalysis}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-mutedForeground text-xs font-medium transition-colors"
-                    style={{ border: "1px solid rgba(255,255,255,0.1)" }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-mutedForeground text-xs font-medium transition-colors border border-border hover:bg-surfaceRaised"
                   >
                     <Square className="h-3 w-3" />
                     Cancel
                   </button>
                 )}
                 {!streaming && text && (
-                  <button
-                    type="button"
-                    onClick={onExecute}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-medium transition-colors"
-                    style={{ background: "rgba(52,211,153,0.9)" }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#34d399"; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(52,211,153,0.9)"; }}
-                  >
-                    <CheckCircle className="h-3 w-3" />
-                    Execute Recommendation
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={startAnalysis}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-mutedForeground text-xs font-medium transition-colors border border-border hover:bg-surfaceRaised"
+                    >
+                      <Play className="h-3 w-3" />
+                      Re-run
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onExecute}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-medium transition-colors"
+                      style={{ background: "#10b981" }}
+                    >
+                      <CheckCircle className="h-3 w-3" />
+                      Execute Recommendation
+                    </button>
+                  </>
                 )}
               </div>
             </>
           )}
 
-          {/* Ontology Constraints Applied */}
+          {/* Ontology Constraints */}
           {constraints.length > 0 && (
-            <div className="pt-3" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+            <div className="pt-4 border-t border-border">
               <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-mutedForeground mb-2">
-                Rules Applied
+                Business Rules Applied
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {constraints.map((c) => (
@@ -262,9 +265,9 @@ export function AIReasoningPanel({
                     title={`${c.constraint_type}: ${c.value}${c.hard_limit ? " (hard limit)" : ""}`}
                     className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium"
                     style={{
-                      background: c.hard_limit ? "rgba(248,113,113,0.08)" : "rgba(124,106,247,0.08)",
-                      color: c.hard_limit ? "#f87171" : "#7c6af7",
-                      border: `1px solid ${c.hard_limit ? "rgba(248,113,113,0.2)" : "rgba(124,106,247,0.2)"}`,
+                      background: c.hard_limit ? "rgba(239,68,68,0.06)" : "rgba(99,102,241,0.06)",
+                      color: c.hard_limit ? "#ef4444" : "#6366f1",
+                      border: `1px solid ${c.hard_limit ? "rgba(239,68,68,0.15)" : "rgba(99,102,241,0.15)"}`,
                     }}
                   >
                     {c.constraint_type.replace(/_/g, " ").toLowerCase()} &le; {c.value}

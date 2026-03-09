@@ -13,10 +13,16 @@ type RiskRow = {
   alt_transit_days?: number;
 };
 
-function urgencyStyle(days: number) {
-  if (days <= 1) return "#f87171";
-  if (days <= 3) return "#fbbf24";
-  return "#52526a";
+function urgencyColor(days: number) {
+  if (days <= 1) return "#ef4444";
+  if (days <= 3) return "#d97706";
+  return "#64748b";
+}
+
+function urgencyBg(days: number) {
+  if (days <= 1) return "rgba(239,68,68,0.06)";
+  if (days <= 3) return "rgba(245,158,11,0.06)";
+  return "transparent";
 }
 
 export function RiskForecast() {
@@ -34,11 +40,14 @@ export function RiskForecast() {
   }, []);
 
   return (
-    <div className="rounded-xl overflow-hidden" style={{ background: "#111117", border: "1px solid rgba(255,255,255,0.07)" }}>
-      <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+    <div
+      className="rounded-xl overflow-hidden bg-surface border border-border"
+      style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
+    >
+      <div className="px-5 py-4 flex items-center justify-between border-b border-border">
         <div>
           <p className="text-sm font-semibold text-foreground">Risk Forecast</p>
-          <p className="text-[11px] text-mutedForeground mt-0.5">Orders due within 7 days</p>
+          <p className="text-[11px] text-mutedForeground mt-0.5">Orders due within 7 days — sorted by urgency</p>
         </div>
         {summary && (
           <span className="text-[11px] text-mutedForeground">
@@ -46,21 +55,20 @@ export function RiskForecast() {
           </span>
         )}
       </div>
-      <div className="overflow-y-auto max-h-[320px]">
+      <div className="overflow-y-auto max-h-[360px]">
         {rows.length === 0 && (
           <div className="px-5 py-10 text-center">
             <p className="text-xs text-mutedForeground">No at-risk orders. Run the Dagster pipeline to generate forecasts.</p>
           </div>
         )}
         {rows.map((r, idx) => {
-          const col = urgencyStyle(r.days_to_delivery);
+          const col = urgencyColor(r.days_to_delivery);
+          const bg = urgencyBg(r.days_to_delivery);
           return (
             <div
               key={r.order_id}
-              className="flex items-stretch transition-colors"
-              style={{ borderBottom: idx < rows.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.02)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+              className="flex items-stretch hover:bg-surfaceRaised transition-colors"
+              style={{ borderBottom: idx < rows.length - 1 ? "1px solid #f1f5f9" : "none", background: bg }}
             >
               <div className="w-0.5 shrink-0" style={{ background: col }} />
               <div className="px-4 py-3.5 flex-1 min-w-0">
