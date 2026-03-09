@@ -94,18 +94,39 @@ export function OpenSourceFeature() {
             </div>
             
             {/* Editor Body */}
-            <div className="p-6 font-mono text-xs sm:text-sm text-steel leading-relaxed bg-[#FAFAFA] overflow-x-auto min-h-[300px] relative">
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={activeFile}
-                  initial={{ opacity: 0, y: 5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -5 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  {codeSnippets[activeFile]}
-                </motion.div>
-              </AnimatePresence>
+            <div className="p-6 font-mono text-xs sm:text-sm text-steel leading-relaxed bg-[#FAFAFA] overflow-hidden min-h-[300px] relative">
+              {/* AI Scan Line Effect */}
+              <motion.div
+                className="absolute left-0 right-0 h-16 bg-gradient-to-b from-transparent via-accent/5 to-transparent z-0 pointer-events-none"
+                animate={{ y: ['-100%', '300%'] }}
+                transition={{
+                  duration: 4,
+                  repeat: Infinity,
+                  ease: "linear"
+                }}
+              />
+              <motion.div
+                className="absolute left-0 right-0 h-px bg-accent/20 z-0 pointer-events-none"
+                animate={{ y: ['0%', '300%'] }} // Maps to the center of the gradient
+                transition={{
+                  duration: 4,
+                  repeat: Infinity,
+                  ease: "linear"
+                }}
+              />
+              <div className="relative z-10 overflow-x-auto" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={activeFile}
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    {codeSnippets[activeFile]}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
             </div>
           </div>
           
