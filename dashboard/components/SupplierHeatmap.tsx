@@ -17,16 +17,16 @@ type SupplierRiskItem = {
 
 function trustColors(score: number) {
   if (score >= 85)
-    return { bg: "rgba(124,106,247,0.1)", border: "rgba(124,106,247,0.25)", text: "#7c6af7", bar: "#7c6af7" };
+    return { bg: "rgba(99,102,241,0.06)", border: "rgba(99,102,241,0.15)", text: "#6366f1", bar: "#6366f1" };
   if (score >= 70)
-    return { bg: "rgba(251,191,36,0.08)", border: "rgba(251,191,36,0.25)", text: "#fbbf24", bar: "#fbbf24" };
-  return { bg: "rgba(248,113,113,0.08)", border: "rgba(248,113,113,0.25)", text: "#f87171", bar: "#f87171" };
+    return { bg: "rgba(245,158,11,0.06)", border: "rgba(245,158,11,0.18)", text: "#d97706", bar: "#f59e0b" };
+  return { bg: "rgba(239,68,68,0.06)", border: "rgba(239,68,68,0.18)", text: "#ef4444", bar: "#ef4444" };
 }
 
 function concentrationBadge(risk?: string) {
-  if (risk === "HIGH") return { label: "HIGH", bg: "rgba(248,113,113,0.12)", color: "#f87171" };
-  if (risk === "MEDIUM") return { label: "MED", bg: "rgba(251,191,36,0.1)", color: "#fbbf24" };
-  return { label: "LOW", bg: "rgba(52,211,153,0.08)", color: "#34d399" };
+  if (risk === "HIGH") return { label: "HIGH dep", bg: "rgba(239,68,68,0.08)", color: "#ef4444" };
+  if (risk === "MEDIUM") return { label: "MED dep", bg: "rgba(245,158,11,0.08)", color: "#d97706" };
+  return { label: "LOW dep", bg: "rgba(16,185,129,0.08)", color: "#059669" };
 }
 
 export function SupplierHeatmap() {
@@ -38,25 +38,22 @@ export function SupplierHeatmap() {
 
   return (
     <div
-      className="rounded-xl overflow-hidden"
-      style={{ background: "#111117", border: "1px solid rgba(255,255,255,0.07)" }}
+      className="rounded-xl overflow-hidden bg-surface border border-border"
+      style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
     >
-      <div
-        className="px-5 py-4 flex items-center justify-between"
-        style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}
-      >
+      <div className="px-5 py-4 flex items-center justify-between border-b border-border">
         <div>
           <p className="text-sm font-semibold text-foreground">Supplier Health Grid</p>
           <p className="text-[11px] text-mutedForeground mt-0.5">Trust score, delay rate and dependency concentration</p>
         </div>
         <div className="flex items-center gap-3">
           {[
-            { c: "#7c6af7", l: "Trusted" },
-            { c: "#fbbf24", l: "Watch" },
-            { c: "#f87171", l: "Risk" },
+            { c: "#6366f1", l: "Trusted" },
+            { c: "#f59e0b", l: "Watch" },
+            { c: "#ef4444", l: "Risk" },
           ].map((x) => (
-            <div key={x.l} className="flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: x.c }} />
+            <div key={x.l} className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full shrink-0" style={{ background: x.c }} />
               <span className="text-[10px] text-mutedForeground">{x.l}</span>
             </div>
           ))}
@@ -64,9 +61,7 @@ export function SupplierHeatmap() {
       </div>
       <div className="p-4">
         {data.length === 0 && (
-          <p className="text-xs text-mutedForeground px-1 py-6 text-center">
-            No supplier data available.
-          </p>
+          <p className="text-xs text-mutedForeground px-1 py-6 text-center">No supplier data available.</p>
         )}
         <div className="grid grid-cols-2 gap-2">
           {data.map((s) => {
@@ -80,7 +75,6 @@ export function SupplierHeatmap() {
                 className="rounded-lg p-3"
                 style={{ background: colors.bg, border: `1px solid ${colors.border}` }}
               >
-                {/* Header row */}
                 <div className="flex items-start justify-between gap-1">
                   <div className="min-w-0">
                     <p className="text-[11px] font-semibold text-foreground truncate font-mono">
@@ -88,37 +82,29 @@ export function SupplierHeatmap() {
                     </p>
                     <p className="text-[10px] text-mutedForeground truncate">{s.region}</p>
                   </div>
-                  <span
-                    className="text-sm font-bold tabular-nums shrink-0 ml-1"
-                    style={{ color: colors.text }}
-                  >
+                  <span className="text-base font-bold tabular-nums shrink-0 ml-1" style={{ color: colors.text }}>
                     {score}
                   </span>
                 </div>
 
                 {/* Trust bar */}
-                <div
-                  className="mt-2 h-1 rounded-full overflow-hidden"
-                  style={{ background: "rgba(255,255,255,0.06)" }}
-                >
+                <div className="mt-2 h-1.5 rounded-full overflow-hidden bg-border">
                   <div
-                    className="h-1 rounded-full transition-all"
+                    className="h-1.5 rounded-full transition-all"
                     style={{ width: `${score}%`, background: colors.bar }}
                   />
                 </div>
 
-                {/* Stats row */}
                 <div className="flex items-center justify-between mt-2">
                   <p className="text-[10px] text-mutedForeground">
                     {s.delayed_orders}/{s.total_orders} delayed
                   </p>
-                  {/* Concentration risk badge */}
                   <span
                     className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide"
                     style={{ background: badge.bg, color: badge.color }}
                     title={`Product dependency: ${depPct}%`}
                   >
-                    {badge.label} dep
+                    {badge.label}
                   </span>
                 </div>
               </div>

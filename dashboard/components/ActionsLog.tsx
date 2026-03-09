@@ -13,10 +13,10 @@ type Action = {
   completed_at?: string;
 };
 
-const statusStyle: Record<string, { bg: string; color: string }> = {
-  PENDING:   { bg: "rgba(251,191,36,0.1)",  color: "#fbbf24" },
-  COMPLETED: { bg: "rgba(52,211,153,0.1)",  color: "#34d399" },
-  CANCELLED: { bg: "rgba(255,255,255,0.05)", color: "#52526a" },
+const statusStyle: Record<string, { bg: string; color: string; border: string }> = {
+  PENDING:   { bg: "rgba(245,158,11,0.08)",  color: "#d97706",  border: "rgba(245,158,11,0.2)" },
+  COMPLETED: { bg: "rgba(16,185,129,0.08)",  color: "#059669",  border: "rgba(16,185,129,0.2)" },
+  CANCELLED: { bg: "rgba(100,116,139,0.06)", color: "#64748b",  border: "rgba(100,116,139,0.12)" },
 };
 
 function relativeTime(iso: string): string {
@@ -28,6 +28,14 @@ function relativeTime(iso: string): string {
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
 }
+
+const TYPE_LABEL: Record<string, string> = {
+  REROUTE: "Reroute",
+  EXPEDITE: "Expedite",
+  SAFETY_STOCK: "Safety Stock",
+  NOTIFY: "Notify",
+  ESCALATE: "Escalate",
+};
 
 export function ActionsLog() {
   const [actions, setActions] = useState<Action[]>([]);
@@ -47,22 +55,28 @@ export function ActionsLog() {
   const pending = actions.filter((a) => a.status === "PENDING").length;
 
   return (
-    <div className="rounded-xl overflow-hidden" style={{ background: "#111117", border: "1px solid rgba(255,255,255,0.07)" }}>
-      <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+    <div
+      className="rounded-xl overflow-hidden bg-surface border border-border"
+      style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
+    >
+      <div className="px-5 py-4 flex items-center justify-between border-b border-border">
         <div>
           <p className="text-sm font-semibold text-foreground">Actions Log</p>
-          <p className="text-[11px] text-mutedForeground mt-0.5">AI-recommended actions</p>
+          <p className="text-[11px] text-mutedForeground mt-0.5">AI-recommended autonomous actions</p>
         </div>
         {pending > 0 && (
-          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md" style={{ background: "rgba(251,191,36,0.1)", color: "#fbbf24" }}>
+          <span
+            className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full"
+            style={{ background: "rgba(245,158,11,0.08)", color: "#d97706", border: "1px solid rgba(245,158,11,0.2)" }}
+          >
             {pending} pending
           </span>
         )}
       </div>
-      <div className="overflow-y-auto max-h-[320px]">
+      <div className="overflow-y-auto max-h-[380px]">
         {actions.length === 0 && (
           <div className="px-5 py-10 text-center">
-            <p className="text-xs text-mutedForeground">No actions yet. Click a deviation and execute a recommendation.</p>
+            <p className="text-xs text-mutedForeground">No actions yet. Click a deviation to trigger AI analysis.</p>
           </div>
         )}
         {actions.map((a, idx) => {
@@ -70,24 +84,22 @@ export function ActionsLog() {
           return (
             <div
               key={a.id}
-              className="flex items-start gap-4 px-5 py-3.5 transition-colors"
-              style={{ borderBottom: idx < actions.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.02)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+              className="flex items-start gap-3 px-5 py-3.5 hover:bg-surfaceRaised transition-colors"
+              style={{ borderBottom: idx < actions.length - 1 ? "1px solid #f1f5f9" : "none" }}
             >
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold text-foreground truncate capitalize">
-                  {a.action_type.replace(/_/g, " ").toLowerCase()}
-                </p>
-                <p className="text-[11px] text-mutedForeground mt-0.5 line-clamp-2">{a.description}</p>
-              </div>
-              <div className="shrink-0 text-right">
-                <span
-                  className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide"
-                  style={{ background: s.bg, color: s.color }}
-                >
-                  {a.status}
-                </span>
+                <div className="flex items-center justify-between gap-2 mb-0.5">
+                  <p className="text-xs font-semibold text-foreground">
+                    {TYPE_LABEL[a.action_type] ?? a.action_type}
+                  </p>
+                  <span
+                    className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider shrink-0"
+                    style={{ background: s.bg, color: s.color, border: `1px solid ${s.border}` }}
+                  >
+                    {a.status}
+                  </span>
+                </div>
+                <p className="text-[11px] text-mutedForeground line-clamp-2 leading-relaxed">{a.description}</p>
                 <p className="text-[10px] text-mutedForeground mt-1">{relativeTime(a.created_at)}</p>
               </div>
             </div>
