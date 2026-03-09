@@ -59,8 +59,8 @@ export function KPICards() {
       value: `$${((data.pipeline_value ?? 0) / 1_000_000).toFixed(1)}M`,
       sub: "total order value",
       valueColor: "#0f172a",
-      accentColor: "#6366f1",
-      iconBg: "rgba(99,102,241,0.08)",
+      accentColor: "#0070F3",
+      iconBg: "rgba(0,112,243,0.08)",
     },
     {
       label: "On-Time Rate",
@@ -97,7 +97,7 @@ export function KPICards() {
       sub: "mean time to resolve",
       valueColor: mttr === null ? "#94a3b8" : mttr <= 30 ? "#10b981" : mttr <= 240 ? "#d97706" : "#ef4444",
       accentColor: mttr === null ? "#94a3b8" : mttr <= 30 ? "#10b981" : mttr <= 240 ? "#f59e0b" : "#ef4444",
-      iconBg: "rgba(99,102,241,0.06)",
+      iconBg: "rgba(0,112,243,0.06)",
     },
   ];
 

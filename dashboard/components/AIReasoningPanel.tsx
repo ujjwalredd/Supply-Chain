@@ -94,7 +94,7 @@ export function AIReasoningPanel({
   const sevColor =
     deviation.severity === "CRITICAL" ? "#ef4444"
     : deviation.severity === "HIGH" ? "#d97706"
-    : "#6366f1";
+    : "#0070F3";
 
   return (
     <>
@@ -181,10 +181,10 @@ export function AIReasoningPanel({
             <div className="flex flex-col items-center gap-4 py-14">
               <div
                 className="h-12 w-12 rounded-xl flex items-center justify-center"
-                style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.15)" }}
+                style={{ background: "rgba(0,112,243,0.08)", border: "1px solid rgba(0,112,243,0.15)" }}
               >
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                  <path d="M10 2L12 8H18L13 12L15 18L10 14L5 18L7 12L2 8H8L10 2Z" stroke="#6366f1" strokeWidth="1.3" strokeLinejoin="round"/>
+                  <path d="M10 2L12 8H18L13 12L15 18L10 14L5 18L7 12L2 8H8L10 2Z" stroke="#0070F3" strokeWidth="1.3" strokeLinejoin="round"/>
                 </svg>
               </div>
               <div className="text-center">
@@ -197,7 +197,7 @@ export function AIReasoningPanel({
                 type="button"
                 onClick={startAnalysis}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-white text-sm font-medium transition-colors"
-                style={{ background: "#6366f1" }}
+                style={{ background: "#0070F3" }}
               >
                 <Play className="h-3.5 w-3.5" />
                 Run Analysis
@@ -265,9 +265,9 @@ export function AIReasoningPanel({
                     title={`${c.constraint_type}: ${c.value}${c.hard_limit ? " (hard limit)" : ""}`}
                     className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium"
                     style={{
-                      background: c.hard_limit ? "rgba(239,68,68,0.06)" : "rgba(99,102,241,0.06)",
-                      color: c.hard_limit ? "#ef4444" : "#6366f1",
-                      border: `1px solid ${c.hard_limit ? "rgba(239,68,68,0.15)" : "rgba(99,102,241,0.15)"}`,
+                      background: c.hard_limit ? "rgba(239,68,68,0.06)" : "rgba(0,112,243,0.06)",
+                      color: c.hard_limit ? "#ef4444" : "#0070F3",
+                      border: `1px solid ${c.hard_limit ? "rgba(239,68,68,0.15)" : "rgba(0,112,243,0.15)"}`,
                     }}
                   >
                     {c.constraint_type.replace(/_/g, " ").toLowerCase()} &le; {c.value}

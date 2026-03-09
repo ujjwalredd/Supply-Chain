@@ -29,7 +29,7 @@ function relativeTime(iso: string): string {
 const SEV: Record<string, { color: string; bg: string; text: string; label: string }> = {
   CRITICAL: { color: "#ef4444", bg: "rgba(239,68,68,0.08)",  text: "#ef4444",  label: "Critical" },
   HIGH:     { color: "#f59e0b", bg: "rgba(245,158,11,0.08)", text: "#d97706",  label: "High" },
-  MEDIUM:   { color: "#6366f1", bg: "rgba(99,102,241,0.08)", text: "#6366f1",  label: "Medium" },
+  MEDIUM:   { color: "#0070F3", bg: "rgba(0,112,243,0.08)",  text: "#0070F3",  label: "Medium" },
 };
 
 const SEVERITIES = ["ALL", "CRITICAL", "HIGH", "MEDIUM"] as const;
@@ -100,7 +100,7 @@ export function DeviationFeed() {
             const sevColor =
               sev === "CRITICAL" ? "#ef4444"
               : sev === "HIGH" ? "#d97706"
-              : sev === "MEDIUM" ? "#6366f1"
+              : sev === "MEDIUM" ? "#0070F3"
               : "#64748b";
             return (
               <button

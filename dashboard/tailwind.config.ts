@@ -10,33 +10,41 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background:       "#f8fafc",
-        surface:          "#ffffff",
-        surfaceRaised:    "#f1f5f9",
-        foreground:       "#0f172a",
-        accent:           "#6366f1",
-        accentForeground: "#ffffff",
-        card:             "#ffffff",
-        cardForeground:   "#0f172a",
-        muted:            "#f1f5f9",
-        mutedForeground:  "#64748b",
-        border:           "#e2e8f0",
-        borderStrong:     "#cbd5e1",
-        destructive:      "#ef4444",
-        success:          "#10b981",
-        warning:          "#f59e0b",
-        info:             "#3b82f6",
+        // Matches modern-landing design system exactly
+        background:      "#FAFAFA",    // surface
+        surface:         "#FFFFFF",    // paper
+        surfaceRaised:   "#F4F4F5",    // subtle
+        foreground:      "#09090B",    // ink
+        accent:          "#0070F3",    // Vercel/Linear blue
+        accentForeground:"#FFFFFF",
+        card:            "#FFFFFF",
+        cardForeground:  "#09090B",
+        muted:           "#F4F4F5",
+        mutedForeground: "#71717A",    // steel
+        border:          "rgba(0,0,0,0.06)",
+        borderStrong:    "rgba(0,0,0,0.10)",
+        destructive:     "#EF4444",
+        success:         "#10B981",
+        warning:         "#F59E0B",
+        info:            "#3B82F6",
       },
       fontFamily: {
-        sans: ["var(--font-geist-sans)", "system-ui", "sans-serif"],
-        mono: ["var(--font-geist-mono)", "monospace"],
+        sans: ["var(--font-geist-sans)", "Inter", "system-ui", "sans-serif"],
+        mono: ["var(--font-geist-mono)", "JetBrains Mono", "monospace"],
+      },
+      backgroundImage: {
+        "subtle-grid":
+          "linear-gradient(to right, rgba(0,0,0,0.03) 1px, transparent 1px), linear-gradient(to bottom, rgba(0,0,0,0.03) 1px, transparent 1px)",
+        "hero-glow":
+          "radial-gradient(circle at 50% 0%, rgba(0,112,243,0.06), transparent 50%)",
       },
       boxShadow: {
-        sm:   "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
-        md:   "0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04)",
-        lg:   "0 8px 24px rgba(0,0,0,0.08), 0 4px 8px rgba(0,0,0,0.04)",
-        glow: "0 0 20px rgba(99,102,241,0.15)",
-        card: "0 1px 3px rgba(0,0,0,0.06)",
+        sm:    "0 1px 2px rgba(0,0,0,0.05)",
+        card:  "0 1px 3px rgba(0,0,0,0.04), 0 10px 20px -5px rgba(0,0,0,0.02)",
+        glass: "0 4px 32px -4px rgba(0,0,0,0.04)",
+        glow:  "0 0 40px -10px rgba(0,112,243,0.15)",
+        md:    "0 4px 12px rgba(0,0,0,0.06)",
+        lg:    "0 8px 24px rgba(0,0,0,0.06)",
       },
     },
   },

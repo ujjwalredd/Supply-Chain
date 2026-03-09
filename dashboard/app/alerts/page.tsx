@@ -3,6 +3,8 @@
 import { Suspense } from "react";
 import { DeviationFeed } from "@/components/DeviationFeed";
 import { ActionsLog } from "@/components/ActionsLog";
+import { DeviationClusters } from "@/components/DeviationClusters";
+import { BulkTriagePanel } from "@/components/BulkTriagePanel";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PanelSkeleton } from "@/components/PanelSkeleton";
 
@@ -17,17 +19,28 @@ export default function AlertsPage() {
       </div>
 
       <div className="grid gap-5 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-5">
           <ErrorBoundary label="Deviation Feed">
             <Suspense fallback={<PanelSkeleton rows={10} />}>
               <DeviationFeed />
             </Suspense>
           </ErrorBoundary>
+
+          <ErrorBoundary label="Bulk Triage">
+            <BulkTriagePanel />
+          </ErrorBoundary>
         </div>
-        <div>
+
+        <div className="space-y-5">
           <ErrorBoundary label="Actions Log">
             <Suspense fallback={<PanelSkeleton rows={8} />}>
               <ActionsLog />
+            </Suspense>
+          </ErrorBoundary>
+
+          <ErrorBoundary label="Deviation Clusters">
+            <Suspense fallback={<PanelSkeleton rows={6} />}>
+              <DeviationClusters />
             </Suspense>
           </ErrorBoundary>
         </div>
