@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { fetchOrders } from "@/lib/api";
-import { Download } from "lucide-react";
+import { Download, Clock } from "lucide-react";
+import { OrderTimeline } from "@/components/OrderTimeline";
 
 type Order = {
   order_id: string;
@@ -16,7 +17,7 @@ type Order = {
 const statusBadge: Record<string, { bg: string; color: string }> = {
   DELAYED:    { bg: "rgba(239,68,68,0.08)",   color: "#ef4444" },
   DELIVERED:  { bg: "rgba(16,185,129,0.08)",  color: "#059669" },
-  IN_TRANSIT: { bg: "rgba(99,102,241,0.08)",  color: "#6366f1" },
+  IN_TRANSIT: { bg: "rgba(0,112,243,0.08)",   color: "#0070F3" },
   PENDING:    { bg: "rgba(100,116,139,0.06)", color: "#64748b" },
   CANCELLED:  { bg: "rgba(100,116,139,0.06)", color: "#64748b" },
 };
@@ -46,6 +47,7 @@ function exportCSV(orders: Order[]) {
 export function OrderTable() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [timelineOrderId, setTimelineOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     const params: Record<string, string> = { limit: "50" };
@@ -56,6 +58,10 @@ export function OrderTable() {
   }, [statusFilter]);
 
   return (
+    <>
+    {timelineOrderId && (
+      <OrderTimeline orderId={timelineOrderId} onClose={() => setTimelineOrderId(null)} />
+    )}
     <div
       className="rounded-xl overflow-hidden bg-surface border border-border"
       style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
@@ -72,7 +78,7 @@ export function OrderTable() {
             onClick={() => exportCSV(orders)}
             disabled={orders.length === 0}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors disabled:opacity-40 hover:bg-muted"
-            style={{ background: "rgba(99,102,241,0.08)", color: "#6366f1", border: "1px solid rgba(99,102,241,0.15)" }}
+            style={{ background: "rgba(0,112,243,0.08)", color: "#0070F3", border: "1px solid rgba(0,112,243,0.15)" }}
             title="Export visible orders as CSV"
           >
             <Download className="h-3 w-3" />
@@ -98,7 +104,7 @@ export function OrderTable() {
         <table className="w-full">
           <thead className="sticky top-0 bg-surfaceRaised">
             <tr className="border-b border-border">
-              {["Order ID", "Supplier", "Product", "Value", "Delay", "Status"].map((h, i) => (
+              {["Order ID", "Supplier", "Product", "Value", "Delay", "Status", ""].map((h, i) => (
                 <th
                   key={h}
                   className={`py-2.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-mutedForeground ${i >= 3 && i !== 5 ? "text-right" : "text-left"}`}
@@ -137,6 +143,16 @@ export function OrderTable() {
                       {o.status.replace("_", " ")}
                     </span>
                   </td>
+                  <td className="px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => setTimelineOrderId(o.order_id)}
+                      className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium text-mutedForeground hover:text-foreground hover:bg-surfaceRaised transition-colors border border-transparent hover:border-border"
+                    >
+                      <Clock className="h-3 w-3" />
+                      Timeline
+                    </button>
+                  </td>
                 </tr>
               );
             })}
@@ -147,5 +163,6 @@ export function OrderTable() {
         )}
       </div>
     </div>
+    </>
   );
 }

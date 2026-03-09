@@ -368,3 +368,106 @@ def analyze_structured(
         recommendation="Manual review required",
         autonomous_executable=False,
     )
+
+
+def stream_bulk_triage(
+    deviations: list[dict[str, Any]],
+    _usage_sink: dict | None = None,
+) -> Iterator[str]:
+    """Stream a prioritized triage analysis of multiple open deviations."""
+    client = _get_client()
+
+    dev_lines = "\n".join([
+        f"  {i + 1}. [{d['severity']}] {d['type']} — Order {d['order_id']} | "
+        f"Supplier: {d.get('supplier', 'unknown')} | "
+        f"Value: ${float(d.get('order_value', 0)):,.0f} | "
+        f"Action: {d.get('recommended_action', 'TBD')}"
+        for i, d in enumerate(deviations)
+    ])
+
+    prompt = f"""You are reviewing {len(deviations)} open supply chain deviation(s) that require triage.
+
+Deviations:
+{dev_lines}
+
+Your task (write in plain prose — no markdown headers, no emojis, no symbols):
+1. Top priority deviation — which one to resolve first and why (financial risk, cascading effects, constraint violations).
+2. Ranked action list — one concise recommended action per remaining deviation, ordered by urgency.
+3. Root cause pattern — any common thread across the group (same supplier, region, product category).
+4. Total financial exposure — rough aggregate exposure across all deviations.
+
+Be concrete, specific, and factual."""
+
+    try:
+        with client.messages.stream(
+            model=MODEL,
+            max_tokens=1200,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": prompt}],
+        ) as stream:
+            for text in stream.text_stream:
+                yield text
+            if _usage_sink is not None:
+                try:
+                    final = stream.get_final_message()
+                    _usage_sink["input_tokens"] = final.usage.input_tokens
+                    _usage_sink["output_tokens"] = final.usage.output_tokens
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.exception("Bulk triage stream failed: %s", e)
+        yield f"\n\nError: {str(e)}"
+
+
+def stream_whatif(
+    scenario: dict[str, Any],
+    supplier_from: dict[str, Any],
+    supplier_to: dict[str, Any] | None,
+    constraints: list[dict],
+    _usage_sink: dict | None = None,
+) -> Iterator[str]:
+    """Stream Claude's analysis of a what-if volume shift scenario."""
+    client = _get_client()
+
+    prompt = f"""You are analyzing a supply chain what-if scenario.
+
+Scenario:
+{json.dumps(scenario, indent=2)}
+
+Source supplier (shifting volume away from):
+{json.dumps(supplier_from, indent=2)}
+
+Target supplier (shifting volume to):
+{json.dumps(supplier_to or {}, indent=2) if supplier_to else "No specific target — recommend the best available option."}
+
+Active business constraints:
+{json.dumps(constraints[:10], indent=2)}
+
+Analyze in plain prose (no markdown headers, no emojis):
+1. Feasibility — does the shift violate any constraint? Name them explicitly if so.
+2. Cost impact — estimated cost change based on order values and supplier pricing patterns.
+3. Risk delta — net change in delivery risk (trust score, delay rate, concentration).
+4. Recommendation — proceed, pause, or reject? Under what conditions?
+5. Execution caveats — what must be in place for this shift to succeed.
+
+Be specific. Do not hedge without data."""
+
+    try:
+        with client.messages.stream(
+            model=MODEL,
+            max_tokens=1000,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": prompt}],
+        ) as stream:
+            for text in stream.text_stream:
+                yield text
+            if _usage_sink is not None:
+                try:
+                    final = stream.get_final_message()
+                    _usage_sink["input_tokens"] = final.usage.input_tokens
+                    _usage_sink["output_tokens"] = final.usage.output_tokens
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.exception("What-if stream failed: %s", e)
+        yield f"\n\nError: {str(e)}"
