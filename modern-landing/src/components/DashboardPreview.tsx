@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Network, Activity, ChevronRight, ShieldAlert, Cpu, CheckCircle2 } from 'lucide-react';
+import { Network, ChevronRight, Cpu, CheckCircle2 } from 'lucide-react';
 
 const staggerItem = {
   hidden: { opacity: 0, y: 20 },

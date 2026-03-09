@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Code2, GitBranch, TerminalSquare, Search, Github } from 'lucide-react';
+import { GitBranch, TerminalSquare, Search, Github } from 'lucide-react';
 
 const codeSnippets: Record<string, React.ReactNode> = {
   'engine.py': (
