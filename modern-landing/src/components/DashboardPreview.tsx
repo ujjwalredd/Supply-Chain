@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Network, ChevronRight, Cpu, CheckCircle2 } from 'lucide-react';
+import { ChevronRight, Cpu, CheckCircle2 } from 'lucide-react';
 import { AnimatedNumber, AnimatedDecimal } from './AnimatedNumber';
 import { TiltCard } from './TiltCard';
+import { CobeGlobe } from './CobeGlobe';
 
 const staggerItem = {
   hidden: { opacity: 0, y: 20 },
@@ -262,11 +263,18 @@ export function DashboardPreview() {
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-xl border border-black/5 shadow-sm overflow-hidden h-full flex flex-col relative">
                 
                 {!isMapExpanded ? (
-                  <div className="p-6 h-full flex flex-col items-center justify-center relative">
+                  <div className="p-0 flex-1 flex flex-col items-center justify-center relative overflow-hidden min-h-[600px]">
                     <div className="absolute inset-0 bg-subtle-grid [background-size:24px_24px] pointer-events-none opacity-50" />
-                    <Network className="text-steel/20 w-32 h-32 mb-4 relative z-10" />
-                    <h4 className="text-ink font-semibold relative z-10 mb-2">Global Logistics Graph Active</h4>
-                    <p className="text-steel text-sm text-center max-w-sm relative z-10 font-light">
+                    
+                    {/* The 3D Globe */}
+                    <div className="absolute inset-0 z-0 opacity-40 flex flex-col items-center justify-center pointer-events-none mt-12">
+                      <CobeGlobe />
+                    </div>
+
+                    {/* Overlay Content */}
+                    <div className="relative z-10 flex flex-col items-center mt-32 pointer-events-auto">
+                      <h4 className="text-ink font-semibold mb-2 bg-white/80 backdrop-blur-md px-4 py-1 rounded-full border border-black/5 shadow-sm text-sm">Global Logistics Graph Active</h4>
+                    <p className="text-steel text-sm text-center max-w-sm relative z-10 font-light bg-white/80 backdrop-blur-md rounded-xl p-2">
                       Live multi-echelon network topology mapping 19 factories, 11 ports, and 300+ transit lanes using PostgreSQL recursive CTEs.
                     </p>
                     <button 
@@ -275,25 +283,28 @@ export function DashboardPreview() {
                     >
                       Expand Map View
                     </button>
+                    </div>
                   </div>
                 ) : (
-                  <div className="flex h-full w-full">
-                    {/* Map Area */}
-                    <div className="flex-1 relative bg-surface overflow-hidden p-6">
-                      <div className="absolute inset-0 bg-subtle-grid [background-size:32px_32px] pointer-events-none opacity-50" />
-                      
-                      {/* Top Bar inside Map */}
-                      <div className="relative z-10 flex justify-between items-center mb-4">
-                        <div className="text-xs font-medium text-ink bg-white px-3 py-1.5 rounded-lg border border-black/5 shadow-sm">
-                          Live Topology: <span className="text-accent font-semibold">19 Nodes / 312 Edges</span>
-                        </div>
-                        <button 
-                          onClick={() => setIsMapExpanded(false)}
-                          className="text-[10px] font-semibold tracking-wider uppercase text-steel hover:text-ink transition-colors bg-white px-3 py-1.5 rounded-lg border border-black/5 shadow-sm"
-                        >
-                          Close Map
-                        </button>
+                  <div className="flex flex-col h-full w-full">
+                    {/* Global Header for Expanded Map */}
+                    <div className="border-b border-black/5 bg-white px-6 py-3 flex justify-between items-center shrink-0">
+                      <div className="text-xs font-medium text-ink flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+                        Live Topology: <span className="text-accent font-semibold">19 Nodes / 312 Edges</span>
                       </div>
+                      <button 
+                        onClick={() => setIsMapExpanded(false)}
+                        className="text-[10px] font-semibold tracking-wider uppercase text-steel hover:text-ink transition-colors border border-black/5 px-4 py-1.5 rounded bg-subtle hover:bg-black/5"
+                      >
+                        Close Map
+                      </button>
+                    </div>
+
+                    <div className="flex flex-1 overflow-hidden">
+                      {/* Map Area */}
+                      <div className="flex-1 relative bg-surface overflow-hidden p-6 flex flex-col justify-center">
+                        <div className="absolute inset-0 bg-subtle-grid [background-size:32px_32px] pointer-events-none opacity-50" />
 
                       {/* Mock Graph Simulation */}
                       <div className="relative w-full h-[400px] border border-black/5 rounded-xl bg-white shadow-inner flex items-center justify-center overflow-hidden">
@@ -354,8 +365,8 @@ export function DashboardPreview() {
                               <circle r="22" fill="#FEE2E2" opacity="0.5" />
                               <circle r="14" fill="#FEE2E2" stroke="#EF4444" strokeWidth="2" filter="url(#glow)" />
                               <circle r="6" fill="#EF4444" />
-                              <rect x="-50" y="-45" width="100" height="24" rx="4" fill="#EF4444" />
-                              <text y="-30" textAnchor="middle" className="text-[11px] font-mono font-bold fill-white">Shanghai DEV</text>
+                              <rect x="-50" y="26" width="100" height="24" rx="4" fill="#EF4444" />
+                              <text y="42" textAnchor="middle" className="text-[11px] font-mono font-bold fill-white">Shanghai DEV</text>
                             </g>
 
                             {/* Tokyo */}
@@ -394,41 +405,44 @@ export function DashboardPreview() {
                       </div>
                     </div>
 
-                    {/* Right Panel (Deep dive info) */}
-                    <div className="w-64 border-l border-black/5 bg-white p-4 overflow-y-auto flex flex-col relative z-10 shrink-0">
-                      <div className="text-xs font-semibold text-ink mb-1">Graph Traversal Logs</div>
-                      <div className="text-[10px] text-steel mb-4">Recursive CTE depth: 4 levels</div>
+                      {/* Right Panel (Deep dive info) */}
+                      <div className="w-68 border-l border-black/5 bg-white p-5 overflow-y-auto flex flex-col relative z-10 shrink-0">
+                        <div className="text-xs font-semibold text-ink mb-1">Graph Traversal Logs</div>
+                        <div className="text-[10px] text-steel mb-6">Recursive CTE depth: 4 levels</div>
 
-                      <div className="space-y-4">
-                        <div className="p-3 bg-danger/5 border border-danger/20 rounded-lg">
-                          <div className="text-[10px] text-danger font-semibold mb-1 uppercase tracking-wider">Node Critical</div>
-                          <div className="text-xs text-ink font-medium">Shanghai Port</div>
-                          <div className="text-[10px] text-steel mt-1 border-t border-danger/10 pt-1">
-                            Impacts <span className="text-ink font-semibold">14 edges</span> downstream.<br/>
-                            Est. 2-week freeze.
+                        <div className="space-y-4">
+                          <div className="p-3 bg-danger/5 border border-danger/20 rounded-lg">
+                            <div className="text-[10px] text-danger font-semibold mb-1 uppercase tracking-wider">Node Critical</div>
+                            <div className="text-xs text-ink font-medium">Shanghai DEV</div>
+                            <div className="text-[10px] text-steel mt-2 border-t border-danger/10 pt-2 leading-relaxed">
+                              Impacts <span className="text-ink font-semibold">14 edges</span> downstream.<br/>
+                              Est. 2-week freeze.
+                            </div>
                           </div>
-                        </div>
 
-                        <div className="p-3 bg-subtle border border-black/5 rounded-lg">
-                          <div className="text-[10px] text-steel font-medium mb-1 uppercase tracking-wider">Alternative Computed</div>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs font-mono text-ink">Taipei</span>
-                            <ChevronRight size={10} className="text-accent" />
-                            <span className="text-xs font-mono text-ink">Tokyo</span>
+                          <div className="p-3 bg-subtle border border-black/5 rounded-lg">
+                            <div className="text-[10px] text-steel font-medium mb-1 uppercase tracking-wider">Alternative Computed</div>
+                            <div className="flex items-center gap-2 mt-2">
+                              <span className="text-xs font-mono text-ink">Taipei</span>
+                              <ChevronRight size={10} className="text-accent" />
+                              <span className="text-xs font-mono text-ink">Tokyo</span>
+                            </div>
+                            <div className="text-[10px] text-success mt-2">+ $140,000 margin preservation</div>
                           </div>
-                          <div className="text-[10px] text-success mt-2">+ $140,000 margin preservation</div>
-                        </div>
 
-                        <div className="p-3 bg-subtle border border-black/5 rounded-lg">
-                          <div className="text-[10px] text-steel font-medium mb-1 uppercase tracking-wider">Supplier Dependency</div>
-                          <div className="mt-1 flex justify-between items-end">
-                            <span className="text-xs font-mono text-ink">GlobalFreight</span>
-                            <span className="text-xs text-danger font-medium">34% <span className="font-light text-steel text-[10px]">(&gt;25% SLA cap)</span></span>
+                          <div className="p-3 bg-subtle border border-black/5 rounded-lg">
+                            <div className="text-[10px] text-steel font-medium mb-1 uppercase tracking-wider">Supplier Dependency</div>
+                            <div className="mt-2 flex flex-col justify-start">
+                              <span className="text-xs font-mono text-ink">GlobalFreight</span>
+                              <div className="flex items-baseline gap-2 mt-1">
+                                <span className="text-sm text-danger font-semibold">34%</span>
+                                <span className="font-medium text-steel text-[10px]">(&gt;25% SLA cap)</span>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
-
                   </div>
                 )}
               </motion.div>

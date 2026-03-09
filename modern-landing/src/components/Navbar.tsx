@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Activity } from 'lucide-react';
+import { Activity, Search } from 'lucide-react';
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
@@ -36,11 +36,22 @@ export function Navbar() {
           <a href="#architecture" className="hover:text-ink transition-colors">Architecture</a>
         </nav>
         <div className="flex items-center gap-4 text-xs font-medium">
+          <button 
+            onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))}
+            className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-md border border-black/5 hover:bg-subtle/50 transition-colors text-steel h-[32px]"
+          >
+            <Search size={14} />
+            <span className="opacity-80">Search...</span>
+            <kbd className="hidden lg:inline-flex items-center gap-1 font-mono text-[10px] bg-black/5 px-1.5 py-0.5 rounded ml-2">
+              <span className="text-sm leading-none">⌘</span> K
+            </kbd>
+          </button>
+          
           <a 
             href="https://github.com/ujjwalredd/Supply-Chain" 
             target="_blank" 
             rel="noopener noreferrer"
-            className="flex items-center gap-2 bg-ink text-paper px-4 py-1.5 rounded-md hover:bg-black transition-colors font-semibold shadow-sm"
+            className="flex items-center gap-2 bg-ink text-paper px-4 py-1.5 rounded-md hover:bg-black transition-colors font-semibold shadow-sm h-[32px]"
           >
             View Source
           </a>
