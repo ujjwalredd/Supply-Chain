@@ -1,4 +1,4 @@
-# Supply Chain AI Operating System — v3.0
+# Supply Chain AI Operating System — v4.0
 
 > Prototype inspired by [Auger](https://auger.com) — an AI-native supply chain control tower that collapses the gap between signal and execution.
 
@@ -15,8 +15,13 @@ Auger (raised ~$100M, founded by Dave Clark — former Amazon Worldwide Consumer
 | **Deviation Detection** | Automatic: DELAY / STOCKOUT / ANOMALY with severity levels (MEDIUM / HIGH / CRITICAL) |
 | **AI Root-Cause Reasoning** | Claude Sonnet 4.6 via forced `tool_use` — 100% structured output, no JSON fallback |
 | **AI Response Cache** | Redis-backed 1-hour TTL per deviation — eliminates duplicate API calls |
-| **Ontology Layer** | 7 business rules injected into every AI call as hard constraints |
-| **Action Execution** | Every recommendation click persisted as an auditable `PendingAction` |
+| **Ontology Layer** | 19 business rules (SLA tiers, penalties, dependency caps, region limits) injected into every AI call |
+| **Autonomous Action Execution** | `ActionExecutor`: REROUTE (find alt supplier), EXPEDITE (Slack), SAFETY_STOCK (Kafka procurement), ESCALATE (structured package) |
+| **Financial Impact** | Computed before every AI call: carrying cost + delay cost + stockout penalty in USD |
+| **Network Context** | Co-affected orders + alternate suppliers fetched and injected into Claude prompt |
+| **Supplier Dependency Tracking** | `max_product_dependency_pct` + `concentration_risk` (LOW/MEDIUM/HIGH) per supplier |
+| **Demand Signal Ingest** | `DEMAND_SPIKE` events from producer trigger preemptive STOCKOUT deviations |
+| **Background AI Trigger** | CRITICAL deviations auto-analyzed by Claude in background thread (ThreadPoolExecutor) |
 | **Risk Forecasting** | Time-decay ML scoring: `delay_probability × order_value × urgency` |
 | **Slack Alerting** | Webhook notification for every CRITICAL deviation |
 | **Observability** | Prometheus `/metrics` endpoint via `prometheus-fastapi-instrumentator` |
@@ -111,28 +116,26 @@ Auger (raised ~$100M, founded by Dave Clark — former Amazon Worldwide Consumer
                              └─────────────┘
 
  ┌──────────────────────────────────────────────────────────────────────────────────┐
- │  v3.0 IMPROVEMENTS                                                               │
- │  • Forced tool_use (tool_choice=tool) — Claude always returns structured output  │
- │  • Redis AI cache (1h TTL) — eliminates redundant Claude calls                   │
- │  • Trust score incremental mean — proper weighted history, not running average   │
- │  • Slack webhook — CRITICAL deviations notify on-call instantly                  │
- │  • Prometheus /metrics — drop into Grafana for real monitoring                   │
- │  • WebSocket exponential backoff — min(1s×2^n, 30s) on reconnect                 │
- │  • Dashboard v3 — sticky topnav with live pill, severity-colored left bars,      │
- │                   shimmer skeleton loaders, rgba border system, clean dark UI    │
- │  • AI output humanized — no emojis, no markdown noise, plain professional prose  │
- │  • AI panel: ontology constraints shown, copy button, token + latency footer     │
- │  • Deviation trend chart — 7-day stacked bar (CRITICAL / HIGH / MEDIUM)          │
- │  • Supplier health heatmap — trust score grid with progress bars                 │
- │  • MTTR KPI card — avg time from detection to resolution (server-computed)       │
- │  • /alerts/trend endpoint — daily deviation counts grouped by severity           │
- │  • /actions/stats endpoint — MTTR computed via SQL join on deviations table      │
- │  • AI panel converted to right-side drawer (420px) — no more full-screen modal   │
- │  • Severity filter (ALL/CRITICAL/HIGH/MEDIUM) on Deviation feed                  │
- │  • CSV export button on Order table — downloads visible rows as dated .csv       │
- │  • Grafana dashboard (port 3002) — pre-built supply chain panels, PostgreSQL     │
- │    datasource auto-provisioned; stat cards, barchart, supplier table, alert log  │
- │  • Seed timestamps fixed — MTTR now realistic (~15 min vs hours before)          │
+ │  v4.0 NEW (Auger gap closure)                                                    │
+ │  • ActionExecutor: REROUTE (alt supplier trust≥0.80, same region), EXPEDITE      │
+ │    (Slack), SAFETY_STOCK (Kafka procurement event), ESCALATE (structured pkg)    │
+ │  • Financial impact computed pre-AI: carrying cost + delay cost + stockout pen   │
+ │  • Network context injected into Claude: co-affected orders + alt suppliers      │
+ │  • Supplier dependency: max_product_dependency_pct + concentration_risk per sup  │
+ │  • DEMAND_SPIKE signals from producer → preemptive STOCKOUT deviations           │
+ │  • Background AI for CRITICAL deviations via ThreadPoolExecutor(max_workers=2)   │
+ │  • Ontology expanded to 19 rules: SLA tiers, penalty rates, dependency caps,     │
+ │    region limits, probation flags, min trust floor, escalation confidence gate   │
+ │  • Bug fixes: Redis leak, datetime dtype, savepoints, KeyError, edge dedup       │
+ │  • Request ID middleware, improved /health, Claude retry/timeout (30s, 2x)       │
+ │  • MTTR windowed (default 30d param) — avoids skew from old historical data      │
+ │                                                                                  │
+ │  v3.0                                                                            │
+ │  • Forced tool_use — Claude always returns structured output                     │
+ │  • Redis AI cache (1h TTL), Trust score incremental mean, Slack webhook          │
+ │  • Prometheus /metrics, Dashboard v3, MTTR KPI card, Deviation trend chart       │
+ │  • Supplier heatmap, AI drawer (420px), Severity filter, CSV export              │
+ │  • Grafana dashboard auto-provisioned (port 3002)                                │
  └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -463,7 +466,7 @@ curl -X POST http://localhost:8000/ai/analyze \
 | `GET` | `/health` | Health check |
 | `GET` | `/orders` | Orders — filter: `status`, `supplier_id`, `limit`, `offset` |
 | `GET` | `/suppliers` | All suppliers |
-| `GET` | `/suppliers/risk` | Supplier risk rankings (trust score, delay stats) |
+| `GET` | `/suppliers/risk` | Supplier risk: trust score, delay rate, `max_product_dependency_pct`, `concentration_risk` |
 | `GET` | `/alerts` | Deviation alerts — filter: `executed`, `severity`, `limit` |
 | `GET` | `/alerts/trend` | Deviation counts per day for last N days, grouped by severity |
 | `POST` | `/alerts/{id}/dismiss` | Execute recommendation → creates `PendingAction` |
@@ -602,14 +605,17 @@ supply-chain-os/
 ├── ingestion/
 │   ├── producer.py                # Kafka: 50+ events/min, state machine, causality chains
 │   ├── consumer.py                # Kafka → Delta Lake bronze (analytics path)
-│   ├── pg_writer.py               # Kafka → PostgreSQL + Redis pub/sub (operational path)
-│   ├── schemas.py                 # OrderEvent Pydantic model
+│   ├── pg_writer.py               # Kafka → PostgreSQL + Redis pub/sub + background AI trigger
+│   ├── schemas.py                 # OrderEvent + DemandEvent Pydantic models
 │   └── batch_loader.py            # CSV → bronze Parquet (all 5 datasets)
 ├── pipeline/
 │   ├── assets_medallion.py        # 14 Dagster software-defined assets
 │   └── definitions_medallion.py   # Definitions object + 6-hour ScheduleDefinition
+├── integrations/
+│   ├── __init__.py
+│   └── action_executor.py         # ActionExecutor: REROUTE / EXPEDITE / SAFETY_STOCK / ESCALATE
 ├── reasoning/
-│   └── engine.py                  # Claude tool_use + SSE streaming + token tracking
+│   └── engine.py                  # Claude tool_use + SSE + financial impact + network context
 ├── transforms/
 │   └── models/
 │       ├── staging/               # stg_orders.sql, stg_suppliers.sql
@@ -617,7 +623,7 @@ supply-chain-os/
 ├── quality/
 │   └── validations.py             # Great Expectations checks (not_null, between, in_set)
 ├── scripts/
-│   ├── seed_db.py                 # 8 suppliers, 120 orders, 20 deviations, 7 constraints
+│   ├── seed_db.py                 # 8 suppliers, 120 orders, 20 deviations, 19 ontology constraints
 │   ├── sync_gold_to_postgres.py   # Gold/bronze Parquet → Postgres (idempotent upsert)
 │   ├── sync_data_to_minio.py      # Local Parquet → MinIO bucket (boto3)
 │   └── download_supply_chain_data.py

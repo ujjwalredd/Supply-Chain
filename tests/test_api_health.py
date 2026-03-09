@@ -7,15 +7,18 @@ from unittest.mock import AsyncMock, patch
 
 
 def test_health_returns_ok():
-    """GET /health should return {status: ok} without a live database."""
+    """GET /health should return 200 with service name and checks dict."""
     with patch("api.database.init_db", new_callable=AsyncMock):
         from api.main import app
         from starlette.testclient import TestClient
         with TestClient(app, raise_server_exceptions=False) as client:
             resp = client.get("/health")
     assert resp.status_code == 200
-    assert resp.json()["status"] == "ok"
-    assert resp.json()["service"] == "supply-chain-api"
+    data = resp.json()
+    # status is "ok" when DB is reachable, "degraded" in test env — either is valid
+    assert data["status"] in ("ok", "degraded")
+    assert data["service"] == "supply-chain-api"
+    assert "checks" in data
 
 
 def test_root_lists_endpoints():

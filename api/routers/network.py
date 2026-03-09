@@ -56,6 +56,7 @@ def _build_graph() -> dict:
     products_per_plant = _load_products_per_plant()
 
     nodes: dict[str, dict] = {}
+    edge_keys: set[tuple[str, str]] = set()
     edges: list[dict] = []
 
     for row in plant_ports:
@@ -69,7 +70,10 @@ def _build_graph() -> dict:
             nodes[plant_id] = {"id": plant_id, "label": plant, "type": "plant"}
         if port_id not in nodes:
             nodes[port_id] = {"id": port_id, "label": port, "type": "port"}
-        edges.append({"source": plant_id, "target": port_id, "label": "ships_via"})
+        edge_key = (plant_id, port_id)
+        if edge_key not in edge_keys:
+            edge_keys.add(edge_key)
+            edges.append({"source": plant_id, "target": port_id, "label": "ships_via"})
 
     # Build plant→products mapping in a single pass
     plant_products: dict[str, list[str]] = {}

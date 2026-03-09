@@ -94,14 +94,16 @@ async def dismiss_alert(
     if not deviation:
         raise HTTPException(status_code=404, detail="Deviation not found")
     deviation.executed = True
+    now = datetime.now(timezone.utc)
 
-    # Create a pending action so the execution is tracked
+    # Create a pending action so the dismissal is tracked with a timestamp
     action = PendingAction(
         deviation_id=deviation_id,
-        action_type="EXECUTE_RECOMMENDATION",
-        description=deviation.recommended_action or "AI recommendation executed",
+        action_type="DISMISSED",
+        description=deviation.recommended_action or "Alert dismissed by operator",
         payload={"deviation_type": deviation.type, "severity": deviation.severity},
         status="COMPLETED",
+        completed_at=now,
     )
     db.add(action)
     await db.commit()

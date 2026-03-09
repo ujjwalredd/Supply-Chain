@@ -54,6 +54,8 @@ class SupplierRisk(BaseModel):
     total_orders: int
     delayed_orders: int
     delay_rate_pct: float
+    max_product_dependency_pct: float = 0.0  # highest single-product concentration %
+    concentration_risk: str = "LOW"           # LOW | MEDIUM | HIGH
 
 
 class DeviationBase(BaseModel):

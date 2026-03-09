@@ -40,6 +40,30 @@ class OrderEvent(BaseModel):
     model_config = {"extra": "ignore"}
 
 
+class DemandEvent(BaseModel):
+    """Schema for upstream demand signal events (preemptive deviation detection)."""
+
+    event_type: str = Field(default="DEMAND_SPIKE", description="Event type for routing")
+    product: str = Field(..., description="Product SKU")
+    region: str = Field(..., description="Affected region")
+    forecast_delta_pct: float = Field(
+        ..., description="% change in demand forecast vs baseline (positive = spike)"
+    )
+    current_inventory_days: float = Field(
+        default=14.0, description="Days of inventory cover at current stock"
+    )
+    signal_source: str = Field(
+        default="PRODUCER_SIM",
+        description="Signal origin: POS | WEATHER | MACRO | PRODUCER_SIM",
+    )
+    created_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(),
+        description="Event timestamp",
+    )
+
+    model_config = {"extra": "ignore"}
+
+
 class DeviationEvent(BaseModel):
     """Schema for detected deviation events."""
 

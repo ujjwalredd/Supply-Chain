@@ -41,7 +41,9 @@ def _read_forecasted_risks() -> list[dict[str, Any]]:
         ] if c in df.columns]
         df = df[keep].copy()
         df = df.fillna("")
-        for col in df.select_dtypes(include=["datetime64[ns, UTC]", "datetime64[ns]"]).columns:
+        import pandas as pd
+        dt_cols = [c for c in df.columns if pd.api.types.is_datetime64_any_dtype(df[c])]
+        for col in dt_cols:
             df[col] = df[col].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         _FORECAST_CACHE = df.to_dict(orient="records")
         _FORECAST_CACHE_AT = time.monotonic()
@@ -54,7 +56,7 @@ def _read_forecasted_risks() -> list[dict[str, Any]]:
 @router.get("")
 async def list_forecasted_risks(
     limit: int = Query(50, ge=1, le=500),
-    min_risk_score: float = Query(0.0, ge=0.0, le=1.0, description="Filter to orders with risk_score >= N"),
+    min_risk_score: float = Query(0.0, ge=0.0, description="Filter to orders with risk_score >= N"),
 ):
     """
     Return orders predicted to be at risk of delay, ranked by risk_score.

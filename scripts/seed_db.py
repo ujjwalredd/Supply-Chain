@@ -201,14 +201,31 @@ def seed() -> None:
             actions_added += 1
 
         # ── Ontology Constraints ─────────────────────────────────────────────
+        # (id, entity_id, entity_type, constraint_type, value, hard_limit)
         constraints = [
-            (1, "*",      "GLOBAL",    "max_delay_days",             7.0,  True),
-            (2, "*",      "GLOBAL",    "min_inventory_level",        20.0, True),
-            (3, "*",      "GLOBAL",    "max_single_supplier_pct",    40.0, True),
-            (4, "SUP-004","SUPPLIER",  "max_delay_rate_pct",         15.0, True),
-            (5, "SUP-007","SUPPLIER",  "max_delay_rate_pct",         20.0, True),
-            (6, "*",      "GLOBAL",    "anomaly_value_threshold",    100000.0, False),
-            (7, "LATAM",  "REGION",    "max_avg_delay_days",         5.0,  False),
+            # ── Global hard limits ────────────────────────────────────────────
+            (1,  "*",         "GLOBAL",   "max_delay_days",               7.0,    True),
+            (2,  "*",         "GLOBAL",   "min_inventory_level",          20.0,   True),
+            (3,  "*",         "GLOBAL",   "max_single_supplier_pct",      40.0,   True),
+            (4,  "*",         "GLOBAL",   "anomaly_value_threshold",      100000.0, False),
+            (5,  "*",         "GLOBAL",   "min_trust_score_threshold",    0.70,   True),
+            (6,  "*",         "GLOBAL",   "escalation_confidence_floor",  0.70,   False),
+            # ── Supplier-specific SLA & penalty rules ─────────────────────────
+            (7,  "SUP-004",   "SUPPLIER", "max_delay_rate_pct",           15.0,   True),
+            (8,  "SUP-007",   "SUPPLIER", "max_delay_rate_pct",           20.0,   True),
+            (9,  "SUP-007",   "SUPPLIER", "probation_flag",               1.0,    True),
+            (10, "SUP-001",   "SUPPLIER", "penalty_per_delay_day",        500.0,  False),
+            (11, "SUP-004",   "SUPPLIER", "penalty_per_delay_day",        750.0,  False),
+            (12, "SUP-004",   "SUPPLIER", "sla_delivery_days",            7.0,    True),
+            (13, "SUP-002",   "SUPPLIER", "sla_delivery_days",            10.0,   True),
+            # ── Region-specific constraints ────────────────────────────────────
+            (14, "LATAM",     "REGION",   "max_avg_delay_days",           5.0,    True),
+            (15, "APAC",      "REGION",   "max_avg_delay_days",           3.0,    True),
+            (16, "NA",        "REGION",   "preferred_carrier_required",   1.0,    False),
+            # ── Product-level single-source dependency ─────────────────────────
+            (17, "WIDGET-A",  "PRODUCT",  "max_single_supplier_pct",      60.0,   True),
+            (18, "GADGET-X",  "PRODUCT",  "max_single_supplier_pct",      50.0,   True),
+            (19, "CIRCUIT-BOARD-A", "PRODUCT", "min_safety_stock_days",   14.0,   True),
         ]
         for cid, eid, etype, ctype, val, hard in constraints:
             db.merge(OntologyConstraint(
@@ -222,14 +239,11 @@ def seed() -> None:
 
         db.commit()
 
-        if orders_added == 0 and devs_added == 0 and actions_added == 0:
-            print("Database already seeded. Skipping.")
-        else:
-            print(
-                f"Seeded: {orders_added} orders, {devs_added} deviations, "
-                f"{actions_added} actions, {len(SUPPLIERS_DATA)} suppliers (merged), "
-                f"{len(constraints)} ontology constraints (merged)."
-            )
+        print(
+            f"Seeded: {orders_added} orders, {devs_added} deviations, "
+            f"{actions_added} actions, {len(SUPPLIERS_DATA)} suppliers (merged), "
+            f"{len(constraints)} ontology constraints (merged)."
+        )
 
 
 if __name__ == "__main__":

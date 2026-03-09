@@ -9,11 +9,13 @@ import asyncio
 import json
 import logging
 import os
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from api.database import init_db
 from api.routers import actions, ai, alerts, forecasts, network, orders, ontology, suppliers
@@ -82,6 +84,16 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+class _RequestIDMiddleware(BaseHTTPMiddleware):
+    """Attach X-Request-ID to every request/response for tracing."""
+
+    async def dispatch(self, request: Request, call_next):
+        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -89,6 +101,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(_RequestIDMiddleware)
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
@@ -174,8 +187,34 @@ def publish_deviation(deviation: dict) -> None:
 
 @app.get("/health")
 async def health():
-    """Health check."""
-    return {"status": "ok", "service": "supply-chain-api"}
+    """Dependency health check — reports db, redis, and websocket subscriber status."""
+    from sqlalchemy import text
+    from api.database import AsyncSessionLocal
+
+    checks: dict[str, str] = {}
+
+    async with AsyncSessionLocal() as session:
+        try:
+            await session.execute(text("SELECT 1"))
+            checks["db"] = "ok"
+        except Exception as e:
+            checks["db"] = f"error: {e}"
+
+    if _redis_client:
+        try:
+            await _redis_client.ping()
+            checks["redis"] = "ok"
+        except Exception as e:
+            checks["redis"] = f"error: {e}"
+    else:
+        checks["redis"] = "unavailable"
+
+    checks["ws_subscribers"] = str(len(_deviation_subscribers))
+    sub_running = bool(_subscriber_task and not _subscriber_task.done())
+    checks["redis_subscriber"] = "running" if sub_running else "stopped"
+
+    overall = "ok" if checks["db"] == "ok" else "degraded"
+    return {"status": overall, "service": "supply-chain-api", "checks": checks}
 
 
 @app.get("/")

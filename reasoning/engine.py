@@ -9,9 +9,10 @@ for automated action recommendations.
 import json
 import logging
 import os
+import time
 from typing import Any, AsyncIterator, Iterator
 
-from anthropic import Anthropic
+from anthropic import Anthropic, APIConnectionError, APIStatusError
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,8 @@ class AIAnalysisOutput(BaseModel):
     """Structured output from Claude for deviation analysis."""
 
     root_cause: str = Field(..., description="Identified root cause")
-    financial_impact: str = Field(..., description="Estimated financial impact")
+    financial_impact: str = Field(..., description="Estimated financial impact (prose)")
+    financial_impact_usd: float = Field(0.0, description="Computed financial impact in USD")
     options: list[TradeOffOption] = Field(default_factory=list)
     recommendation: str = Field(..., description="Primary recommendation")
     autonomous_executable: bool = Field(
@@ -107,7 +109,49 @@ _ANALYSIS_TOOL = {
 }
 
 
-def _build_context(deviation: dict[str, Any], order: dict | None, supplier: dict | None, constraints: list[dict]) -> str:
+def compute_financial_impact(
+    deviation: dict[str, Any],
+    order: dict[str, Any] | None = None,
+) -> dict[str, float]:
+    """
+    Compute financial impact of a deviation from structured order data.
+
+    Returns:
+        {"usd": total, "carrying_cost": ..., "delay_cost": ..., "stockout_penalty": ...}
+
+    Formulas:
+        carrying_cost  = order_value × (delay_days / 30) × 0.02   (2% monthly carrying)
+        delay_cost     = delay_days × 500                           ($500/day SLA penalty)
+        stockout_penalty = order_value × 0.15  (STOCKOUT only)     (15% margin at risk)
+    """
+    order = order or {}
+    order_value = float(order.get("order_value", 0))
+    delay_days = float(
+        deviation.get("delay_days", 0) or order.get("delay_days", 0)
+    )
+    dev_type = str(deviation.get("type", "DELAY")).upper()
+
+    carrying_cost = order_value * (delay_days / 30) * 0.02 if delay_days > 0 else 0.0
+    delay_cost = delay_days * 500.0
+    stockout_penalty = order_value * 0.15 if dev_type == "STOCKOUT" else 0.0
+
+    total = round(carrying_cost + delay_cost + stockout_penalty, 2)
+    return {
+        "usd": total,
+        "carrying_cost": round(carrying_cost, 2),
+        "delay_cost": round(delay_cost, 2),
+        "stockout_penalty": round(stockout_penalty, 2),
+    }
+
+
+def _build_context(
+    deviation: dict[str, Any],
+    order: dict | None,
+    supplier: dict | None,
+    constraints: list[dict],
+    financial_impact: dict[str, float] | None = None,
+    network_context: dict[str, Any] | None = None,
+) -> str:
     """Build context string for Claude."""
     parts = [f"## Deviation\n{json.dumps(deviation, indent=2)}"]
     if order:
@@ -116,6 +160,16 @@ def _build_context(deviation: dict[str, Any], order: dict | None, supplier: dict
         parts.append(f"\n## Supplier\n{json.dumps(supplier, indent=2)}")
     if constraints:
         parts.append(f"\n## Ontology Constraints\n{json.dumps(constraints, indent=2)}")
+    if financial_impact:
+        parts.append(
+            f"\n## Computed Financial Impact\n"
+            f"Total at risk: ${financial_impact['usd']:,.2f}\n"
+            f"  Carrying cost: ${financial_impact['carrying_cost']:,.2f}\n"
+            f"  Delay penalty: ${financial_impact['delay_cost']:,.2f}\n"
+            f"  Stockout exposure: ${financial_impact['stockout_penalty']:,.2f}"
+        )
+    if network_context:
+        parts.append(f"\n## Network Context\n{json.dumps(network_context, indent=2)}")
     return "\n".join(parts)
 
 
@@ -131,6 +185,8 @@ def stream_analysis(
     supplier: dict | None = None,
     ontology_constraints: list[dict] | None = None,
     _usage_sink: dict | None = None,
+    financial_impact: dict[str, float] | None = None,
+    network_context: dict[str, Any] | None = None,
 ) -> Iterator[str]:
     """
     Stream Claude's analysis token-by-token for real-time dashboard display.
@@ -145,6 +201,8 @@ def stream_analysis(
         order or {},
         supplier or {},
         ontology_constraints or [],
+        financial_impact=financial_impact,
+        network_context=network_context,
     )
     prompt = f"""Analyze this supply chain deviation. Write in plain prose — no emojis, no markdown symbols, no headers. Use paragraph breaks between sections.
 
@@ -209,60 +267,90 @@ def analyze_structured(
     order: dict | None = None,
     supplier: dict | None = None,
     ontology_constraints: list[dict] | None = None,
+    max_retries: int = 2,
+    financial_impact: dict[str, float] | None = None,
+    network_context: dict[str, Any] | None = None,
 ) -> AIAnalysisOutput:
     """
     Call Claude with tool_use for reliable machine-readable structured output.
     No JSON parsing fragility — Claude fills in the tool input schema directly.
+    Retries up to max_retries times on transient API errors with exponential backoff.
     """
+    # Auto-compute financial impact if not provided
+    if financial_impact is None:
+        financial_impact = compute_financial_impact(deviation, order or {})
+
     client = _get_client()
     context = _build_context(
         deviation,
         order or {},
         supplier or {},
         ontology_constraints or [],
+        financial_impact=financial_impact,
+        network_context=network_context,
     )
     prompt = f"""Analyze this supply chain deviation and call the supply_chain_analysis tool with your findings.
 
 {context}"""
 
-    try:
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=1024,
-            system=SYSTEM_PROMPT,
-            tools=[_ANALYSIS_TOOL],
-            tool_choice={"type": "tool", "name": "supply_chain_analysis"},
-            messages=[{"role": "user", "content": prompt}],
-        )
+    last_exc: Exception | None = None
+    for attempt in range(max_retries + 1):
+        try:
+            response = client.messages.create(
+                model=MODEL,
+                max_tokens=1024,
+                system=SYSTEM_PROMPT,
+                tools=[_ANALYSIS_TOOL],
+                tool_choice={"type": "tool", "name": "supply_chain_analysis"},
+                messages=[{"role": "user", "content": prompt}],
+                timeout=30.0,
+            )
 
-        input_tokens = getattr(response.usage, "input_tokens", 0)
-        output_tokens = getattr(response.usage, "output_tokens", 0)
+            input_tokens = getattr(response.usage, "input_tokens", 0)
+            output_tokens = getattr(response.usage, "output_tokens", 0)
 
-        # Extract tool_use block — Claude is guided to call the tool
-        for block in response.content:
-            if block.type == "tool_use" and block.name == "supply_chain_analysis":
-                data = block.input
-                result = AIAnalysisOutput.model_validate(data)
-                result.input_tokens = input_tokens
-                result.output_tokens = output_tokens
-                return result
+            for block in response.content:
+                if block.type == "tool_use" and block.name == "supply_chain_analysis":
+                    data = block.input
+                    result = AIAnalysisOutput.model_validate(data)
+                    result.input_tokens = input_tokens
+                    result.output_tokens = output_tokens
+                    result.financial_impact_usd = financial_impact["usd"]
+                    return result
 
-        # tool_choice=tool forces Claude to always call the tool, so no fallback needed
-        logger.warning("Claude returned no tool_use block (unexpected with forced tool_choice)")
-        return AIAnalysisOutput(
-            root_cause="Analysis unavailable — Claude did not return structured output",
-            financial_impact="Unknown",
-            options=[],
-            recommendation="Manual review required",
-            autonomous_executable=False,
-        )
+            logger.warning("Claude returned no tool_use block (unexpected with forced tool_choice)")
+            return AIAnalysisOutput(
+                root_cause="Analysis unavailable — Claude did not return structured output",
+                financial_impact="Unknown",
+                options=[],
+                recommendation="Manual review required",
+                autonomous_executable=False,
+            )
 
-    except Exception as e:
-        logger.exception("Claude structured call failed: %s", e)
-        return AIAnalysisOutput(
-            root_cause="Analysis unavailable",
-            financial_impact="Unknown",
-            options=[],
-            recommendation="Manual review required",
-            autonomous_executable=False,
-        )
+        except (APIConnectionError, APIStatusError) as e:
+            last_exc = e
+            if attempt < max_retries:
+                wait = 2 ** attempt
+                logger.warning(
+                    "Claude API transient error (attempt %d/%d, retrying in %ds): %s",
+                    attempt + 1, max_retries + 1, wait, e,
+                )
+                time.sleep(wait)
+        except Exception as e:
+            logger.exception("Claude structured call failed: %s", e)
+            return AIAnalysisOutput(
+                root_cause="Analysis unavailable",
+                financial_impact="Unknown",
+                options=[],
+                recommendation="Manual review required",
+                autonomous_executable=False,
+            )
+
+    logger.error("Claude structured call failed after %d attempts: %s", max_retries + 1, last_exc)
+    return AIAnalysisOutput(
+        root_cause="Analysis unavailable",
+        financial_impact="Unknown",
+        options=[],
+        recommendation="Manual review required",
+        autonomous_executable=False,
+    )

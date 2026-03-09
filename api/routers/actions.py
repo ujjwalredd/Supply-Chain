@@ -1,7 +1,7 @@
 """Feature 4: Pending actions router — queue and complete AI-recommended actions."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,8 +18,12 @@ router = APIRouter()
 
 
 @router.get("/stats")
-async def actions_stats(db: AsyncSession = Depends(get_db)):
-    """MTTR: avg time (minutes) from deviation detection to action execution."""
+async def actions_stats(
+    db: AsyncSession = Depends(get_db),
+    days: int = Query(30, ge=1, le=365, description="Look-back window for MTTR calculation"),
+):
+    """MTTR: avg time (minutes) from deviation detection to action completion within the window."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     j = sql_join(PendingAction, Deviation, PendingAction.deviation_id == Deviation.deviation_id)
     result = await db.execute(
         select(
@@ -30,12 +34,14 @@ async def actions_stats(db: AsyncSession = Depends(get_db)):
         )
         .select_from(j)
         .where(PendingAction.status == "COMPLETED")
+        .where(PendingAction.created_at >= cutoff)
     )
     row = result.one()
     avg_secs = float(row.avg_resolve_seconds or 0)
     return {
         "total_completed": int(row.total or 0),
         "mttr_minutes": round(avg_secs / 60, 1),
+        "window_days": days,
     }
 
 

@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r requirements-api.txt
 COPY api/ api/
 COPY reasoning/ reasoning/
 COPY ingestion/ ingestion/
+COPY integrations/ integrations/
 COPY alembic/ alembic/
 COPY alembic.ini .
 COPY scripts/ scripts/

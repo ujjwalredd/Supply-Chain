@@ -18,7 +18,7 @@ import random
 import signal
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import NoReturn
 
 from kafka import KafkaProducer
@@ -33,7 +33,7 @@ try:
 except ImportError:
     Faker = None  # type: ignore
 
-from ingestion.schemas import OrderEvent
+from ingestion.schemas import DemandEvent, OrderEvent
 
 logging.basicConfig(
     level=logging.INFO,
@@ -97,7 +97,7 @@ def _maybe_recover_supplier(supplier_id: str) -> None:
         _supplier_anomaly_count[supplier_id] = count - 1
     # State downgrade when count falls below threshold
     current = _get_supplier_state(supplier_id)
-    new_count = _supplier_anomaly_count[supplier_id]
+    new_count = _supplier_anomaly_count.get(supplier_id, 0)
     if current == "CRITICAL" and new_count < 3:
         _supplier_state[supplier_id] = "DEGRADING"
         logger.info("Supplier %s → DEGRADING (recovering)", supplier_id)
@@ -108,6 +108,10 @@ def _maybe_recover_supplier(supplier_id: str) -> None:
 
 def _queue_causality_stockout(supplier_id: str, region: str, product: str) -> None:
     """Schedule a downstream STOCKOUT from the same supplier in 1-2 ticks."""
+    if len(_causality_queue) >= _CAUSALITY_QUEUE_MAX:
+        # Drop oldest entry to keep queue bounded
+        _causality_queue.pop(0)
+        logger.debug("Causality queue full, dropped oldest entry")
     fire_at = _tick + random.randint(1, 2)
     payload = {
         "_causality_trigger": "DELAY",
@@ -119,15 +123,19 @@ def _queue_causality_stockout(supplier_id: str, region: str, product: str) -> No
     logger.debug("Queued causality STOCKOUT for %s at tick %d", supplier_id, fire_at)
 
 
+_CAUSALITY_QUEUE_MAX = 50  # prevent unbounded growth
+
+
 def _next_order_id() -> str:
     global _order_counter
     _order_counter += 1
-    return f"ORD-{datetime.utcnow().strftime('%Y%m%d')}-{_order_counter:06d}"
+    return f"ORD-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{_order_counter:06d}"
 
 
 def _generate_base_order(supplier_id: str | None = None) -> dict:
     """Generate a normal order event."""
-    expected = datetime.utcnow() + timedelta(days=random.randint(3, 14))
+    now = datetime.now(timezone.utc)
+    expected = now + timedelta(days=random.randint(3, 14))
     quantity = random.randint(10, 500)
     unit_price = round(random.uniform(5.0, 250.0), 2)
     order_value = round(quantity * unit_price, 2)
@@ -146,7 +154,7 @@ def _generate_base_order(supplier_id: str | None = None) -> dict:
         "delay_days": 0,
         "status": random.choice(["PENDING", "IN_TRANSIT"]),
         "inventory_level": inventory,
-        "created_at": datetime.utcnow().isoformat() + "Z",
+        "created_at": now.isoformat(),
         "event_type": "ORDER",
     }
 
@@ -287,6 +295,22 @@ def run_producer() -> NoReturn:
             key = event.order_id
             producer.send(KAFKA_TOPIC, value=payload, key=key)
             sent += 1
+
+            # 3% chance: emit a preemptive DEMAND_SPIKE for this product/region
+            if random.random() < 0.03:
+                demand = DemandEvent(
+                    product=event.product,
+                    region=event.region,
+                    forecast_delta_pct=round(random.uniform(25.0, 60.0), 1),
+                    current_inventory_days=round(random.uniform(3.0, 21.0), 1),
+                    signal_source=random.choice(["POS", "WEATHER", "MACRO", "PRODUCER_SIM"]),
+                )
+                producer.send(KAFKA_TOPIC, value=demand.model_dump(mode="json"), key=None)
+                logger.debug(
+                    "DEMAND_SPIKE: %s %s +%.0f%%",
+                    demand.product, demand.region, demand.forecast_delta_pct,
+                )
+
             if sent % 50 == 0:
                 logger.info("Sent %d events", sent)
         except (ValidationError, KafkaError) as e:

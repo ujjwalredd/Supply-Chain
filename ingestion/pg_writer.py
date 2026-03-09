@@ -19,6 +19,7 @@ import os
 import signal
 import sys
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
@@ -31,7 +32,10 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import sessionmaker
 
-from ingestion.schemas import OrderEvent
+from ingestion.schemas import DemandEvent, OrderEvent
+
+# Background thread pool for AI analysis (max 2 concurrent Claude calls)
+_AI_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ai-analyzer")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -238,11 +242,13 @@ def _upsert_suppliers(session, events: list[OrderEvent]) -> None:
 
 
 def _insert_deviations(session, deviations: list[dict]) -> list[dict]:
-    """Insert detected deviations. Returns the ones actually inserted."""
+    """Insert detected deviations using savepoints so failures don't roll back the batch."""
     from api.models import Deviation
 
     inserted = []
+    skipped = 0
     for d in deviations:
+        savepoint = session.begin_nested()
         try:
             detected_at = datetime.fromisoformat(d["detected_at"].replace("Z", "+00:00"))
             dev = Deviation(
@@ -256,10 +262,14 @@ def _insert_deviations(session, deviations: list[dict]) -> list[dict]:
             )
             session.add(dev)
             session.flush()
+            savepoint.commit()
             inserted.append(d)
         except Exception as e:
+            savepoint.rollback()
+            skipped += 1
             logger.debug("Deviation insert skipped (%s): %s", d["deviation_id"], e)
-            session.rollback()
+    if skipped:
+        logger.info("Skipped %d duplicate/invalid deviations in batch", skipped)
     return inserted
 
 
@@ -342,6 +352,124 @@ def _update_supplier_stats(session, events: list[OrderEvent]) -> None:
         )
 
 
+def _detect_demand_deviations(event: DemandEvent) -> list[dict]:
+    """Detect preemptive STOCKOUT risk from upstream demand signal."""
+    deviations = []
+    now = datetime.now(timezone.utc).isoformat()
+    # Spike > 25% with < 7 days inventory cover = preemptive HIGH alert
+    if event.forecast_delta_pct >= 25.0 and event.current_inventory_days < 7.0:
+        deviations.append({
+            "deviation_id": f"DEV-{uuid.uuid4().hex[:12].upper()}",
+            "order_id": f"DEMAND-{event.region}-{event.product[:8]}",
+            "type": "STOCKOUT",
+            "severity": "HIGH" if event.forecast_delta_pct >= 40 else "MEDIUM",
+            "detected_at": now,
+            "recommended_action": (
+                f"Preemptive restock: demand for {event.product} in {event.region} "
+                f"spiked +{event.forecast_delta_pct:.0f}% "
+                f"(signal: {event.signal_source}, cover: {event.current_inventory_days:.0f}d)"
+            ),
+            "executed": False,
+        })
+    return deviations
+
+
+def _trigger_ai_background(deviation: dict, engine_factory) -> None:
+    """
+    Background task: run AI analysis on a CRITICAL deviation, then auto-execute
+    or create an ESCALATE action depending on autonomous_executable flag.
+
+    Runs in _AI_EXECUTOR thread pool — never blocks the main batch loop.
+    """
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        return
+    try:
+        from api.models import Deviation, Order, PendingAction, Supplier
+        from integrations.action_executor import ActionExecutor
+        from reasoning.engine import analyze_structured, compute_financial_impact
+        from sqlalchemy import select
+        from sqlalchemy.orm import sessionmaker
+
+        engine = engine_factory()
+        Session = sessionmaker(bind=engine)
+
+        with Session() as session:
+            # Fetch order + supplier context
+            dev = session.execute(
+                select(Deviation).where(Deviation.deviation_id == deviation["deviation_id"])
+            ).scalar_one_or_none()
+
+            order_data: dict = {}
+            supplier_data: dict = {}
+            if dev:
+                order = session.execute(
+                    select(Order).where(Order.order_id == dev.order_id)
+                ).scalar_one_or_none()
+                if order:
+                    order_data = {
+                        "order_id": order.order_id,
+                        "supplier_id": order.supplier_id,
+                        "product": order.product,
+                        "order_value": order.order_value,
+                        "delay_days": order.delay_days,
+                        "region": order.region,
+                    }
+                    sup = session.execute(
+                        select(Supplier).where(Supplier.supplier_id == order.supplier_id)
+                    ).scalar_one_or_none()
+                    if sup:
+                        supplier_data = {
+                            "supplier_id": sup.supplier_id,
+                            "trust_score": sup.trust_score,
+                            "delayed_orders": sup.delayed_orders,
+                            "total_orders": sup.total_orders,
+                        }
+
+            fi = compute_financial_impact(deviation, order_data)
+            analysis = analyze_structured(
+                deviation, order_data, supplier_data,
+                financial_impact=fi,
+            )
+
+            max_confidence = max(
+                (o.confidence for o in analysis.options), default=0.0
+            )
+            action_type = "REROUTE" if analysis.autonomous_executable else "ESCALATE"
+            action = PendingAction(
+                deviation_id=deviation["deviation_id"],
+                action_type=action_type,
+                description=analysis.recommendation,
+                payload={
+                    "ai_analysis": {
+                        "root_cause": analysis.root_cause,
+                        "recommendation": analysis.recommendation,
+                        "autonomous_executable": analysis.autonomous_executable,
+                    },
+                    "financial_impact_usd": fi["usd"],
+                    "confidence": round(max_confidence, 3),
+                    "trigger": "auto",
+                    "severity": deviation.get("severity"),
+                    "deviation_type": deviation.get("type"),
+                },
+                status="PENDING",
+            )
+            session.add(action)
+            session.flush()
+
+            if analysis.autonomous_executable:
+                executor = ActionExecutor(session)
+                executor.execute(action)
+
+            session.commit()
+            logger.info(
+                "AI auto-action: deviation=%s type=%s impact=$%.0f autonomous=%s",
+                deviation["deviation_id"], action_type,
+                fi["usd"], analysis.autonomous_executable,
+            )
+    except Exception as e:
+        logger.warning("Background AI analysis failed for %s: %s", deviation.get("deviation_id"), e)
+
+
 def process_batch(
     session,
     redis_client,
@@ -349,7 +477,8 @@ def process_batch(
 ) -> tuple[int, int]:
     """
     Process a batch of events: upsert orders/suppliers, detect deviations,
-    publish to Redis. Returns (orders_upserted, deviations_detected).
+    publish to Redis, and trigger background AI for CRITICAL deviations.
+    Returns (orders_upserted, deviations_detected).
     """
     try:
         _upsert_suppliers(session, events)
@@ -365,11 +494,67 @@ def process_batch(
 
         _publish_deviations(redis_client, inserted_devs)
 
+        # Trigger background AI analysis for CRITICAL deviations
+        for dev in inserted_devs:
+            if dev.get("severity") == "CRITICAL":
+                _AI_EXECUTOR.submit(_trigger_ai_background, dev, _get_engine)
+
         return orders_count, len(inserted_devs)
     except Exception as e:
         logger.exception("Batch processing failed: %s", e)
         session.rollback()
         return 0, 0
+
+
+def process_demand_event(session, redis_client, event: DemandEvent) -> int:
+    """Process a demand signal event — detect preemptive deviations."""
+    deviations = _detect_demand_deviations(event)
+    if not deviations:
+        return 0
+    # Use a fake Order stub for demand events (order_id = DEMAND-...)
+    # We insert deviations directly without an orders FK to keep it lightweight
+    inserted = []
+    for d in deviations:
+        savepoint = session.begin_nested()
+        try:
+            from api.models import Deviation
+            detected_at = datetime.fromisoformat(d["detected_at"].replace("Z", "+00:00"))
+            # Find a real order for this product/region to attach to, or skip FK
+            from sqlalchemy import select
+            from api.models import Order
+            anchor = session.execute(
+                select(Order)
+                .where(Order.product == event.product)
+                .where(Order.region == event.region)
+                .where(Order.status.notin_(["DELIVERED", "CANCELLED"]))
+                .order_by(Order.created_at.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            if not anchor:
+                savepoint.rollback()
+                continue
+            dev = Deviation(
+                deviation_id=d["deviation_id"],
+                order_id=anchor.order_id,
+                type=d["type"],
+                severity=d["severity"],
+                detected_at=detected_at,
+                recommended_action=d.get("recommended_action"),
+                executed=False,
+            )
+            session.add(dev)
+            session.flush()
+            savepoint.commit()
+            inserted.append(d)
+        except Exception as e:
+            savepoint.rollback()
+            logger.debug("Demand deviation insert skipped: %s", e)
+    if inserted:
+        session.commit()
+        _publish_deviations(redis_client, inserted)
+        logger.info("Demand signal: %d preemptive deviations for %s/%s",
+                    len(inserted), event.product, event.region)
+    return len(inserted)
 
 
 def run() -> None:
@@ -424,6 +609,15 @@ def run() -> None:
                 payload = msg.value
                 if payload is None:
                     continue
+                event_type = payload.get("event_type", "ORDER")
+
+                # Route demand spike events to their own handler
+                if event_type == "DEMAND_SPIKE":
+                    demand = DemandEvent.model_validate(payload)
+                    with Session() as session:
+                        process_demand_event(session, redis_client, demand)
+                    continue
+
                 event = OrderEvent.model_validate(payload)
                 batch.append(event)
             except (ValidationError, KeyError) as e:
@@ -444,6 +638,7 @@ def run() -> None:
         logger.exception("Kafka error: %s", e)
     finally:
         flush()
+        _AI_EXECUTOR.shutdown(wait=False)
         consumer.close()
 
 
