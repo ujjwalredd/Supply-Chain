@@ -4,6 +4,7 @@ import { ChevronRight, Cpu, CheckCircle2 } from 'lucide-react';
 import { AnimatedNumber, AnimatedDecimal } from './AnimatedNumber';
 import { TiltCard } from './TiltCard';
 import { CobeGlobe } from './CobeGlobe';
+import { QueryBox } from './QueryBox';
 
 const staggerItem = {
   hidden: { opacity: 0, y: 20 },
@@ -45,7 +46,7 @@ export function DashboardPreview() {
           {/* Dashboard Header Menu */}
           <div className="h-12 border-b border-black/5 bg-surface/50 flex px-2 sm:px-6 justify-between items-center relative z-20">
             <div className="flex text-xs font-medium text-steel h-full">
-              {['Overview', 'Orders', 'Network Map', 'Suppliers'].map((tab) => (
+              {['Overview', 'AI Copilot', 'Orders', 'Network Map'].map((tab) => (
                 <button 
                   key={tab}
                   onClick={(e) => {
@@ -256,6 +257,12 @@ export function DashboardPreview() {
                     </tbody>
                   </table>
                 </div>
+              </motion.div>
+            )}
+
+            {activeTab === 'AI Copilot' && (
+              <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="h-full">
+                <QueryBox />
               </motion.div>
             )}
 
