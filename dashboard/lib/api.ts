@@ -192,3 +192,63 @@ export async function fetchActionsStats() {
 }
 
 export { WS_URL };
+
+export async function fetchQuerySuggestions(): Promise<string[]> {
+  try {
+    const res = await fetch(`${API_BASE}/ai/query/suggestions`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.suggestions as string[]) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function querySupplyChainStream(
+  question: string,
+  onToken: (token: string) => void,
+  options?: { signal?: AbortSignal; onDone?: (usage: StreamUsage) => void }
+) {
+  const res = await fetch(`${API_BASE}/ai/query/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+    signal: options?.signal,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let message = `Query failed (${res.status})`;
+    try {
+      const j = JSON.parse(text);
+      if (j.detail) message = typeof j.detail === "string" ? j.detail : message;
+    } catch {
+      if (text) message = text.slice(0, 200);
+    }
+    throw new Error(message);
+  }
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("No response body");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.token) onToken(data.token);
+            if (data.done && options?.onDone) options.onDone(data.usage ?? {});
+          } catch { /* skip malformed SSE */ }
+        }
+      }
+    }
+  } catch (err) {
+    if ((err as Error).name === "AbortError") return;
+    throw err;
+  }
+}

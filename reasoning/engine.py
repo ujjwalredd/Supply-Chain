@@ -42,6 +42,12 @@ class AIAnalysisOutput(BaseModel):
         False,
         description="Whether the recommendation can be auto-executed",
     )
+    execution_confidence: float = Field(
+        0.0,
+        ge=0.0,
+        le=1.0,
+        description="Confidence (0-1) that autonomous execution is safe. Compare against AUTONOMY_CONFIDENCE_THRESHOLD.",
+    )
     input_tokens: int = Field(0, description="Claude input token count")
     output_tokens: int = Field(0, description="Claude output token count")
 
@@ -97,6 +103,12 @@ _ANALYSIS_TOOL = {
                 "type": "boolean",
                 "description": "True if the recommendation can be auto-executed without human approval",
             },
+            "execution_confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "How confident you are that autonomous execution is safe (0.0=not confident, 1.0=fully confident). Use 0.0 if autonomous_executable is false.",
+            },
         },
         "required": [
             "root_cause",
@@ -104,6 +116,7 @@ _ANALYSIS_TOOL = {
             "options",
             "recommendation",
             "autonomous_executable",
+            "execution_confidence",
         ],
     },
 }
@@ -316,6 +329,7 @@ def analyze_structured(
                     result.input_tokens = input_tokens
                     result.output_tokens = output_tokens
                     result.financial_impact_usd = financial_impact["usd"]
+                    result.execution_confidence = float(data.get("execution_confidence", 0.0))
                     return result
 
             logger.warning("Claude returned no tool_use block (unexpected with forced tool_choice)")

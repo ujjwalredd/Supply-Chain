@@ -37,7 +37,7 @@ Auger (raised ~$100M, founded by Dave Clark — former Amazon Worldwide Consumer
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                           SUPPLY CHAIN AI OS — v3.0                                 │
+│                           SUPPLY CHAIN AI OS — v4.0                                 │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 
  ┌────────────────-─┐     ┌─────────────────────────────────────────────────────────┐
@@ -482,6 +482,8 @@ curl -X POST http://localhost:8000/ai/analyze \
 | `GET` | `/ontology/constraints` | Business rules injected into every AI call |
 | `POST` | `/ai/analyze` | Claude `tool_use` analysis (full structured JSON) |
 | `POST` | `/ai/analyze/stream` | Claude analysis (SSE token stream) |
+| `GET` | `/ai/query/suggestions` | Suggested natural language questions |
+| `POST` | `/ai/query/stream` | Natural language question → live data context → SSE stream |
 
 ### SSE Streaming
 
@@ -524,8 +526,9 @@ Multiple deviations can fire for the same order (compound events).
 
 | Variable | Default | Description |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | — | Claude API key — only `/ai/analyze` needs this |
+| `ANTHROPIC_API_KEY` | — | Claude API key — required for `/ai/analyze`, `/ai/query`, background AI |
 | `CLAUDE_MODEL` | `claude-sonnet-4-6` | Claude model ID |
+| `AUTONOMY_CONFIDENCE_THRESHOLD` | `0.70` | Min confidence (0–1) for autonomous execution. Below this, REROUTE/EXPEDITE downgrades to ESCALATE. Raise toward `1.0` for stricter glass-box mode. |
 | `DATABASE_URL` | `postgresql://supplychain:supplychain_secret@postgres:5432/supply_chain_db` | Postgres |
 | `REDIS_URL` | `redis://redis:6379/0` | Redis for WebSocket pub/sub |
 | `CORS_ORIGINS` | `http://localhost:3000,http://localhost:3001` | Allowed CORS origins |

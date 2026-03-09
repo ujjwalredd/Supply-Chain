@@ -2,6 +2,7 @@
 
 import { Suspense } from "react";
 import { KPICards } from "@/components/KPICards";
+import { QueryBox } from "@/components/QueryBox";
 import { DeviationFeed } from "@/components/DeviationFeed";
 import { SupplierRisk } from "@/components/SupplierRisk";
 import { OrderTable } from "@/components/OrderTable";
@@ -114,11 +115,18 @@ export default function ControlTowerPage() {
       <main className="max-w-screen-xl mx-auto px-6 py-8">
 
         {/* ── KPI Cards ──────────────────────────────────────────────────────── */}
-        <div className="mb-10">
+        <div className="mb-6">
           <ErrorBoundary label="KPI Cards">
             <Suspense fallback={<PanelSkeleton rows={1} height="h-20" />}>
               <KPICards />
             </Suspense>
+          </ErrorBoundary>
+        </div>
+
+        {/* ── Natural Language Query ─────────────────────────────────────────── */}
+        <div className="mb-10">
+          <ErrorBoundary label="Query Box">
+            <QueryBox />
           </ErrorBoundary>
         </div>
 
