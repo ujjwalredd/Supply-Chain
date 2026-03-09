@@ -447,6 +447,7 @@ def _trigger_ai_background(deviation: dict, engine_factory) -> None:
                     },
                     "financial_impact_usd": fi["usd"],
                     "confidence": round(max_confidence, 3),
+                    "execution_confidence": round(analysis.execution_confidence, 3),
                     "trigger": "auto",
                     "severity": deviation.get("severity"),
                     "deviation_type": deviation.get("type"),

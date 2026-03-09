@@ -198,6 +198,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      AUTONOMY_CONFIDENCE_THRESHOLD: ${AUTONOMY_CONFIDENCE_THRESHOLD:-0.70}
       DATA_DIR: /app/data/source
       DATA_ROOT: /app/data
       BRONZE_PATH: /app/data/bronze

@@ -24,6 +24,11 @@ KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9093")
 PROCUREMENT_TOPIC = os.getenv("PROCUREMENT_TOPIC", "supply-chain-procurement")
 DASHBOARD_URL = os.getenv("DASHBOARD_URL", "http://localhost:3000")
 
+# Minimum confidence required for autonomous execution.
+# Increase toward 1.0 for a stricter glass-box gate; lower toward 0.0 to run
+# autonomously on lower-confidence recommendations.
+AUTONOMY_CONFIDENCE_THRESHOLD = float(os.getenv("AUTONOMY_CONFIDENCE_THRESHOLD", "0.70"))
+
 
 class ActionExecutor:
     """
@@ -54,6 +59,23 @@ class ActionExecutor:
         if not handler:
             logger.warning("No executor for action_type=%s", action.action_type)
             return False
+
+        # Confidence gate: ESCALATE actions bypass this check (they are human-review only)
+        if action.action_type != "ESCALATE":
+            payload_confidence = float((action.payload or {}).get("execution_confidence", 1.0))
+            if payload_confidence < AUTONOMY_CONFIDENCE_THRESHOLD:
+                logger.warning(
+                    "Action id=%s blocked by confidence gate: %.2f < %.2f (threshold). "
+                    "Promoting to ESCALATE.",
+                    action.id, payload_confidence, AUTONOMY_CONFIDENCE_THRESHOLD,
+                )
+                action.action_type = "ESCALATE"
+                action.description = (
+                    f"[Confidence gate: {payload_confidence:.0%} < {AUTONOMY_CONFIDENCE_THRESHOLD:.0%}] "
+                    + action.description
+                )
+                handler = self._handle_escalate
+
         try:
             handler(action)
             action.status = "COMPLETED"
