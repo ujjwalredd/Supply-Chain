@@ -228,6 +228,43 @@ export async function fetchActionsAudit(limit = 50) {
   return res.json();
 }
 
+export async function resolveAction(actionId: number, outcomeNote: string, success = true) {
+  const res = await fetch(`${API_BASE}/actions/${actionId}/resolve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ outcome_note: outcomeNote, success }),
+  });
+  if (!res.ok) throw new Error("Failed to resolve action");
+  return res.json();
+}
+
+export async function fetchActionSuccessRates() {
+  const res = await fetch(`${API_BASE}/actions/success-rates`);
+  if (!res.ok) throw new Error("Failed to fetch success rates");
+  return res.json();
+}
+
+export async function fetchDelayPredictions(limit = 20, minProbability = 0.3) {
+  const res = await fetch(`${API_BASE}/orders/delay-predictions?limit=${limit}&min_probability=${minProbability}`);
+  if (!res.ok) throw new Error("Failed to fetch delay predictions");
+  return res.json();
+}
+
+export async function fetchCostAnalytics() {
+  const res = await fetch(`${API_BASE}/suppliers/cost-analytics`);
+  if (!res.ok) throw new Error("Failed to fetch cost analytics");
+  return res.json();
+}
+
+export async function fetchSupplierBenchmarks(product?: string) {
+  const url = product
+    ? `${API_BASE}/suppliers/benchmarks?product=${encodeURIComponent(product)}`
+    : `${API_BASE}/suppliers/benchmarks`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Failed to fetch benchmarks");
+  return res.json();
+}
+
 async function _streamSSE(
   url: string,
   body: unknown,

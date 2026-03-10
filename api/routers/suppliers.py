@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_db
@@ -85,6 +85,125 @@ async def list_supplier_risk(
             concentration_risk=concentration,
         ))
     return risks
+
+
+@router.get("/cost-analytics")
+async def cost_analytics(db: AsyncSession = Depends(get_db)):
+    """Total spend, avg order value, and cost-per-delay-day per supplier."""
+    result = await db.execute(
+        select(
+            Order.supplier_id,
+            Supplier.name,
+            Supplier.region,
+            func.count().label("total_orders"),
+            func.sum(Order.order_value).label("total_spend"),
+            func.avg(Order.order_value).label("avg_order_value"),
+            func.sum(
+                case((Order.delay_days > 0, Order.order_value * Order.delay_days * 0.001), else_=0)
+            ).label("estimated_delay_cost"),
+            func.avg(case((Order.delay_days > 0, Order.delay_days), else_=None)).label("avg_delay_days_when_delayed"),
+            func.sum(case((Order.status == "DELAYED", 1), else_=0)).label("delayed_count"),
+        )
+        .join(Supplier, Order.supplier_id == Supplier.supplier_id, isouter=True)
+        .group_by(Order.supplier_id, Supplier.name, Supplier.region)
+        .order_by(func.sum(Order.order_value).desc())
+    )
+    rows = result.all()
+    analytics = []
+    for r in rows:
+        total_spend = float(r.total_spend or 0)
+        delay_cost = float(r.estimated_delay_cost or 0)
+        analytics.append({
+            "supplier_id": r.supplier_id,
+            "name": r.name or r.supplier_id,
+            "region": r.region or "Unknown",
+            "total_orders": r.total_orders,
+            "total_spend": round(total_spend, 2),
+            "avg_order_value": round(float(r.avg_order_value or 0), 2),
+            "delayed_count": r.delayed_count or 0,
+            "delay_rate_pct": round((r.delayed_count or 0) / r.total_orders * 100, 1) if r.total_orders else 0,
+            "estimated_delay_cost_usd": round(delay_cost, 2),
+            "cost_efficiency_score": round(max(0, 1 - (delay_cost / total_spend)) * 100, 1) if total_spend > 0 else 100.0,
+        })
+    return {"suppliers": analytics}
+
+
+@router.get("/benchmarks")
+async def supplier_benchmarks(
+    product: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Compare suppliers on delivery speed, delay rate, and order volume — optionally filtered by product."""
+    q = (
+        select(
+            Order.supplier_id,
+            Supplier.name,
+            Supplier.region,
+            Supplier.trust_score,
+            Order.product,
+            func.count().label("order_count"),
+            func.avg(Order.delay_days).label("avg_delay_days"),
+            func.sum(case((Order.status == "DELAYED", 1), else_=0)).label("delayed_count"),
+            func.sum(case((Order.status == "DELIVERED", 1), else_=0)).label("delivered_count"),
+            func.avg(Order.order_value).label("avg_order_value"),
+        )
+        .join(Supplier, Order.supplier_id == Supplier.supplier_id, isouter=True)
+        .group_by(Order.supplier_id, Supplier.name, Supplier.region, Supplier.trust_score, Order.product)
+        .order_by(func.count().desc())
+    )
+    if product:
+        q = q.where(Order.product.ilike(f"%{product}%"))
+
+    result = await db.execute(q)
+    rows = result.all()
+
+    # Group by supplier, aggregate across products
+    supplier_map: dict = {}
+    for r in rows:
+        sid = r.supplier_id
+        if sid not in supplier_map:
+            supplier_map[sid] = {
+                "supplier_id": sid,
+                "name": r.name or sid,
+                "region": r.region or "Unknown",
+                "trust_score": float(r.trust_score or 0),
+                "total_orders": 0,
+                "delayed_count": 0,
+                "delivered_count": 0,
+                "total_delay_days": 0.0,
+                "avg_order_value": 0.0,
+                "products": [],
+            }
+        s = supplier_map[sid]
+        s["total_orders"] += r.order_count
+        s["delayed_count"] += r.delayed_count or 0
+        s["delivered_count"] += r.delivered_count or 0
+        s["total_delay_days"] += float(r.avg_delay_days or 0) * r.order_count
+        if r.product and r.product not in s["products"]:
+            s["products"].append(r.product)
+
+    benchmarks = []
+    for s in supplier_map.values():
+        n = s["total_orders"]
+        avg_delay = s["total_delay_days"] / n if n > 0 else 0
+        delay_rate = s["delayed_count"] / n * 100 if n > 0 else 0
+        on_time_rate = 100 - delay_rate
+        # Composite score: trust * on_time_rate (0-100)
+        composite = round(s["trust_score"] * on_time_rate, 1)
+        benchmarks.append({
+            **s,
+            "avg_delay_days": round(avg_delay, 2),
+            "delay_rate_pct": round(delay_rate, 1),
+            "on_time_rate_pct": round(on_time_rate, 1),
+            "composite_score": composite,
+        })
+
+    benchmarks.sort(key=lambda x: x["composite_score"], reverse=True)
+    # Add rank
+    for i, b in enumerate(benchmarks):
+        b["rank"] = i + 1
+
+    return {"benchmarks": benchmarks, "product_filter": product}
 
 
 @router.get("/{supplier_id}/scorecard")

@@ -4,8 +4,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, join as sql_join, select
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from sqlalchemy import and_, case, func, join as sql_join, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_db
@@ -67,6 +67,9 @@ async def actions_audit(
             PendingAction.status,
             PendingAction.created_at,
             PendingAction.completed_at,
+            PendingAction.resolved,
+            PendingAction.outcome_note,
+            PendingAction.resolved_at,
             Deviation.deviation_id,
             Deviation.type.label("deviation_type"),
             Deviation.severity,
@@ -89,6 +92,9 @@ async def actions_audit(
             "status": row.status,
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+            "resolved": row.resolved,
+            "outcome_note": row.outcome_note,
+            "resolved_at": row.resolved_at.isoformat() if row.resolved_at else None,
             "deviation_id": row.deviation_id,
             "deviation_type": row.deviation_type,
             "severity": row.severity,
@@ -158,3 +164,55 @@ async def cancel_action(action_id: int, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(action)
     return PendingActionRead.model_validate(action)
+
+
+@router.post("/{action_id}/resolve")
+async def resolve_action(
+    action_id: int,
+    outcome_note: str = Body(..., embed=True),
+    success: bool = Body(True, embed=True),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark an action as resolved with an outcome note. Used for feedback loop tracking."""
+    result = await db.execute(select(PendingAction).where(PendingAction.id == action_id))
+    action = result.scalar_one_or_none()
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+    from datetime import datetime, timezone
+    action.resolved = True
+    action.outcome_note = outcome_note
+    action.resolved_at = datetime.now(timezone.utc)
+    # If success=False, mark as FAILED so it shows distinctly
+    if not success and action.status == "EXECUTED":
+        action.status = "FAILED"
+    await db.commit()
+    return {"ok": True, "action_id": action_id, "resolved": True}
+
+
+@router.get("/success-rates")
+async def action_success_rates(db: AsyncSession = Depends(get_db)):
+    """Return success rate per action type based on resolved outcomes."""
+    result = await db.execute(
+        select(
+            PendingAction.action_type,
+            func.count().label("total"),
+            func.sum(case((PendingAction.resolved == True, 1), else_=0)).label("resolved_count"),
+            func.sum(case((and_(PendingAction.resolved == True, PendingAction.status != "FAILED"), 1), else_=0)).label("success_count"),
+            func.avg(PendingAction.confidence).label("avg_confidence"),
+        )
+        .group_by(PendingAction.action_type)
+        .order_by(func.count().desc())
+    )
+    rows = result.all()
+    rates = []
+    for r in rows:
+        success_rate = (r.success_count / r.resolved_count * 100) if r.resolved_count > 0 else None
+        rates.append({
+            "action_type": r.action_type,
+            "total": r.total,
+            "resolved_count": r.resolved_count,
+            "success_count": r.success_count,
+            "success_rate_pct": round(success_rate, 1) if success_rate is not None else None,
+            "avg_confidence": round(float(r.avg_confidence or 0), 3),
+        })
+    return {"success_rates": rates}

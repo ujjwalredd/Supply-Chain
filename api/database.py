@@ -19,22 +19,30 @@ DATABASE_URL = os.getenv(
 )
 ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
+# Connection pool settings from environment (with safe defaults)
+_DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "10"))
+_DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20"))
+_DB_POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "30"))
+_SQL_ECHO = os.getenv("SQL_ECHO", "false").lower() == "true"
+
 # Sync engine for migrations and batch operations
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
-    echo=os.getenv("SQL_ECHO", "false").lower() == "true",
+    pool_size=_DB_POOL_SIZE,
+    max_overflow=_DB_MAX_OVERFLOW,
+    pool_timeout=_DB_POOL_TIMEOUT,
+    echo=_SQL_ECHO,
 )
 
 # Async engine for FastAPI request handlers
 async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
     pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
-    echo=os.getenv("SQL_ECHO", "false").lower() == "true",
+    pool_size=_DB_POOL_SIZE,
+    max_overflow=_DB_MAX_OVERFLOW,
+    pool_timeout=_DB_POOL_TIMEOUT,
+    echo=_SQL_ECHO,
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

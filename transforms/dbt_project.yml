@@ -18,3 +18,7 @@ models:
     marts:
       +materialized: table
       +schema: marts
+
+tests:
+  supply_chain_transforms:
+    +store_failures: true
