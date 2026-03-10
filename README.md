@@ -1,6 +1,6 @@
 # Supply Chain AI OS
 
-An AI-native supply chain control tower. Real-time event streaming, autonomous deviation detection, Claude-powered reasoning, and a full-featured Next.js dashboard — all running locally in Docker.
+An AI-native supply chain control tower — v5.0. Real-time event streaming, autonomous deviation detection, Claude-powered reasoning, proactive delay forecasting, cost analytics, supplier benchmarking, outcome tracking, and a full-featured Next.js dashboard — all running locally in Docker.
 
 **Live demo:** [supply-chain-silk.vercel.app](https://supply-chain-silk.vercel.app)
 
@@ -25,7 +25,14 @@ The system ingests order and supplier events from Kafka, detects deviations (del
 | Financial impact | Carrying cost + delay cost + stockout penalty computed before every AI call |
 | Ontology layer | 19 business rules (SLA tiers, penalties, dependency caps) injected into every prompt |
 | Risk forecast | Time-decay scoring: `delay_probability × order_value × urgency` |
+| Proactive delay scoring | Every in-flight order scored by delay probability using trust score + historical avg delay + urgency |
+| Cost analytics | Per-supplier: total spend, delay cost exposure, cost efficiency score |
+| Supplier benchmarks | Composite on-time/trust ranking with optional product-level filter |
+| Outcome tracking | Every executed action can be resolved with an outcome note — feeds back into success rate tracking |
+| Feedback loop | Per-action-type success rates displayed in audit trail header strip |
+| Alert fatigue suppression | pg_writer skips CRITICAL insertions when supplier already has 5+ in 24h |
 | Data lake | Dagster 14-asset medallion pipeline: bronze → silver → quality gate → dbt → gold |
+| dbt data quality | Schema tests (not_null, unique, accepted_values) + singular SQL assertions on all marts |
 
 ---
 
@@ -73,7 +80,7 @@ Kafka Producer       │
 | Orders | `/orders` | Filterable order table with per-row timeline drawer |
 | Suppliers | `/suppliers` | Supplier list with trust scores and risk metrics |
 | Scorecard | `/scorecard` | Weekly trend charts (on-time %, delay, deviations) per supplier |
-| Analytics | `/analytics` | Deviation trend chart, supplier heatmap |
+| Analytics | `/analytics` | Proactive delay predictions, deviation trend, risk forecast, cost analytics, supplier benchmarks |
 | Actions | `/actions` | Pending actions + full audit trail with AI reasoning |
 | Network | `/network` | Interactive plant → port graph (drag, pan, zoom) |
 | What-If | `/whatif` | Volume shift simulator with Claude streaming analysis |
@@ -177,6 +184,11 @@ docker compose exec fastapi python scripts/sync_gold_to_postgres.py
 | `GET` | `/actions` | All executed recommendations |
 | `GET` | `/actions/audit` | Enriched audit log with deviation + order context |
 | `GET` | `/actions/stats` | MTTR — avg minutes from detection to resolution |
+| `GET` | `/actions/success-rates` | Per-action-type success/failure rate aggregation |
+| `POST` | `/actions/{id}/resolve` | Record outcome note + mark success or failure |
+| `GET` | `/orders/delay-predictions` | All in-flight orders scored by delay probability |
+| `GET` | `/suppliers/cost-analytics` | Per-supplier spend, delay cost exposure, efficiency score |
+| `GET` | `/suppliers/benchmarks` | Composite on-time/trust ranking (`?product=` filter) |
 | `GET` | `/forecasts/summary` | At-risk order summary |
 | `GET` | `/network` | Plant → port topology |
 | `GET` | `/ontology/constraints` | Business rules |
@@ -230,7 +242,13 @@ pip install -r requirements-api.txt pytest pytest-asyncio httpx
 pytest tests/ -v
 ```
 
-50 tests covering: deviation detection logic, Claude tool\_use, API endpoints, MTTR calculation.
+50 tests covering: deviation detection logic, Claude tool\_use, API endpoints, MTTR calculation, delay prediction scoring, cost analytics, audit resolution.
+
+**dbt tests** (run inside Dagster or directly):
+```bash
+docker compose exec fastapi bash -c "cd /app && dbt test --profiles-dir transforms"
+```
+Tests: `not_null`, `unique`, `accepted_values` on all marts + 3 singular SQL assertions (`assert_no_negative_order_values`, `assert_delay_days_non_negative`, `assert_trust_score_range`).
 
 ---
 
@@ -248,6 +266,11 @@ pytest tests/ -v
 | `POSTGRES_PORT` | `5433` | Host port — avoids conflict with local Postgres on 5432 |
 | `MINIO_ROOT_USER` | `minioadmin` | |
 | `MINIO_ROOT_PASSWORD` | `minioadmin` | |
+| `DB_POOL_SIZE` | `10` | SQLAlchemy connection pool size |
+| `DB_MAX_OVERFLOW` | `20` | Max overflow connections |
+| `DB_POOL_TIMEOUT` | `30` | Seconds before pool timeout |
+| `ALLOWED_HOSTS` | *(unset)* | Comma-separated allowed hosts (TrustedHostMiddleware) |
+| `ALERT_FATIGUE_THRESHOLD` | `5` | Max CRITICAL alerts per supplier per 24h |
 
 ---
 
@@ -289,9 +312,14 @@ supply-chain-os/
 │       ├── BulkTriagePanel.tsx    # Bulk deviation analysis
 │       ├── DeviationClusters.tsx  # Root cause cluster cards
 │       ├── OrderTimeline.tsx      # Order lifecycle drawer
-│       ├── AuditTrail.tsx         # Enriched action audit table
+│       ├── AuditTrail.tsx         # Enriched audit + outcome tracking + success rates
+│       ├── ProactiveDelayPanel.tsx # In-flight order delay probability scoring
+│       ├── CostAnalyticsPanel.tsx # Per-supplier spend / delay cost / efficiency
+│       ├── SupplierBenchmark.tsx  # Composite ranked supplier table
+│       ├── DeviationTrendChart.tsx
 │       ├── OrderTable.tsx         # Filterable table + timeline button
 │       ├── SupplierRisk.tsx
+│       ├── SupplierHeatmap.tsx
 │       ├── RiskForecast.tsx
 │       ├── ActionsLog.tsx
 │       ├── ErrorBoundary.tsx
@@ -308,7 +336,12 @@ supply-chain-os/
 │   └── action_executor.py         # REROUTE / EXPEDITE / SAFETY_STOCK / ESCALATE
 ├── reasoning/
 │   └── engine.py                  # Claude tool_use + SSE + bulk triage + what-if
-├── transforms/models/             # dbt models
+├── transforms/
+│   ├── models/
+│   │   ├── staging/               # stg_orders.sql, stg_suppliers.sql + schema tests
+│   │   └── marts/                 # fct_shipments.sql, dim_suppliers.sql, agg_control_tower.sql
+│   ├── tests/                     # Singular SQL assertions
+│   └── dbt_project.yml
 ├── quality/validations.py         # Great Expectations checks
 ├── scripts/
 │   ├── seed_db.py                 # Seed data (suppliers, orders, deviations, constraints)

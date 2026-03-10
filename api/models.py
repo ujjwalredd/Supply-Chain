@@ -104,6 +104,10 @@ class PendingAction(Base):
     action_type: Mapped[str] = mapped_column(String(64))  # REROUTE | EXPEDITE | SAFETY_STOCK | NOTIFY
     description: Mapped[str] = mapped_column(Text)
     payload: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
-    status: Mapped[str] = mapped_column(String(32), default="PENDING")  # PENDING | COMPLETED | CANCELLED
+    status: Mapped[str] = mapped_column(String(32), default="PENDING")  # PENDING | COMPLETED | CANCELLED | FAILED
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    outcome_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

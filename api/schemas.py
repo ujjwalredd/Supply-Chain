@@ -120,6 +120,10 @@ class PendingActionRead(BaseModel):
     description: str
     payload: Optional[dict[str, Any]] = None
     status: str
+    confidence: Optional[float] = None
+    resolved: bool = False
+    outcome_note: Optional[str] = None
+    resolved_at: Optional[datetime] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
 
