@@ -16,6 +16,7 @@ from api.database import get_db
 from api.models import Deviation, OntologyConstraint, Order, Supplier
 from reasoning.engine import (
     analyze_structured,
+    analyze_with_quality_scoring,
     compute_financial_impact,
     stream_analysis,
     stream_bulk_triage,
@@ -387,3 +388,45 @@ async def analyze_structured_endpoint(
     finally:
         if redis:
             await redis.aclose()
+
+
+class ScoredAnalyzeBody(BaseModel):
+    prompt: str
+    system: Optional[str] = None
+    deviation_id: str = ""
+    max_tokens: int = 1024
+
+
+@router.post("/analyze-scored", response_model=dict)
+async def analyze_scored_endpoint(body: ScoredAnalyzeBody):
+    """
+    Multi-model AI analysis with quality scoring and GPT-4o fallback.
+
+    Calls Claude (primary) and scores the response quality on a 0.0–1.0 scale.
+    If quality < 0.4 and OPENAI_API_KEY is set, falls back to GPT-4o.
+
+    Returns:
+        response (str): The AI-generated analysis text.
+        model_used (str): Which model produced the final response.
+        quality_score (float): Heuristic quality score 0.0–1.0.
+        latency_ms (float): Time taken for the winning model call.
+        fallback_used (bool): True if GPT-4o was used instead of Claude.
+    """
+    if not os.getenv("ANTHROPIC_API_KEY") and not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(
+            status_code=503,
+            detail="AI analysis unavailable: neither ANTHROPIC_API_KEY nor OPENAI_API_KEY is set",
+        )
+
+    system = body.system or (
+        "You are an expert supply chain analyst. Analyze the given information and provide "
+        "clear, actionable recommendations. Write in plain prose with no markdown headers or emojis."
+    )
+
+    result = analyze_with_quality_scoring(
+        prompt=body.prompt,
+        system=system,
+        deviation_id=body.deviation_id,
+        max_tokens=body.max_tokens,
+    )
+    return result

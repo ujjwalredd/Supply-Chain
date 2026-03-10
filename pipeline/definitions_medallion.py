@@ -1,6 +1,7 @@
 """Dagster Definitions - Medallion pipeline (bronze → silver → gold)."""
 
 from dagster import Definitions, ScheduleDefinition
+from pipeline.sensors import self_healing_sensor
 
 from pipeline.assets_medallion import (
     bronze_orders,
@@ -51,4 +52,5 @@ defs = Definitions(
             name="medallion_full_schedule",
         ),
     ],
+    sensors=[self_healing_sensor],
 )

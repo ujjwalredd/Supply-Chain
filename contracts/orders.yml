@@ -1,0 +1,26 @@
+# Soda Core data contract for orders table
+# Run: soda scan -d supply_chain_db -c contracts/soda_connection.yml contracts/orders.yml
+checks for orders:
+  - row_count > 0:
+      name: orders table is not empty
+  - missing_count(order_id) = 0:
+      name: order_id has no nulls
+  - duplicate_count(order_id) = 0:
+      name: order_id is unique
+  - missing_count(supplier_id) = 0:
+      name: supplier_id has no nulls
+  - missing_count(status) = 0:
+      name: status has no nulls
+  - invalid_count(status) = 0:
+      name: status is valid enum
+      valid values: [IN_TRANSIT, DELIVERED, DELAYED, CANCELLED, PENDING]
+  - avg(delay_days) < 30:
+      name: average delay under 30 days
+  - max(delay_days) < 365:
+      name: no extreme delay outliers
+  - min(unit_price) >= 0:
+      name: unit_price non-negative
+  - min(quantity) >= 1:
+      name: quantity at least 1
+  - freshness(created_at) < 25h:
+      name: data freshness within 25 hours
