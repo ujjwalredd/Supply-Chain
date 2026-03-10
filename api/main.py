@@ -16,6 +16,7 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from api.database import init_db
 from api.routers import actions, ai, alerts, forecasts, network, orders, ontology, query, suppliers
@@ -29,9 +30,17 @@ logger = logging.getLogger(__name__)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 REDIS_CHANNEL = "deviations"
 
-# Allowed origins — restrict to frontend URL in production
+# Allowed origins — read from env, comma-separated. Do NOT use wildcard * in production.
 _CORS_ORIGINS_RAW = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")
 CORS_ORIGINS = [o.strip() for o in _CORS_ORIGINS_RAW.split(",") if o.strip()]
+
+# Trusted hosts — comma-separated list from env (e.g. "example.com,api.example.com")
+_ALLOWED_HOSTS_RAW = os.getenv("ALLOWED_HOSTS", "")
+ALLOWED_HOSTS = [h.strip() for h in _ALLOWED_HOSTS_RAW.split(",") if h.strip()]
+
+# NOTE: Rate limiting — install `fastapi-limiter` and configure SlowAPI or
+# fastapi-limiter with Redis to add per-IP or per-API-key rate limits.
+# Example: @limiter.limit("60/minute") on each route.
 
 # In-process fallback subscriber set (used when Redis is unavailable)
 _deviation_subscribers: set[WebSocket] = set()
@@ -102,6 +111,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(_RequestIDMiddleware)
+
+# Only enforce trusted host checking when ALLOWED_HOSTS is explicitly configured
+if ALLOWED_HOSTS:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 

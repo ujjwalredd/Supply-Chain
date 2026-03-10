@@ -1,0 +1,104 @@
+version: 2
+
+models:
+  - name: fct_shipments
+    description: "Fact table of all shipments with delay and risk metrics"
+    columns:
+      - name: order_id
+        description: "Unique order identifier"
+        tests:
+          - not_null
+          - unique
+      - name: supplier_id
+        description: "Supplier identifier"
+        tests:
+          - not_null
+      - name: product
+        description: "Product name"
+        tests:
+          - not_null
+      - name: status
+        description: "Order status"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['PENDING', 'IN_TRANSIT', 'DELIVERED', 'DELAYED', 'CANCELLED']
+      - name: order_value
+        description: "Order value in USD"
+        tests:
+          - not_null
+      - name: delay_days
+        description: "Number of days delayed (0 if on time)"
+      - name: calculated_delay_days
+        description: "Computed delay days derived from actual vs expected delivery dates"
+      - name: region
+        description: "Geographic region of the order"
+      - name: quantity
+        description: "Order quantity"
+      - name: unit_price
+        description: "Unit price of the product"
+      - name: expected_delivery
+        description: "Expected delivery date"
+      - name: actual_delivery
+        description: "Actual delivery date"
+      - name: inventory_level
+        description: "Inventory level at time of order"
+      - name: created_at
+        description: "Timestamp when the order was created"
+
+  - name: dim_suppliers
+    description: "Supplier dimension with aggregated performance metrics"
+    columns:
+      - name: supplier_id
+        description: "Unique supplier identifier"
+        tests:
+          - not_null
+          - unique
+      - name: name
+        description: "Supplier name"
+        tests:
+          - not_null
+      - name: region
+        description: "Geographic region"
+        tests:
+          - not_null
+      - name: trust_score
+        description: "Trust score (0.0 to 1.0)"
+        tests:
+          - not_null
+      - name: total_orders
+        description: "Total order count from source supplier data"
+        tests:
+          - not_null
+      - name: delayed_orders
+        description: "Number of delayed orders from source supplier data"
+      - name: avg_delay_days
+        description: "Average delay days across all orders"
+      - name: order_count
+        description: "Count of orders joined from stg_orders"
+      - name: delayed_count
+        description: "Count of delayed orders joined from stg_orders"
+      - name: delay_rate_pct
+        description: "Percentage of orders that were delayed (0-100)"
+
+  - name: agg_control_tower
+    description: "Aggregated control tower KPI metrics for the dashboard"
+    columns:
+      - name: total_shipments
+        description: "Total number of shipments in scope"
+        tests:
+          - not_null
+      - name: pipeline_value
+        description: "Sum of order values across all shipments"
+        tests:
+          - not_null
+      - name: on_time_count
+        description: "Number of shipments delivered on time"
+      - name: delayed_count
+        description: "Number of delayed shipments"
+      - name: critical_delays
+        description: "Number of shipments delayed more than 7 days"
+      - name: on_time_pct
+        description: "Percentage of shipments delivered on time"
+      - name: refreshed_at
+        description: "Timestamp of last refresh"

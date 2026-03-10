@@ -1,0 +1,69 @@
+version: 2
+
+models:
+  - name: stg_orders
+    description: "Staged orders from bronze layer with type casting and null handling"
+    columns:
+      - name: order_id
+        description: "Order identifier from source"
+        tests:
+          - not_null
+      - name: supplier_id
+        description: "Supplier identifier"
+        tests:
+          - not_null
+      - name: product
+        description: "Product name"
+      - name: order_value
+        description: "Order value, coerced to float"
+      - name: status
+        description: "Order fulfillment status"
+        tests:
+          - accepted_values:
+              values: ['PENDING', 'IN_TRANSIT', 'DELIVERED', 'DELAYED', 'CANCELLED']
+      - name: delay_days
+        description: "Days delayed, default 0"
+        tests:
+          - not_null
+      - name: region
+        description: "Geographic region of the order"
+      - name: quantity
+        description: "Order quantity"
+      - name: unit_price
+        description: "Unit price of the product"
+      - name: expected_delivery
+        description: "Expected delivery date"
+      - name: actual_delivery
+        description: "Actual delivery date"
+      - name: inventory_level
+        description: "Inventory level at time of order"
+      - name: created_at
+        description: "Timestamp when the order was created"
+
+  - name: stg_suppliers
+    description: "Staged suppliers from bronze layer"
+    columns:
+      - name: supplier_id
+        description: "Supplier identifier from source"
+        tests:
+          - not_null
+      - name: name
+        description: "Supplier name"
+        tests:
+          - not_null
+      - name: region
+        description: "Geographic region"
+      - name: trust_score
+        description: "Trust score (0.0 to 1.0)"
+        tests:
+          - not_null
+      - name: total_orders
+        description: "Total historical orders for this supplier"
+      - name: delayed_orders
+        description: "Number of historically delayed orders"
+      - name: avg_delay_days
+        description: "Average delay days, defaulting to 0"
+      - name: contract_terms
+        description: "Contract terms metadata"
+      - name: capacity_limits
+        description: "Capacity limits metadata"

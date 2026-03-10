@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_db
-from api.models import Deviation, Order
+from api.models import Deviation, Order, Supplier
 from api.schemas import OrderRead
 
 logger = logging.getLogger(__name__)
@@ -128,6 +128,89 @@ async def order_timeline(order_id: str, db: AsyncSession = Depends(get_db)):
         "region": order.region,
         "events": events,
     }
+
+
+@router.get("/delay-predictions")
+async def delay_predictions(
+    limit: int = Query(20, ge=1, le=100),
+    min_probability: float = Query(0.3, ge=0.0, le=1.0),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Proactive delay scoring for orders not yet delivered.
+    Scores = weighted combination of supplier trust, avg_delay_days, lead_time_remaining.
+    Returns orders sorted by delay probability descending.
+    """
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+
+    result = await db.execute(
+        select(Order, Supplier)
+        .join(Supplier, Order.supplier_id == Supplier.supplier_id, isouter=True)
+        .where(Order.status.not_in(["DELIVERED", "CANCELLED"]))
+        .where(Order.expected_delivery.isnot(None))
+        .limit(200)
+    )
+    rows = result.all()
+
+    predictions = []
+    for order, supplier in rows:
+        if order.expected_delivery is None:
+            continue
+
+        # Lead time remaining in days
+        exp_dt = order.expected_delivery
+        if hasattr(exp_dt, 'tzinfo') and exp_dt.tzinfo is None:
+            from datetime import timezone as tz
+            exp_dt = exp_dt.replace(tzinfo=tz.utc)
+        days_remaining = (exp_dt - now).days
+
+        # Already overdue
+        is_overdue = days_remaining < 0
+
+        # Base delay probability from supplier trust score
+        trust = float(supplier.trust_score) if supplier else 0.7
+        p_base = max(0.05, min(0.95, 1.0 - trust))
+
+        # Amplify if supplier has high avg delay
+        avg_delay = float(supplier.avg_delay_days) if supplier and supplier.avg_delay_days else 0
+        delay_factor = min(2.0, 1.0 + avg_delay / 14.0)
+
+        # Urgency factor: orders due soon are higher risk
+        if is_overdue:
+            urgency = 2.0
+        elif days_remaining <= 3:
+            urgency = 1.5
+        elif days_remaining <= 7:
+            urgency = 1.2
+        else:
+            urgency = 1.0
+
+        p_delay = min(0.99, p_base * delay_factor * urgency)
+
+        if p_delay < min_probability:
+            continue
+
+        predictions.append({
+            "order_id": order.order_id,
+            "supplier_id": order.supplier_id,
+            "supplier_name": supplier.name if supplier else order.supplier_id,
+            "product": order.product,
+            "order_value": float(order.order_value or 0),
+            "status": order.status,
+            "expected_delivery": order.expected_delivery.isoformat() if order.expected_delivery else None,
+            "days_remaining": days_remaining,
+            "is_overdue": is_overdue,
+            "delay_probability": round(p_delay, 3),
+            "risk_level": "CRITICAL" if p_delay >= 0.75 else "HIGH" if p_delay >= 0.5 else "MEDIUM",
+            "supplier_trust": round(trust, 3),
+            "supplier_avg_delay_days": round(avg_delay, 1),
+        })
+
+    # Sort by delay probability desc
+    predictions.sort(key=lambda x: x["delay_probability"], reverse=True)
+    return {"predictions": predictions[:limit], "total_scored": len(rows)}
 
 
 @router.get("/{order_id}", response_model=OrderRead)

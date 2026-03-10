@@ -241,13 +241,64 @@ def _upsert_suppliers(session, events: list[OrderEvent]) -> None:
         session.execute(stmt)
 
 
+def _count_recent_critical(session, supplier_id: str, order_id: str) -> int:
+    """Count CRITICAL deviations for a supplier in the last 24 hours."""
+    from datetime import timedelta
+    from api.models import Deviation, Order
+    from sqlalchemy import select as sa_select, func as sa_func
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    row = session.execute(
+        sa_select(sa_func.count())
+        .select_from(Deviation)
+        .join(Order, Deviation.order_id == Order.order_id)
+        .where(Order.supplier_id == supplier_id)
+        .where(Deviation.severity == "CRITICAL")
+        .where(Deviation.detected_at >= cutoff)
+    ).scalar()
+    return int(row or 0)
+
+
 def _insert_deviations(session, deviations: list[dict]) -> list[dict]:
-    """Insert detected deviations using savepoints so failures don't roll back the batch."""
-    from api.models import Deviation
+    """Insert detected deviations using savepoints so failures don't roll back the batch.
+
+    Alert fatigue suppression: if the same supplier already has 5+ CRITICAL deviations
+    in the last 24 hours, skip inserting additional CRITICAL ones and log a warning.
+    """
+    from api.models import Deviation, Order
+    from sqlalchemy import select as sa_select
+
+    # Pre-resolve order_id -> supplier_id for suppression check
+    order_ids = {d["order_id"] for d in deviations if d.get("severity") == "CRITICAL"}
+    supplier_by_order: dict[str, str] = {}
+    if order_ids:
+        rows = session.execute(
+            sa_select(Order.order_id, Order.supplier_id).where(Order.order_id.in_(order_ids))
+        ).all()
+        for r in rows:
+            supplier_by_order[r.order_id] = r.supplier_id
+
+    # Cache suppression decisions per supplier to avoid repeated DB queries in one batch
+    suppression_cache: dict[str, bool] = {}
 
     inserted = []
     skipped = 0
     for d in deviations:
+        # Alert fatigue check for CRITICAL deviations
+        if d.get("severity") == "CRITICAL":
+            sid = supplier_by_order.get(d["order_id"])
+            if sid:
+                if sid not in suppression_cache:
+                    count = _count_recent_critical(session, sid, d["order_id"])
+                    suppression_cache[sid] = count >= 5
+                    if suppression_cache[sid]:
+                        logger.warning(
+                            "Alert fatigue suppression: supplier %s has %d CRITICAL alerts in 24h, skipping",
+                            sid, count,
+                        )
+                if suppression_cache[sid]:
+                    skipped += 1
+                    continue
+
         savepoint = session.begin_nested()
         try:
             detected_at = datetime.fromisoformat(d["detected_at"].replace("Z", "+00:00"))
@@ -269,7 +320,7 @@ def _insert_deviations(session, deviations: list[dict]) -> list[dict]:
             skipped += 1
             logger.debug("Deviation insert skipped (%s): %s", d["deviation_id"], e)
     if skipped:
-        logger.info("Skipped %d duplicate/invalid deviations in batch", skipped)
+        logger.info("Skipped %d duplicate/suppressed deviations in batch", skipped)
     return inserted
 
 
