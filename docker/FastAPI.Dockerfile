@@ -13,6 +13,7 @@ COPY api/ api/
 COPY reasoning/ reasoning/
 COPY ingestion/ ingestion/
 COPY integrations/ integrations/
+COPY pipeline/ pipeline/
 COPY alembic/ alembic/
 COPY alembic.ini .
 COPY scripts/ scripts/

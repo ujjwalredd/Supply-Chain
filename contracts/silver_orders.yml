@@ -1,0 +1,10 @@
+# Soda Core data contract for silver_orders (Delta Lake / Parquet)
+checks for silver_orders:
+  - row_count > 0
+  - missing_count(order_id) = 0
+  - duplicate_count(order_id) = 0
+  - missing_count(status) = 0
+  - missing_count(supplier_id) = 0
+  - avg(delay_days) between -1 and 90:
+      name: delay_days in sane range
+  - min(order_value) >= 0

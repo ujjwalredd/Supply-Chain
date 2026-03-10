@@ -471,3 +471,164 @@ Be specific. Do not hedge without data."""
     except Exception as e:
         logger.exception("What-if stream failed: %s", e)
         yield f"\n\nError: {str(e)}"
+
+
+# ── Multi-Model AI with Quality Scoring ──────────────────────────────────────
+
+import hashlib as _hashlib
+import time as _time
+
+# Alias for use in quality-scoring functions (MODEL is defined above)
+_MODEL = MODEL
+
+
+def _call_claude(prompt: str, system: str, max_tokens: int = 1024) -> tuple[str, float]:
+    """
+    Call Claude (primary model). Returns (response_text, latency_ms).
+    """
+    start = _time.monotonic()
+    try:
+        client = _get_client()
+        resp = client.messages.create(
+            model=_MODEL,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        latency = (_time.monotonic() - start) * 1000
+        return resp.content[0].text, latency
+    except Exception as e:
+        latency = (_time.monotonic() - start) * 1000
+        raise
+
+
+def _call_openai_fallback(prompt: str, system: str, max_tokens: int = 1024) -> tuple[str, float]:
+    """
+    GPT-4o fallback when Claude is unavailable or quality is low.
+    Returns ("", 0.0) if OpenAI not configured.
+    """
+    import os
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    if not api_key:
+        return "", 0.0
+
+    start = _time.monotonic()
+    try:
+        import openai
+        client = openai.OpenAI(api_key=api_key)
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        latency = (_time.monotonic() - start) * 1000
+        return resp.choices[0].message.content or "", latency
+    except Exception as e:
+        latency = (_time.monotonic() - start) * 1000
+        logger.warning("OpenAI fallback failed: %s", e)
+        return "", latency
+
+
+def _score_response_quality(response: str, context: dict) -> float:
+    """
+    Score AI response quality on 0.0–1.0 scale.
+    Heuristics: length, action keywords, specificity, structure.
+    """
+    if not response or len(response) < 50:
+        return 0.0
+
+    score = 0.0
+
+    # Length signal (200-2000 chars is ideal)
+    l = len(response)
+    if 200 <= l <= 2000:
+        score += 0.3
+    elif l > 100:
+        score += 0.15
+
+    # Action keywords signal
+    action_words = ["recommend", "action", "priority", "immediate", "route", "supplier",
+                    "delay", "risk", "mitigate", "escalate", "alternative"]
+    hits = sum(1 for w in action_words if w.lower() in response.lower())
+    score += min(hits * 0.05, 0.3)
+
+    # Structure signal (numbered lists, bullet points)
+    if any(c in response for c in ["1.", "2.", "•", "-", "*"]):
+        score += 0.2
+
+    # Specificity: contains numbers/percentages
+    import re
+    if re.search(r"\d+(\.\d+)?%?", response):
+        score += 0.2
+
+    return min(round(score, 3), 1.0)
+
+
+def analyze_with_quality_scoring(
+    prompt: str,
+    system: str,
+    deviation_id: str = "",
+    max_tokens: int = 1024,
+) -> dict:
+    """
+    Multi-model AI call with quality scoring and GPT-4o fallback.
+
+    Returns:
+        {
+            "response": str,
+            "model_used": str,
+            "quality_score": float,
+            "latency_ms": float,
+            "fallback_used": bool,
+        }
+    """
+    result = {
+        "response": "",
+        "model_used": _MODEL,
+        "quality_score": 0.0,
+        "latency_ms": 0.0,
+        "fallback_used": False,
+    }
+
+    # Try Claude first
+    try:
+        text, latency = _call_claude(prompt, system, max_tokens)
+        quality = _score_response_quality(text, {"deviation_id": deviation_id})
+        result.update({
+            "response": text,
+            "model_used": _MODEL,
+            "quality_score": quality,
+            "latency_ms": round(latency, 1),
+        })
+
+        # If quality is low (< 0.4), try OpenAI fallback
+        if quality < 0.4:
+            fallback_text, fallback_latency = _call_openai_fallback(prompt, system, max_tokens)
+            if fallback_text:
+                fallback_quality = _score_response_quality(fallback_text, {"deviation_id": deviation_id})
+                if fallback_quality > quality:
+                    result.update({
+                        "response": fallback_text,
+                        "model_used": "gpt-4o",
+                        "quality_score": fallback_quality,
+                        "latency_ms": round(fallback_latency, 1),
+                        "fallback_used": True,
+                    })
+
+        return result
+
+    except Exception as e:
+        logger.warning("Claude call failed: %s — trying GPT-4o fallback", e)
+        fallback_text, fallback_latency = _call_openai_fallback(prompt, system, max_tokens)
+        if fallback_text:
+            result.update({
+                "response": fallback_text,
+                "model_used": "gpt-4o",
+                "quality_score": _score_response_quality(fallback_text, {}),
+                "latency_ms": round(fallback_latency, 1),
+                "fallback_used": True,
+            })
+        return result

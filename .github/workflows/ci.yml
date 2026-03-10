@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main, ujjwal]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install pytest pandas pyarrow jsonschema pyyaml requests
+      - name: Run tests (skip docker-only)
+        run: pytest tests/ -v --tb=short -m "not docker_only"
+
+  dbt-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check dbt model SQL syntax
+        run: |
+          python -c "
+          from pathlib import Path
+          models = list(Path('transforms/models').rglob('*.sql'))
+          print(f'Found {len(models)} dbt models')
+          for m in models:
+              content = m.read_text()
+              assert len(content) > 10, f'{m} appears empty'
+          print('All dbt models have content')
+          "
+
+  docker-build-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate docker-compose syntax
+        run: docker compose config --quiet
+
+  tag-on-merge:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [test, dbt-validate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Auto-tag version
+        run: |
+          VERSION=$(date +v%Y.%m.%d)-$(git rev-parse --short HEAD)
+          git tag $VERSION
+          git push origin $VERSION

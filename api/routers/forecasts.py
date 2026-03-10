@@ -83,3 +83,73 @@ async def forecast_summary():
         "suppliers_affected": len(suppliers),
         "avg_days_to_delivery": round(avg_days, 1),
     }
+
+
+@router.get("/demand")
+async def get_demand_forecast():
+    """
+    Feature 6 (Prophet): 30-day demand forecast for order_value.
+
+    Reads GOLD_PATH/demand_forecast/forecast.parquet if available (produced by
+    the gold_demand_forecast Dagster asset).  If the file does not yet exist,
+    generates an on-the-fly forecast from synthetic data so the endpoint always
+    returns a usable response.
+
+    Returns: {forecast: [{ds, yhat, yhat_lower, yhat_upper}], periods: int, generated_at: str}
+    """
+    from datetime import datetime, timezone as tz
+
+    parquet_file = Path(GOLD_PATH) / "demand_forecast" / "forecast.parquet"
+    generated_at = datetime.now(tz.utc).isoformat()
+
+    if parquet_file.exists():
+        try:
+            import pandas as pd
+            df = pd.read_parquet(parquet_file)
+            records = []
+            for _, row in df.iterrows():
+                records.append({
+                    "ds": str(row["ds"]) if "ds" in df.columns else "",
+                    "yhat": float(row["yhat"]) if "yhat" in df.columns else 0.0,
+                    "yhat_lower": float(row["yhat_lower"]) if "yhat_lower" in df.columns else 0.0,
+                    "yhat_upper": float(row["yhat_upper"]) if "yhat_upper" in df.columns else 0.0,
+                })
+            return {
+                "forecast": records,
+                "periods": len(records),
+                "generated_at": generated_at,
+                "source": "parquet",
+            }
+        except Exception as exc:
+            logger.warning("Could not read demand_forecast parquet: %s", exc)
+
+    # On-the-fly fallback using synthetic data
+    try:
+        import numpy as np
+        import pandas as pd
+        from datetime import timedelta, timezone
+        from pipeline.demand_forecast import forecast_demand
+
+        dates = [datetime.now(timezone.utc) - timedelta(days=i) for i in range(60, 0, -1)]
+        synthetic_df = pd.DataFrame({
+            "created_at": [d.isoformat() for d in dates],
+            "order_value": np.random.uniform(500, 5000, 60).tolist(),
+        })
+        forecast_df = forecast_demand(synthetic_df, periods=30)
+        records = []
+        for _, row in forecast_df.iterrows():
+            records.append({
+                "ds": str(row["ds"]),
+                "yhat": float(row["yhat"]),
+                "yhat_lower": float(row["yhat_lower"]),
+                "yhat_upper": float(row["yhat_upper"]),
+            })
+        return {
+            "forecast": records,
+            "periods": len(records),
+            "generated_at": generated_at,
+            "source": "synthetic_fallback",
+        }
+    except Exception as exc:
+        logger.error("Demand forecast generation failed: %s", exc)
+        return {"forecast": [], "periods": 0, "generated_at": generated_at, "error": str(exc)}
