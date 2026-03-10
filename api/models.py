@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, JSON, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -111,3 +111,27 @@ class PendingAction(Base):
     resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OrderEvent(Base):
+    """
+    Event sourcing table — append-only log of all order state transitions.
+    Enables point-in-time recovery and full audit trail.
+    Never update or delete rows; only INSERT.
+    """
+    __tablename__ = "order_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(String, unique=True, nullable=False, index=True, default=lambda: str(__import__('uuid').uuid4()))
+    order_id = Column(String, nullable=False, index=True)
+    event_type = Column(String, nullable=False)  # CREATED | STATUS_CHANGED | DELAYED | DELIVERED | CANCELLED
+    old_status = Column(String, nullable=True)
+    new_status = Column(String, nullable=True)
+    old_delay_days = Column(Integer, nullable=True)
+    new_delay_days = Column(Integer, nullable=True)
+    supplier_id = Column(String, nullable=True)
+    region = Column(String, nullable=True)
+    event_metadata = Column("metadata", JSON, nullable=True)
+    actor = Column(String, nullable=True, default="system")  # who triggered: system | kafka | api | dagster
+    aggregate_version = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)

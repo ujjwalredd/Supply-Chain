@@ -112,3 +112,85 @@ async def get_network_graph():
     _NETWORK_CACHE = _build_graph()
     _NETWORK_CACHE_AT = time.monotonic()
     return _NETWORK_CACHE
+
+
+@router.get("/risk")
+async def get_network_risk():
+    """
+    Feature 5 (NetworkX): Cascade risk analysis on the supply chain graph.
+
+    Computes betweenness centrality and cascade_risk_score = betweenness * in_degree
+    for each node and returns the top 20 highest-risk nodes.
+
+    Gracefully falls back to a degree-based risk score if networkx is not installed.
+    """
+    global _NETWORK_CACHE, _NETWORK_CACHE_AT
+    if not (_NETWORK_CACHE and (time.monotonic() - _NETWORK_CACHE_AT) < _NETWORK_CACHE_TTL):
+        _NETWORK_CACHE = _build_graph()
+        _NETWORK_CACHE_AT = time.monotonic()
+
+    graph_data = _NETWORK_CACHE
+    nodes: list[dict] = graph_data.get("nodes", [])
+    edges: list[dict] = graph_data.get("edges", [])
+
+    try:
+        from pipeline.graph_ml import compute_network_risk
+        risk_metrics = compute_network_risk(nodes, edges)
+    except Exception as exc:
+        logger.warning("graph_ml import failed, using inline fallback: %s", exc)
+        from collections import Counter
+        target_counts = Counter(e["target"] for e in edges)
+        risk_metrics = {}
+        n = max(len(nodes), 1)
+        for node in nodes:
+            nid = node["id"]
+            deg = target_counts.get(nid, 0)
+            risk_metrics[nid] = {
+                "betweenness": 0.0,
+                "degree": round(deg / n, 4),
+                "cascade_risk": float(deg),
+            }
+
+    # Build node lookup for label/type
+    node_lookup: dict[str, dict] = {n["id"]: n for n in nodes}
+
+    # Compute graph density using networkx if available
+    graph_density = 0.0
+    try:
+        import networkx as nx
+        G = nx.DiGraph()
+        for node in nodes:
+            G.add_node(node["id"])
+        for edge in edges:
+            G.add_edge(edge["source"], edge["target"])
+        graph_density = round(nx.density(G), 6)
+    except ImportError:
+        n_nodes = len(nodes)
+        n_edges = len(edges)
+        if n_nodes > 1:
+            graph_density = round(n_edges / (n_nodes * (n_nodes - 1)), 6)
+
+    # Sort nodes by cascade_risk_score descending, take top 20
+    sorted_nodes = sorted(
+        risk_metrics.items(),
+        key=lambda x: x[1].get("cascade_risk", 0.0),
+        reverse=True,
+    )[:20]
+
+    risk_nodes = []
+    for node_id, metrics in sorted_nodes:
+        node_info = node_lookup.get(node_id, {})
+        risk_nodes.append({
+            "id": node_id,
+            "label": node_info.get("label", node_id),
+            "type": node_info.get("type", "unknown"),
+            "betweenness": metrics.get("betweenness", 0.0),
+            "degree": metrics.get("degree", 0.0),
+            "cascade_risk": metrics.get("cascade_risk", 0.0),
+        })
+
+    return {
+        "risk_nodes": risk_nodes,
+        "total_nodes": len(nodes),
+        "graph_density": graph_density,
+    }

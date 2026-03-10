@@ -571,6 +571,53 @@ def gold_forecasted_risks(context: AssetExecutionContext) -> MaterializeResult:
 
 
 # ─────────────────────────────────────────────
+# FEATURE 6: PROPHET DEMAND FORECASTING
+# ─────────────────────────────────────────────
+
+@asset(
+    compute_kind="prophet",
+    group_name="ml",
+    deps=[silver_orders],
+    freshness_policy=FreshnessPolicy.time_window(fail_window=timedelta(hours=24), warn_window=timedelta(hours=12)),
+)
+def gold_demand_forecast(context: AssetExecutionContext) -> MaterializeResult:
+    """
+    30-day demand forecast using Prophet.
+    Writes forecast Parquet to GOLD_PATH/demand_forecast/forecast.parquet
+    """
+    import pandas as pd
+    from pipeline.demand_forecast import forecast_demand
+
+    # Read silver orders
+    silver_parquet = Path(SILVER_PATH) / "orders" / "data.parquet"
+    if silver_parquet.exists():
+        df = pd.read_parquet(silver_parquet)
+    else:
+        # fallback: generate minimal synthetic data
+        from datetime import datetime, timedelta, timezone
+        import numpy as np
+        dates = [datetime.now(timezone.utc) - timedelta(days=i) for i in range(60, 0, -1)]
+        df = pd.DataFrame({
+            "created_at": [d.isoformat() for d in dates],
+            "order_value": np.random.uniform(500, 5000, 60).tolist(),
+        })
+
+    forecast_df = forecast_demand(df, periods=30)
+
+    # Write to gold
+    out_dir = Path(GOLD_PATH) / "demand_forecast"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "forecast.parquet"
+    forecast_df.to_parquet(str(out_path), index=False)
+
+    return MaterializeResult(metadata={
+        "forecast_periods": MetadataValue.int(len(forecast_df)),
+        "avg_yhat": MetadataValue.float(round(forecast_df["yhat"].mean(), 2)),
+        "output_path": MetadataValue.text(str(out_path)),
+    })
+
+
+# ─────────────────────────────────────────────
 # FEATURE 3: DELTA LAKE MAINTENANCE
 # ─────────────────────────────────────────────
 
@@ -626,4 +673,67 @@ def delta_maintenance(context: AssetExecutionContext) -> MaterializeResult:
 
     return MaterializeResult(metadata={
         k: MetadataValue.text(v) for k, v in results.items()
+    })
+
+
+# ─────────────────────────────────────────────
+# ML: XGBOOST DELAY PREDICTION MODEL
+# ─────────────────────────────────────────────
+
+@asset(
+    compute_kind="xgboost",
+    group_name="ml",
+    deps=[silver_orders],
+    freshness_policy=FreshnessPolicy.time_window(
+        fail_window=timedelta(hours=24),
+        warn_window=timedelta(hours=12),
+    ),
+)
+def gold_delay_model(context: AssetExecutionContext) -> MaterializeResult:
+    """
+    Train XGBoost delay prediction model. Logs params, metrics, and model artifact to MLflow.
+
+    Reads silver orders (preferred) or falls back to bronze.
+    Returns metadata: row_count, accuracy, roc_auc.
+    """
+    import pandas as pd
+    from pipeline.ml_model import train_delay_model
+
+    # Prefer silver parquet; fall back to bronze
+    silver_file = os.path.join(SILVER_PATH, "orders", "data.parquet")
+    bronze_file = os.path.join(BRONZE_PATH, "orders", "data.parquet")
+
+    parquet_file = silver_file if Path(silver_file).exists() else (
+        bronze_file if Path(bronze_file).exists() else None
+    )
+
+    if parquet_file is None:
+        context.log.warning("No parquet data found for ML training (silver or bronze). Skipping.")
+        return MaterializeResult(metadata={
+            "row_count": MetadataValue.int(0),
+            "accuracy": MetadataValue.float(0.0),
+            "roc_auc": MetadataValue.float(0.0),
+            "status": MetadataValue.text("skipped — no data"),
+        })
+
+    df = pd.read_parquet(parquet_file)
+    row_count = len(df)
+    context.log.info("Training XGBoost delay model on %d rows from %s", row_count, parquet_file)
+
+    result = train_delay_model(df)
+
+    context.log.info(
+        "XGBoost training complete — accuracy=%.4f roc_auc=%.4f model_path=%s",
+        result["accuracy"], result["roc_auc"], result["model_path"],
+    )
+
+    return MaterializeResult(metadata={
+        "row_count": MetadataValue.int(row_count),
+        "accuracy": MetadataValue.float(result["accuracy"]),
+        "roc_auc": MetadataValue.float(result["roc_auc"]),
+        "precision": MetadataValue.float(result.get("precision", 0.0)),
+        "recall": MetadataValue.float(result.get("recall", 0.0)),
+        "model_path": MetadataValue.text(result["model_path"]),
+        "train_rows": MetadataValue.int(result.get("train_rows", 0)),
+        "test_rows": MetadataValue.int(result.get("test_rows", 0)),
     })

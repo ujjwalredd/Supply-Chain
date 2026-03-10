@@ -1,0 +1,9 @@
+# Soda Core connection config
+# Override DATABASE_URL env var with actual connection details
+supply_chain_db:
+  type: postgres
+  host: ${POSTGRES_HOST:-localhost}
+  port: ${POSTGRES_PORT:-5433}
+  username: ${POSTGRES_USER:-supplychain}
+  password: ${POSTGRES_PASSWORD:-supplychain_secret}
+  database: ${POSTGRES_DB:-supply_chain_db}
