@@ -1,6 +1,6 @@
 # Supply Chain AI OS
 
-An AI-native supply chain control tower — v5.0. Real-time event streaming, autonomous deviation detection, Claude-powered reasoning, proactive delay forecasting, cost analytics, supplier benchmarking, outcome tracking, and a full-featured Next.js dashboard — all running locally in Docker.
+An AI-native supply chain control tower — v6.0. Real-time event streaming, autonomous deviation detection, Claude-powered reasoning, proactive delay forecasting, cost analytics, supplier benchmarking, outcome tracking, and a full-featured Next.js dashboard — all running locally in Docker.
 
 **Live demo:** [supply-chain-silk.vercel.app](https://supply-chain-silk.vercel.app)
 
@@ -33,6 +33,14 @@ The system ingests order and supplier events from Kafka, detects deviations (del
 | Alert fatigue suppression | pg_writer skips CRITICAL insertions when supplier already has 5+ in 24h |
 | Data lake | Dagster 14-asset medallion pipeline: bronze → silver → quality gate → dbt → gold |
 | dbt data quality | Schema tests (not_null, unique, accepted_values) + singular SQL assertions on all marts |
+| Incremental dbt models | `fct_shipments` + `dim_suppliers` use `materialized='incremental'` — only new rows processed |
+| Dead Letter Queue | pg_writer sends parse/validation failures to `supply-chain-dlq` Kafka topic |
+| Delta OPTIMIZE + VACUUM | Dagster `delta_maintenance` asset compacts small files and vacuums stale data after every gold run |
+| Partitioned Parquet | batch_loader writes `year=/month=/day=` date partitions alongside Delta writes |
+| Kafka schema validation | Producer validates every event against JSON Schema before producing — invalid events logged and skipped |
+| OpenLineage | `lineage_resource.py` emits START/COMPLETE/FAIL events to Postgres + optional Marquez; `/lineage` API endpoint |
+| Freshness policies | All gold Dagster assets enforce `FreshnessPolicy(maximum_lag_minutes=360)` — alerts if stale |
+| dbt-expectations | `calogica/dbt_expectations` package with column-range tests on fct_shipments and dim_suppliers |
 
 ---
 
@@ -197,6 +205,8 @@ docker compose exec fastapi python scripts/sync_gold_to_postgres.py
 | `POST` | `/ai/analyze/bulk` | Bulk triage of all open deviations (SSE stream) |
 | `POST` | `/ai/whatif/stream` | Volume shift scenario analysis (SSE stream) |
 | `POST` | `/ai/query/stream` | Natural language question → live data context → SSE |
+| `GET` | `/lineage` | Lineage events + DAG graph (`?job_name=` filter) |
+| `GET` | `/lineage/jobs` | All tracked jobs with last run status |
 
 ### SSE streaming example
 
@@ -242,7 +252,7 @@ pip install -r requirements-api.txt pytest pytest-asyncio httpx
 pytest tests/ -v
 ```
 
-50 tests covering: deviation detection logic, Claude tool\_use, API endpoints, MTTR calculation, delay prediction scoring, cost analytics, audit resolution.
+62 tests (8 skipped when kafka/dagster not installed locally — all pass inside Docker) covering: deviation detection, Claude tool\_use, API endpoints, MTTR, delay prediction scoring, cost analytics, audit resolution, DLQ, partitioned Parquet, OpenLineage, incremental dbt config.
 
 **dbt tests** (run inside Dagster or directly):
 ```bash
@@ -271,6 +281,9 @@ Tests: `not_null`, `unique`, `accepted_values` on all marts + 3 singular SQL ass
 | `DB_POOL_TIMEOUT` | `30` | Seconds before pool timeout |
 | `ALLOWED_HOSTS` | *(unset)* | Comma-separated allowed hosts (TrustedHostMiddleware) |
 | `ALERT_FATIGUE_THRESHOLD` | `5` | Max CRITICAL alerts per supplier per 24h |
+| `KAFKA_DLQ_TOPIC` | `supply-chain-dlq` | Dead letter queue topic name |
+| `MARQUEZ_URL` | *(unset)* | Optional Marquez endpoint for OpenLineage emission |
+| `LINEAGE_NAMESPACE` | `supply-chain-os` | OpenLineage namespace |
 
 ---
 
@@ -330,7 +343,8 @@ supply-chain-os/
 │   ├── consumer.py                # Kafka → Delta Lake
 │   └── batch_loader.py            # CSV → bronze Parquet
 ├── pipeline/
-│   ├── assets_medallion.py        # 14 Dagster assets
+│   ├── assets_medallion.py        # 15 Dagster assets (incl. delta_maintenance + freshness policies)
+│   ├── lineage_resource.py        # OpenLineage emitter → Postgres + optional Marquez
 │   └── definitions_medallion.py   # Schedule (6h)
 ├── integrations/
 │   └── action_executor.py         # REROUTE / EXPEDITE / SAFETY_STOCK / ESCALATE

@@ -41,6 +41,24 @@ services:
       timeout: 10s
       retries: 5
 
+  # Ensures required topics (incl. DLQ) exist before producers/consumers start
+  kafka-init:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: supply-chain-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists
+          --topic supply-chain-events --partitions 3 --replication-factor 1 &&
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists
+          --topic supply-chain-dlq --partitions 1 --replication-factor 1
+          --config retention.ms=604800000 &&
+        echo 'Kafka topics ready.'
+      "
+    restart: on-failure
+
   # --- DATABASES & STORAGE ---
   postgres:
     image: postgres:15-alpine

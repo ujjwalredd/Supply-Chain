@@ -10,7 +10,9 @@ import logging
 import os
 from pathlib import Path
 
-from dagster import AssetExecutionContext, asset, MaterializeResult, MetadataValue
+from datetime import timedelta
+
+from dagster import AssetExecutionContext, asset, MaterializeResult, MetadataValue, FreshnessPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +122,8 @@ def silver_orders(context: AssetExecutionContext) -> MaterializeResult:
 
 
 # --- GOLD LAYER ---
-@asset(compute_kind="pandas", group_name="gold", deps=[silver_orders])
+@asset(compute_kind="pandas", group_name="gold", deps=[silver_orders],
+       freshness_policy=FreshnessPolicy.time_window(fail_window=timedelta(hours=6), warn_window=timedelta(hours=3)))
 def gold_orders_ai_ready(context: AssetExecutionContext) -> MaterializeResult:
     """
     Gold: AI-ready digital twin. Analytics-optimized, ontology-aligned.
@@ -169,7 +172,8 @@ def gold_orders_ai_ready(context: AssetExecutionContext) -> MaterializeResult:
     })
 
 
-@asset(compute_kind="pandas", group_name="gold", deps=[silver_orders])
+@asset(compute_kind="pandas", group_name="gold", deps=[silver_orders],
+       freshness_policy=FreshnessPolicy.time_window(fail_window=timedelta(hours=6), warn_window=timedelta(hours=3)))
 def gold_deviations(context: AssetExecutionContext) -> MaterializeResult:
     """Gold: Deviation events for AI reasoning. Uses pandas — no PySpark Delta needed."""
     import pandas as pd
@@ -203,7 +207,8 @@ def gold_deviations(context: AssetExecutionContext) -> MaterializeResult:
     })
 
 
-@asset(compute_kind="pandas", group_name="gold", deps=[silver_orders])
+@asset(compute_kind="pandas", group_name="gold", deps=[silver_orders],
+       freshness_policy=FreshnessPolicy.time_window(fail_window=timedelta(hours=6), warn_window=timedelta(hours=3)))
 def gold_supplier_risk(context: AssetExecutionContext) -> MaterializeResult:
     """Gold: Supplier trust scores for ontology and AI context. Uses pandas — no PySpark needed."""
     import pandas as pd
@@ -371,7 +376,8 @@ def quality_gate_silver_orders(context: AssetExecutionContext) -> MaterializeRes
 # FEATURE 2: DBT TRANSFORMS
 # ─────────────────────────────────────────────
 
-@asset(compute_kind="dbt", group_name="gold", deps=[quality_gate_silver_orders])
+@asset(compute_kind="dbt", group_name="gold", deps=[quality_gate_silver_orders],
+       freshness_policy=FreshnessPolicy.time_window(fail_window=timedelta(hours=12), warn_window=timedelta(hours=6)))
 def dbt_transforms(context: AssetExecutionContext) -> MaterializeResult:
     """Feature 2: Run dbt models (staging + marts) against PostgreSQL."""
     import subprocess
@@ -413,7 +419,8 @@ def dbt_transforms(context: AssetExecutionContext) -> MaterializeResult:
 
 @asset(compute_kind="pandas", group_name="gold",
        deps=[silver_orders, silver_freight_rates, silver_wh_capacities,
-             bronze_plant_ports, bronze_products_per_plant])
+             bronze_plant_ports, bronze_products_per_plant],
+       freshness_policy=FreshnessPolicy.time_window(fail_window=timedelta(hours=6), warn_window=timedelta(hours=3)))
 def gold_forecasted_risks(context: AssetExecutionContext) -> MaterializeResult:
     """
     Feature 5: Predict orders at risk of delay BEFORE they are late.
@@ -560,4 +567,63 @@ def gold_forecasted_risks(context: AssetExecutionContext) -> MaterializeResult:
         "total_orders_scanned": MetadataValue.int(len(df)),
         "avg_risk_score": MetadataValue.float(avg_risk_score),
         "avg_model_confidence": MetadataValue.float(avg_confidence),
+    })
+
+
+# ─────────────────────────────────────────────
+# FEATURE 3: DELTA LAKE MAINTENANCE
+# ─────────────────────────────────────────────
+
+@asset(compute_kind="python", group_name="maintenance",
+       deps=[gold_orders_ai_ready, gold_deviations, gold_supplier_risk, gold_forecasted_risks])
+def delta_maintenance(context: AssetExecutionContext) -> MaterializeResult:
+    """
+    Delta Lake maintenance: OPTIMIZE (compact small files) + VACUUM (remove stale files).
+    Runs after all gold assets complete. Safe to run on every pipeline execution.
+    """
+    import gc
+    results = {}
+    for name, path_env, default in [
+        ("bronze_orders",     "BRONZE_PATH", "data/bronze/orders"),
+        ("silver_orders",     "SILVER_PATH", "data/silver/orders"),
+        ("gold_orders",       "GOLD_PATH",   "data/gold/orders_ai_ready"),
+        ("gold_deviations",   "GOLD_PATH",   "data/gold/deviations"),
+        ("gold_supplier_risk","GOLD_PATH",   "data/gold/supplier_risk"),
+    ]:
+        # Construct correct full path
+        if name.startswith("bronze"):
+            table_path = os.path.join(os.getenv("BRONZE_PATH", "data/bronze"), "orders")
+        elif name.startswith("silver"):
+            table_path = os.path.join(os.getenv("SILVER_PATH", "data/silver"), "orders")
+        elif name == "gold_orders":
+            table_path = os.path.join(os.getenv("GOLD_PATH", "data/gold"), "orders_ai_ready")
+        elif name == "gold_deviations":
+            table_path = os.path.join(os.getenv("GOLD_PATH", "data/gold"), "deviations")
+        elif name == "gold_supplier_risk":
+            table_path = os.path.join(os.getenv("GOLD_PATH", "data/gold"), "supplier_risk")
+        else:
+            table_path = default
+
+        if not Path(table_path).exists():
+            results[name] = "skipped (path not found)"
+            continue
+        try:
+            from deltalake import DeltaTable
+            dt = DeltaTable(table_path)
+            # OPTIMIZE: compact small files into larger ones
+            optimize_result = dt.optimize.compact()
+            files_added = optimize_result.get("numFilesAdded", 0)
+            files_removed = optimize_result.get("numFilesRemoved", 0)
+            # VACUUM: remove files older than retention window (168h = 7 days)
+            dt.vacuum(retention_hours=168, enforce_retention_duration=False, dry_run=False)
+            results[name] = f"optimized (+{files_added}/-{files_removed} files), vacuumed"
+            context.log.info("Delta maintenance %s: %s", name, results[name])
+        except Exception as e:
+            results[name] = f"parquet-only or error: {e}"
+            context.log.debug("Delta maintenance skipped for %s: %s", name, e)
+        finally:
+            gc.collect()
+
+    return MaterializeResult(metadata={
+        k: MetadataValue.text(v) for k, v in results.items()
     })
