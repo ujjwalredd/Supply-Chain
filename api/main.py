@@ -19,7 +19,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from api.database import init_db
-from api.routers import actions, ai, alerts, forecasts, network, orders, ontology, query, suppliers
+from api.routers import actions, ai, alerts, forecasts, lineage, network, orders, ontology, query, suppliers
 
 logging.basicConfig(
     level=logging.INFO,
@@ -127,6 +127,7 @@ app.include_router(actions.router, prefix="/actions", tags=["actions"])
 app.include_router(forecasts.router, prefix="/forecasts", tags=["forecasts"])
 app.include_router(network.router, prefix="/network", tags=["network"])
 app.include_router(query.router, prefix="/ai/query", tags=["ai"])
+app.include_router(lineage.router)
 
 
 async def _redis_subscriber_loop() -> None:

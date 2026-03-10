@@ -46,6 +46,7 @@ logger = logging.getLogger("pg-writer")
 # ── Configuration ──────────────────────────────────────────────────────────────
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9093")
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "supply-chain-events")
+DLQ_TOPIC = os.getenv("KAFKA_DLQ_TOPIC", "supply-chain-dlq")
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql://supplychain:supplychain_secret@localhost:5432/supply_chain_db",
@@ -82,6 +83,40 @@ def _get_redis():
     except Exception as e:
         logger.warning("Redis unavailable, real-time broadcast disabled: %s", e)
         return None
+
+
+def _get_producer():
+    """Return a Kafka producer for DLQ publishing."""
+    try:
+        from kafka import KafkaProducer
+        return KafkaProducer(
+            bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+            value_serializer=lambda v: json.dumps(v).encode("utf-8"),
+            retries=3,
+            acks="all",
+        )
+    except Exception as e:
+        logger.warning("DLQ producer unavailable: %s", e)
+        return None
+
+
+def _send_to_dlq(producer, raw_message: str, error: str, context: dict) -> None:
+    """Send a failed message to the dead letter queue topic."""
+    if producer is None:
+        logger.warning("DLQ producer not available, dropping failed message: %s", error)
+        return
+    try:
+        dlq_record = {
+            "original_message": raw_message,
+            "error": str(error),
+            "context": context,
+            "failed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        producer.send(DLQ_TOPIC, dlq_record)
+        producer.flush(timeout=5)
+        logger.warning("Sent failed message to DLQ: %s", error)
+    except Exception as e:
+        logger.error("Failed to send to DLQ: %s", e)
 
 
 def _detect_deviations(event: OrderEvent) -> list[dict[str, Any]]:
@@ -617,6 +652,7 @@ def run() -> None:
     engine = _get_engine()
     Session = sessionmaker(bind=engine)
     redis_client = _get_redis()
+    dlq_producer = _get_producer()
 
     consumer = KafkaConsumer(
         KAFKA_TOPIC,
@@ -665,14 +701,32 @@ def run() -> None:
 
                 # Route demand spike events to their own handler
                 if event_type == "DEMAND_SPIKE":
-                    demand = DemandEvent.model_validate(payload)
+                    try:
+                        demand = DemandEvent.model_validate(payload)
+                    except (ValidationError, json.JSONDecodeError) as e:
+                        raw = json.dumps(payload) if payload else ""
+                        _send_to_dlq(
+                            dlq_producer, raw, str(e),
+                            {"event_type": "DEMAND_SPIKE", "topic": KAFKA_TOPIC,
+                             "partition": msg.partition, "offset": msg.offset},
+                        )
+                        continue
                     with Session() as session:
                         process_demand_event(session, redis_client, demand)
                     continue
 
-                event = OrderEvent.model_validate(payload)
+                try:
+                    event = OrderEvent.model_validate(payload)
+                except (ValidationError, json.JSONDecodeError) as e:
+                    raw = json.dumps(payload) if payload else ""
+                    _send_to_dlq(
+                        dlq_producer, raw, str(e),
+                        {"event_type": event_type, "topic": KAFKA_TOPIC,
+                         "partition": msg.partition, "offset": msg.offset},
+                    )
+                    continue
                 batch.append(event)
-            except (ValidationError, KeyError) as e:
+            except (KeyError,) as e:
                 logger.debug("Invalid event skipped: %s", e)
                 continue
 
