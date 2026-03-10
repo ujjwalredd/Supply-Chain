@@ -1,6 +1,8 @@
 {{
   config(
-    materialized='table',
+    materialized='incremental',
+    unique_key='order_id',
+    on_schema_change='append_new_columns',
     schema='marts'
   )
 }}
@@ -31,6 +33,9 @@ shipments as (
         end as calculated_delay_days
     from orders
     where status in ('DELIVERED', 'DELAYED', 'IN_TRANSIT')
+    {% if is_incremental() %}
+      and created_at > (select max(created_at) from {{ this }})
+    {% endif %}
 )
 
 select * from shipments

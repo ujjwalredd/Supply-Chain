@@ -47,6 +47,55 @@ KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "supply-chain-events")
 EVENTS_PER_MINUTE = int(os.getenv("EVENTS_PER_MINUTE", "55"))
 ANOMALY_RATE = float(os.getenv("ANOMALY_RATE", "0.12"))
 
+# ── JSON Schema definitions for outbound event validation ───────────────────
+_EVENT_SCHEMAS = {
+    "ORDER": {
+        "type": "object",
+        "required": ["order_id", "supplier_id", "product", "region", "quantity",
+                     "unit_price", "order_value", "expected_delivery", "delay_days",
+                     "status", "inventory_level"],
+        "properties": {
+            "order_id": {"type": "string", "minLength": 1},
+            "supplier_id": {"type": "string", "minLength": 1},
+            "quantity": {"type": "integer", "minimum": 1},
+            "unit_price": {"type": "number", "minimum": 0},
+            "order_value": {"type": "number", "minimum": 0},
+            "delay_days": {"type": "integer", "minimum": 0},
+            "status": {"type": "string", "enum": ["PENDING", "IN_TRANSIT", "DELIVERED", "DELAYED", "CANCELLED"]},
+            "inventory_level": {"type": "number", "minimum": 0, "maximum": 100},
+        },
+        "additionalProperties": True,
+    },
+    "DEMAND_SPIKE": {
+        "type": "object",
+        "required": ["event_type", "product", "region", "forecast_delta_pct"],
+        "properties": {
+            "product": {"type": "string", "minLength": 1},
+            "region": {"type": "string", "minLength": 1},
+            "forecast_delta_pct": {"type": "number"},
+            "current_inventory_days": {"type": "number", "minimum": 0},
+        },
+        "additionalProperties": True,
+    },
+}
+
+
+def _validate_event(event_dict: dict) -> tuple[bool, str]:
+    """Validate an event dict against its JSON Schema. Returns (valid, error_message)."""
+    try:
+        import jsonschema
+        event_type = event_dict.get("event_type", "ORDER")
+        schema = _EVENT_SCHEMAS.get(event_type)
+        if schema is None:
+            return True, ""  # unknown type — allow through
+        jsonschema.validate(instance=event_dict, schema=schema)
+        return True, ""
+    except ImportError:
+        return True, ""  # jsonschema not installed — skip validation
+    except Exception as e:
+        return False, str(e)
+
+
 # Product and supplier catalogs
 PRODUCTS = [
     "WIDGET-A", "WIDGET-B", "GADGET-X", "GADGET-Y", "COMPONENT-101",
@@ -292,6 +341,10 @@ def run_producer() -> NoReturn:
         try:
             event = generate_event()
             payload = event.model_dump(mode="json")
+            valid, err = _validate_event(payload)
+            if not valid:
+                logger.warning("Schema validation failed, skipping event: %s", err)
+                continue
             key = event.order_id
             producer.send(KAFKA_TOPIC, value=payload, key=key)
             sent += 1
@@ -305,7 +358,12 @@ def run_producer() -> NoReturn:
                     current_inventory_days=round(random.uniform(3.0, 21.0), 1),
                     signal_source=random.choice(["POS", "WEATHER", "MACRO", "PRODUCER_SIM"]),
                 )
-                producer.send(KAFKA_TOPIC, value=demand.model_dump(mode="json"), key=None)
+                demand_payload = demand.model_dump(mode="json")
+                valid, err = _validate_event(demand_payload)
+                if not valid:
+                    logger.warning("Schema validation failed for DEMAND_SPIKE, skipping: %s", err)
+                else:
+                    producer.send(KAFKA_TOPIC, value=demand_payload, key=None)
                 logger.debug(
                     "DEMAND_SPIKE: %s %s +%.0f%%",
                     demand.product, demand.region, demand.forecast_delta_pct,
