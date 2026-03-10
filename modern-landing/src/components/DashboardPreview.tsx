@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useRef } from 'react';
+import { motion, useScroll, useTransform } from 'framer-motion';
 import { ChevronRight, Cpu, CheckCircle2 } from 'lucide-react';
 import { AnimatedNumber, AnimatedDecimal } from './AnimatedNumber';
 import { TiltCard } from './TiltCard';
@@ -14,9 +14,20 @@ const staggerItem = {
 export function DashboardPreview() {
   const [activeTab, setActiveTab] = useState('Overview');
   const [isMapExpanded, setIsMapExpanded] = useState(false);
+  
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: containerRef,
+    offset: ["start 95%", "start 10%"]
+  });
+
+  const rotateX = useTransform(scrollYProgress, [0, 1], [25, 0]);
+  const scale = useTransform(scrollYProgress, [0, 1], [0.85, 1]);
+  const opacity = useTransform(scrollYProgress, [0, 1], [0.3, 1]);
+  const y = useTransform(scrollYProgress, [0, 1], [120, 0]);
 
   return (
-    <section id="dashboard" className="py-24 relative z-10 bg-surface border-y border-black/5">
+    <section id="dashboard" className="py-24 relative z-10 bg-surface border-y border-black/5" style={{ perspective: "2000px" }}>
       <div className="max-w-[1400px] mx-auto px-6">
         
         <motion.div 
@@ -36,10 +47,16 @@ export function DashboardPreview() {
 
         {/* Dashboard Frame */}
         <motion.div 
-          initial={{ opacity: 0, y: 40, scale: 0.98 }}
-          whileInView={{ opacity: 1, y: 0, scale: 1 }}
-          viewport={{ once: true, margin: '-50px' }}
-          transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
+          ref={containerRef}
+          style={{
+            rotateX,
+            scale,
+            opacity,
+            y,
+            transformOrigin: "bottom center",
+            transformPerspective: 2000,
+            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)"
+          }}
           className="glass-card overflow-hidden bg-white flex flex-col relative"
         >
           
