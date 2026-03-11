@@ -5,19 +5,18 @@ import { GitBranch, TerminalSquare, Search, Github } from 'lucide-react';
 const codeSnippets: Record<string, React.ReactNode> = {
   'engine.py': (
     <>
-      <span className="text-gray-400"># Next-Gen Reasoning Engine via Claude Sonnet</span><br />
-      <span className="text-accent">def</span> <span className="text-ink font-semibold">analyze_deviation</span>(deviation_id: <span className="text-amber-600">str</span>):<br />
+      <span className="text-gray-400"># Multi-Model AI with Quality Scoring</span><br />
+      <span className="text-accent">def</span> <span className="text-ink font-semibold">analyze_scored</span>(deviation_id: <span className="text-amber-600">str</span>):<br />
       &nbsp;&nbsp;&nbsp;&nbsp;context = <span className="text-ink font-semibold">fetch_network_context</span>(deviation_id)<br />
-      &nbsp;&nbsp;&nbsp;&nbsp;ontology = <span className="text-ink font-semibold">load_business_rules</span>()<br /><br />
-      
-      &nbsp;&nbsp;&nbsp;&nbsp;<span className="text-gray-400"># Compute financial impact pre-AI</span><br />
-      &nbsp;&nbsp;&nbsp;&nbsp;impact = <span className="text-ink font-semibold">calculate_penalty</span>(context.delay_days, context.stock)<br /><br />
-      
-      &nbsp;&nbsp;&nbsp;&nbsp;<span className="text-accent">return</span> llm.generate(<br />
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;prompt=context,<br />
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tools=[<span className="text-emerald-600">"REROUTE"</span>, <span className="text-emerald-600">"EXPEDITE"</span>],<br />
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;constraints=ontology<br />
-      &nbsp;&nbsp;&nbsp;&nbsp;)
+      &nbsp;&nbsp;&nbsp;&nbsp;result = <span className="text-ink font-semibold">claude.generate</span>(prompt=context)<br /><br />
+
+      &nbsp;&nbsp;&nbsp;&nbsp;<span className="text-gray-400"># Deterministic quality evaluation</span><br />
+      &nbsp;&nbsp;&nbsp;&nbsp;score = <span className="text-ink font-semibold">evaluate_schema_quality</span>(result)<br />
+      &nbsp;&nbsp;&nbsp;&nbsp;<span className="text-accent">if</span> score &lt; <span className="text-warning">0.4</span>:<br />
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span className="text-gray-400"># Zero-downtime fallback to GPT-4o</span><br />
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;result = <span className="text-ink font-semibold">gpt4o.generate</span>(prompt=context)<br /><br />
+
+      &nbsp;&nbsp;&nbsp;&nbsp;<span className="text-accent">return</span> result
     </>
   ),
   'consumer.py': (
@@ -43,14 +42,14 @@ const codeSnippets: Record<string, React.ReactNode> = {
       <span className="text-gray-400"># PostgreSQL Recursive CTE Operations</span><br />
       <span className="text-accent">def</span> <span className="text-ink font-semibold">find_downstream_impact</span>(node_id: <span className="text-amber-600">int</span>):<br />
       &nbsp;&nbsp;&nbsp;&nbsp;query = <span className="text-emerald-600">"""<br />
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WITH RECURSIVE network AS (<br />
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SELECT target_id, delay_prop FROM edges WHERE source_id = $1<br />
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;UNION ALL<br />
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SELECT e.target_id, e.delay_prop + n.delay_prop<br />
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FROM edges e INNER JOIN network n ON e.source_id = n.target_id<br />
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)<br />
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SELECT * FROM network WHERE delay_prop &gt; 0.5;<br />
-      &nbsp;&nbsp;&nbsp;&nbsp;"""</span><br />
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WITH RECURSIVE network AS (<br />
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SELECT target_id, delay_prop FROM edges WHERE source_id = $1<br />
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;UNION ALL<br />
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SELECT e.target_id, e.delay_prop + n.delay_prop<br />
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FROM edges e INNER JOIN network n ON e.source_id = n.target_id<br />
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)<br />
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SELECT * FROM network WHERE delay_prop &gt; 0.5;<br />
+        &nbsp;&nbsp;&nbsp;&nbsp;"""</span><br />
       &nbsp;&nbsp;&nbsp;&nbsp;<span className="text-accent">return</span> db.execute(query, node_id)
     </>
   )
@@ -62,11 +61,11 @@ export function OpenSourceFeature() {
   return (
     <section className="py-24 bg-surface border-y border-black/5 relative overflow-hidden">
       <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-accent/5 blur-[120px] rounded-full pointer-events-none -translate-y-1/2 translate-x-1/3" />
-      
+
       <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-        
+
         {/* Left Column: Visual Editor Mock */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, x: -40, filter: 'blur(4px)' }}
           whileInView={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
           viewport={{ once: true, margin: '-50px' }}
@@ -78,7 +77,7 @@ export function OpenSourceFeature() {
             <div className="flex items-center justify-between px-4 py-3 border-b border-black/5 bg-surface">
               <div className="flex gap-4">
                 {['engine.py', 'consumer.py', 'pg_writer.py'].map(file => (
-                  <button 
+                  <button
                     key={file}
                     onClick={() => setActiveFile(file)}
                     className={`text-[10px] font-mono transition-colors ${activeFile === file ? 'font-semibold text-ink border-b-2 border-accent pb-[13px] mb-[-14px]' : 'font-medium text-steel hover:text-ink pb-[13px] mb-[-14px] border-b-2 border-transparent'}`}
@@ -92,7 +91,7 @@ export function OpenSourceFeature() {
                 <GitBranch size={14} />
               </div>
             </div>
-            
+
             {/* Editor Body */}
             <div className="p-6 font-mono text-xs sm:text-sm text-steel leading-relaxed bg-[#FAFAFA] overflow-hidden min-h-[300px] relative">
               {/* AI Scan Line Effect */}
@@ -129,8 +128,8 @@ export function OpenSourceFeature() {
               </div>
             </div>
           </div>
-          
-          <motion.div 
+
+          <motion.div
             animate={{ y: [0, -8, 0] }} transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
             className="absolute -bottom-6 -left-6 flex items-center justify-center w-14 h-14 rounded-2xl bg-ink border border-white/10 shadow-xl z-20 text-white"
           >
@@ -151,13 +150,13 @@ export function OpenSourceFeature() {
               Review the entire AI reasoning engine.
             </h3>
             <p className="text-steel text-lg font-light leading-relaxed mb-8">
-              Trust is the hardest metric to earn in enterprise supply chains. That’s why we believe in complete transparency. 
+              Trust is the hardest metric to earn in enterprise supply chains. That’s why we believe in complete transparency.
               The entire AI operating system—from the Kafka real-time ingestion layer down to the precise `engine.py` logic that handles Claude's structured output—is available to review.
             </p>
-            
-            <a 
-              href="https://github.com/ujjwalredd/Supply-Chain" 
-              target="_blank" 
+
+            <a
+              href="https://github.com/ujjwalredd/Supply-Chain"
+              target="_blank"
               rel="noopener noreferrer"
             >
               <button className="flex items-center gap-3 bg-ink text-paper px-6 py-3.5 rounded-lg font-medium hover:bg-black transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 duration-300">
