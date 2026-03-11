@@ -230,7 +230,18 @@ transforms/models/
 Run dbt manually inside the dagster container:
 ```bash
 docker exec supply-chain-dagster-webserver \
-  dbt run --profiles-dir /app/transforms --project-dir /app/transforms
+  dbt run --profiles-dir /opt/dagster/app/transforms --project-dir /opt/dagster/app/transforms
+```
+
+Run specific dbt models or tests:
+```bash
+# Run only the marts layer
+docker exec supply-chain-dagster-webserver \
+  dbt run --select marts --profiles-dir /opt/dagster/app/transforms --project-dir /opt/dagster/app/transforms
+
+# Run dbt tests
+docker exec supply-chain-dagster-webserver \
+  dbt test --profiles-dir /opt/dagster/app/transforms --project-dir /opt/dagster/app/transforms
 ```
 
 ---
@@ -361,37 +372,78 @@ docker exec supply-chain-dagster-webserver \
 
 ---
 
-### Step 5 — MLflow: View experiments and model registry
+### Step 5 — MLflow: Train the XGBoost Model + View Registry
 
 Open **MLflow UI** at http://localhost:5001
 
-**After `gold_delay_model` materializes:**
-- Click **Experiments** → `delay_prediction` — view accuracy, AUC, feature importances
-- Click **Models** → `delay_classifier` — view registered versions and promotion stage
+#### How to Train the Model
 
-**Test the ML prediction API:**
+Training is triggered automatically as a Dagster asset (`gold_delay_model`). There are three ways to trigger it:
+
+**Option A — Via Dagster UI (recommended):**
+1. Open http://localhost:3001
+2. Go to **Assets** → search `gold_delay_model`
+3. Click **Materialize** — training runs on silver order data
+
+**Option B — Via CLI** (runs bronze → silver → train in sequence):
+```bash
+docker exec supply-chain-dagster-webserver \
+  dagster asset materialize --select "bronze_orders,silver_orders,gold_delay_model" -m pipeline.definitions_medallion
+```
+
+**Option C — Run the full medallion pipeline** (bronze → silver → gold → train):
+```bash
+docker exec supply-chain-dagster-webserver \
+  dagster asset materialize --select "*" -m pipeline.definitions_medallion
+```
+
+> **Note:** Multiple assets in `--select` must be comma-separated (no spaces). `gold_delay_model` requires `silver_orders` to be materialized first — always include it or use `"*"` to run everything.
+
+#### What Happens During Training
+
+The `gold_delay_model` asset (`pipeline/ml_model.py`):
+1. Reads `data/silver/orders/data.parquet` (or falls back to bronze)
+2. Trains **XGBoost** classifier (`is_delayed = delay_days > 0`)
+3. Features: `supplier_id`, `region`, `quantity`, `unit_price`, `order_value`, `inventory_level`
+4. Logs to MLflow: accuracy, ROC-AUC, precision, recall + model artifact
+5. Registers as `supply_chain_delay_model` in MLflow Model Registry
+6. Saves local copy to `data/models/delay_model.json` (used as fallback)
+
+#### View Results in MLflow UI
+
+After training:
+- **Experiments** → `supply_chain_delay_prediction` — metrics per run
+- **Models** → `supply_chain_delay_model` — registered versions
+
+#### Test the ML Prediction API
+
 ```bash
 curl -X POST http://localhost:8000/ml/predict \
   -H "Content-Type: application/json" \
   -d '{
-    "supplier_id": "PT-01",
+    "supplier_id": "SUP-001",
     "region": "BOSTON",
     "quantity": 500,
     "unit_price": 45.0,
     "order_value": 22500.0,
     "inventory_level": 60.0
   }'
-# Returns: { "is_delayed": true, "probability": 0.99, "confidence": "HIGH", "model_version": "local:xgboost" }
+# Returns: { "is_delayed": true, "probability": 0.82, "confidence": "HIGH", "model_version": "local:xgboost" }
 ```
 
-**Promote a model to Production (optional):**
+> If the model has not been trained yet, `model_version` will be `"heuristic"` — train first via Dagster.
+
+#### Promote a Model to Production
+
 ```bash
-# In MLflow UI: Models → delay_classifier → version → Stage → Transition to Production
-# Or via API:
-curl -X PATCH http://localhost:5001/api/2.0/mlflow/model-versions/update \
+# In MLflow UI: Models → supply_chain_delay_model → version 1 → Stage → "Production"
+# Or via MLflow API:
+curl -X POST http://localhost:5001/api/2.0/mlflow/model-versions/transition-stage \
   -H "Content-Type: application/json" \
-  -d '{"name": "delay_classifier", "version": "1", "stage": "Production"}'
+  -d '{"name": "supply_chain_delay_model", "version": "1", "stage": "Production"}'
 ```
+
+Once in Production, predictions automatically load from the registry (`model_version: "mlflow:Production"`).
 
 ![MLflow Experiment — xgboost_delay_classifier](assets/flow.png)
 

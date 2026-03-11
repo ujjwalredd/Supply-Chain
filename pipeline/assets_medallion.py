@@ -619,8 +619,8 @@ def gold_demand_forecast(context: AssetExecutionContext) -> MaterializeResult:
     forecast_df.to_parquet(str(out_path), index=False)
 
     return MaterializeResult(metadata={
-        "forecast_periods": MetadataValue.int(len(forecast_df)),
-        "avg_yhat": MetadataValue.float(round(forecast_df["yhat"].mean(), 2)),
+        "forecast_periods": MetadataValue.int(int(len(forecast_df))),
+        "avg_yhat": MetadataValue.float(float(round(forecast_df["yhat"].mean(), 2))),
         "output_path": MetadataValue.text(str(out_path)),
     })
 
