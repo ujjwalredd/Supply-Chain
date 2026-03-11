@@ -1,6 +1,9 @@
 # Supply Chain AI OS — v7.0
 
 [![CI](https://github.com/ujjwalredd/Supply-Chain/actions/workflows/ci.yml/badge.svg)](https://github.com/ujjwalredd/Supply-Chain/actions/workflows/ci.yml)
+[![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://supply-chain-silk.vercel.app)
+
+Live Demo → supply-chain-silk.vercel.app](https://supply-chain-silk.vercel.app)**
 
 ![Landing Page](assets/landing_page.png)
 
@@ -390,7 +393,7 @@ curl -X PATCH http://localhost:5001/api/2.0/mlflow/model-versions/update \
   -d '{"name": "delay_classifier", "version": "1", "stage": "Production"}'
 ```
 
-![MLflow Experiment — xgboost_delay_classifier](assets/flow.png)
+![MLflow Experiment — xgboost_delay_classifier](assets/Ml-Flow.png)
 
 ---
 
