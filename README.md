@@ -1,10 +1,18 @@
 # Supply Chain AI OS — v7.0
 
+[![CI](https://github.com/ujjwalredd/Supply-Chain/actions/workflows/ci.yml/badge.svg)](https://github.com/ujjwalredd/Supply-Chain/actions/workflows/ci.yml)
+
 ![Landing Page](assets/landing_page.png)
 
 An **end-to-end AI-native supply chain control tower** demonstrating senior data engineering, MLOps, and AI engineering skills.
 
 Built on a production-grade 17-service Docker stack with real-time streaming, medallion lakehouse, ML model training & registry, distributed tracing, and autonomous AI reasoning.
+
+---
+
+## Live Dashboard
+
+![Supply Chain Control Tower](assets/ai-analysis.gif)
 
 ---
 
@@ -28,28 +36,47 @@ MinIO/Delta      Dagster ──► MLflow
 
 ---
 
+## Prerequisites
+
+| Requirement | Minimum version | Notes |
+|---|---|---|
+| Docker Desktop | 4.20+ | Allocate **≥ 8 GB RAM** in Docker settings (ksqlDB + Spark need headroom) |
+| Docker Compose | v2.20+ | Bundled with Docker Desktop |
+| Python | 3.11+ | Only needed for local dev / tests outside Docker |
+| Git | any | — |
+
+> **macOS / Apple Silicon**: All images are multi-arch. No Rosetta flags needed.
+
+---
+
 ## Quick Start
 
 ```bash
 cp .env.example .env
-# Set ANTHROPIC_API_KEY in .env
+# Open .env and set:
+#   ANTHROPIC_API_KEY=sk-ant-...      (required)
+#   OPENAI_API_KEY=sk-...             (optional — enables GPT-4o fallback)
 
 docker compose up --build -d
 
+# Wait ~60 s for all services to become healthy
+docker compose ps
+
+# Seed the database and download source data
 docker exec supply-chain-api python scripts/seed_db.py
 docker exec supply-chain-api python scripts/download_supply_chain_data.py
 ```
 
-| Service | URL |
-|---|---|
-| Dashboard | http://localhost:3000 |
-| API Docs | http://localhost:8000/docs |
-| Dagster | http://localhost:3001 |
-| Grafana | http://localhost:3002 |
-| MLflow | http://localhost:5001 |
-| Jaeger (traces) | http://localhost:16686 |
-| ksqlDB | http://localhost:8088 |
-| MinIO | http://localhost:9001 |
+| Service | URL | Credentials |
+|---|---|---|
+| Dashboard | http://localhost:3000 | — |
+| API Docs (Swagger) | http://localhost:8000/docs | — |
+| Dagster UI | http://localhost:3001 | — |
+| Grafana | http://localhost:3002 | admin / admin |
+| MLflow | http://localhost:5001 | — |
+| Jaeger (traces) | http://localhost:16686 | — |
+| ksqlDB REST | http://localhost:8088 | — |
+| MinIO Console | http://localhost:9001 | minioadmin / see .env |
 
 ---
 
@@ -120,6 +147,24 @@ docker exec supply-chain-api python scripts/download_supply_chain_data.py
 
 ---
 
+## Dashboard Pages
+
+The Next.js 14 dashboard at http://localhost:3000 has 9 pages:
+
+| Page | Route | What it shows |
+|---|---|---|
+| **Control Tower** | `/` | Pipeline value, on-time %, delayed count, recent deviations, supplier trust |
+| **Alerts** | `/alerts` | Active deviations by severity, trend chart, alert fatigue suppression |
+| **Orders** | `/orders` | Paginated order table with delay status, filter by supplier/region |
+| **Suppliers** | `/suppliers` | Supplier risk matrix, trust scores, delay rates |
+| **Scorecard** | `/scorecard` | KPI scorecard: fill rate, OTIF, COGS, inventory turns |
+| **Analytics** | `/analytics` | Delay predictions, trend chart, risk forecast, cost analytics, benchmarks |
+| **Actions** | `/actions` | Autonomous AI action log, resolve/fail buttons, MTTR tracker |
+| **Network** | `/network` | Plant-port topology graph, NetworkX cascade risk visualization |
+| **What-If** | `/whatif` | Scenario simulator: change inventory/delay params, see risk impact |
+
+---
+
 ## API Endpoints
 
 ```
@@ -127,7 +172,9 @@ GET  /health                          — dependency health check
 GET  /orders                          — paginated orders
 GET  /suppliers                       — supplier risk matrix
 GET  /alerts                          — active deviations
+GET  /alerts/trend                    — severity trend over N days
 GET  /forecasts                       — KPI forecasts
+GET  /forecasts/summary               — at-risk counts
 GET  /forecasts/demand                — 30-day Prophet demand forecast
 GET  /network                         — plant-port topology graph
 GET  /network/risk                    — NetworkX cascade risk scores
@@ -142,9 +189,15 @@ POST /ai/analyze-scored               — Multi-model AI with quality score
 GET  /events/recent                   — recent order events
 GET  /events/orders/{id}/history      — event sourcing audit trail
 GET  /events/orders/{id}/replay       — point-in-time state recovery
+GET  /actions/stats                   — MTTR + resolution stats
+GET  /orders/delay-predictions        — batch delay predictions
+GET  /suppliers/cost-analytics        — cost breakdown per supplier
+GET  /suppliers/benchmarks            — supplier benchmark comparison
 GET  /metrics                         — Prometheus metrics
 WS   /ws                              — real-time deviation feed
 ```
+
+Full interactive docs: http://localhost:8000/docs
 
 ---
 
@@ -160,6 +213,27 @@ Gold:   gold_orders_ai_ready        (AI-ready features + freshness policy)
         gold_delay_model            (XGBoost trained → MLflow registry)
         gold_demand_forecast        (Prophet 30-day forecast → Parquet)
         delta_maintenance           (weekly OPTIMIZE + VACUUM)
+```
+
+---
+
+## dbt Models
+
+```
+transforms/models/
+├── staging/
+│   ├── stg_orders.sql          — cast + rename raw order columns
+│   └── stg_suppliers.sql       — supplier dimension staging
+└── marts/
+    ├── fct_shipments.sql       — incremental fact table (unique_key: order_id)
+    ├── dim_suppliers.sql       — incremental supplier dimension
+    └── agg_control_tower.sql   — daily KPI rollup for dashboard
+```
+
+Run dbt manually inside the dagster container:
+```bash
+docker exec supply-chain-dagster-webserver \
+  dbt run --profiles-dir /app/transforms --project-dir /app/transforms
 ```
 
 ---
@@ -190,15 +264,38 @@ Gold:   gold_orders_ai_ready        (AI-ready features + freshness policy)
 
 ## Environment Variables
 
-See `.env.example` for the full list. Key additions in v7.0:
+Copy `.env.example` to `.env`. Key variables:
 
 ```env
-MLFLOW_TRACKING_URI=http://localhost:5001
+# Required
+ANTHROPIC_API_KEY=sk-ant-...           # Claude AI reasoning
+SECRET_KEY=<32-char random string>     # generate: python -c "import secrets; print(secrets.token_hex(32))"
+
+# Database
+POSTGRES_PASSWORD=change_me_in_production
+DATABASE_URL=postgresql://supplychain:...@localhost:5433/supply_chain_db
+
+# Object Storage (MinIO)
+MINIO_ROOT_PASSWORD=change_me_in_production
+AWS_SECRET_ACCESS_KEY=change_me_in_production
+
+# Optional — AI fallback
+OPENAI_API_KEY=sk-...                  # enables GPT-4o fallback when Claude quality < 0.4
+
+# Optional — Observability
 OTEL_ENABLED=true
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+MLFLOW_TRACKING_URI=http://localhost:5001
 KSQLDB_URL=http://localhost:8088
-OPENAI_API_KEY=          # optional — enables GPT-4o fallback
+
+# Optional — Alerting
+SLACK_WEBHOOK_URL=https://hooks.slack.com/...   # CRITICAL deviation notifications
+
+# Optional — Lineage
+MARQUEZ_URL=                           # leave empty to write lineage to Postgres only
 ```
+
+See `.env.example` for the complete list (~50 variables) with inline documentation.
 
 ---
 
@@ -208,9 +305,7 @@ OPENAI_API_KEY=          # optional — enables GPT-4o fallback
 
 ```bash
 cp .env.example .env
-# Edit .env and set:
-#   ANTHROPIC_API_KEY=sk-ant-...       (required — AI reasoning)
-#   OPENAI_API_KEY=sk-...              (optional — GPT-4o fallback)
+# Edit .env: set ANTHROPIC_API_KEY (required) and OPENAI_API_KEY (optional)
 
 docker compose up --build -d
 ```
@@ -301,7 +396,7 @@ curl -X PATCH http://localhost:5001/api/2.0/mlflow/model-versions/update \
   -d '{"name": "delay_classifier", "version": "1", "stage": "Production"}'
 ```
 
-![MLflow Experiment — xgboost_delay_classifier](assets/flow.png)
+![MLflow Experiment — xgboost_delay_classifier](assets/Ml-Flow.png)
 
 ---
 
@@ -349,7 +444,6 @@ Every FastAPI request is automatically traced via OpenTelemetry:
 curl "http://localhost:8000/orders?limit=10"
 curl http://localhost:8000/suppliers
 curl http://localhost:8000/network/risk
-# ai/analyze requires a seeded deviation_id from /alerts
 curl -X POST http://localhost:8000/ai/analyze \
   -H "Content-Type: application/json" \
   -d '{"deviation_id": "DEV-SEED-0001", "order_id": "ORD-001", "deviation_type": "DELAY", "severity": "HIGH"}'
@@ -375,13 +469,8 @@ curl http://localhost:8000/network/risk
 
 **Event sourcing — order audit trail:**
 ```bash
-# Get recent events
 curl http://localhost:8000/events/recent
-
-# Full history for a specific order
 curl http://localhost:8000/events/orders/ORD_001/history
-
-# Point-in-time state recovery
 curl "http://localhost:8000/events/orders/ORD_001/replay?version=3"
 ```
 
@@ -394,6 +483,12 @@ curl -X POST http://localhost:8000/ai/analyze-scored \
   }'
 # Returns: { "answer": "...", "quality_score": 0.82, "model_used": "claude-sonnet-4-6", "fallback_used": false }
 # If quality < 0.4, automatically falls back to GPT-4o
+```
+
+**OpenLineage graph:**
+```bash
+curl http://localhost:8000/lineage
+# Returns lineage events + upstream/downstream asset graph
 ```
 
 ---
@@ -416,7 +511,6 @@ Run quality checks against the live database:
 ```bash
 pip install soda-core soda-core-postgres
 
-# If 'soda' is not in PATH, use:
 python -m soda scan -d supply_chain_db \
   -c contracts/soda_connection.yml \
   contracts/orders.yml
@@ -426,28 +520,124 @@ python -m soda scan -d supply_chain_db \
 
 ---
 
+### Step 11 — MinIO: Browse the lakehouse
+
+Open **MinIO Console** at http://localhost:9001 (credentials in `.env`)
+
+The `supply-chain-lakehouse` bucket contains:
+```
+supply-chain-lakehouse/
+├── bronze/orders/          — raw Delta + year=/month=/day= Parquet partitions
+├── silver/orders/          — validated, deduped Delta table
+└── gold/                   — AI-ready features, deviations, risk scores
+```
+
+To sync local gold Parquet to MinIO:
+```bash
+docker exec supply-chain-api python scripts/sync_data_to_minio.py
+```
+
+To backfill gold data into PostgreSQL from Parquet:
+```bash
+docker exec supply-chain-api python scripts/sync_gold_to_postgres.py
+```
+
+---
+
 ### Troubleshooting
 
 | Issue | Fix |
 |---|---|
+| Services stuck in "starting" | Increase Docker Desktop RAM to ≥ 8 GB and retry |
 | MLflow not loading | Wait 30s after `docker compose up`; check `docker logs supply-chain-mlflow` |
-| ksqlDB OOM-killed (exit 137) | Run `docker compose up -d ksqldb-server ksqldb-init` to restart; may need to increase Docker Desktop memory beyond 4 GB |
+| ksqlDB OOM-killed (exit 137) | Run `docker compose up -d ksqldb-server ksqldb-init`; increase Docker memory |
 | ksqlDB streams empty after restart | Run `curl -X POST http://localhost:8000/streaming/init` then produce Kafka events |
 | Dagster assets stale | Click **Materialize all** in Dagster UI at http://localhost:3001 |
-| Jaeger shows no traces | Make at least one API request first; OTEL_ENABLED=true must be set in .env |
+| Jaeger shows no traces | Make at least one API request first; `OTEL_ENABLED=true` must be set in `.env` |
 | ML predict returns heuristic | Materialize `gold_delay_model` in Dagster first to train and register the model |
 | Prophet forecast missing | Materialize `gold_demand_forecast` in Dagster; requires orders data to be seeded |
 | `soda` command not found | Use `python -m soda scan ...` instead |
 | `/orders?limit=10` — zsh glob error | Quote the URL: `curl "http://localhost:8000/orders?limit=10"` |
+| `DATABASE_URL` connection refused | Confirm `POSTGRES_PORT=5433` in `.env`; host is `localhost` outside Docker |
+| Grafana shows no data | Run Dagster pipeline first so Prometheus has metrics to scrape |
+
+---
+
+## Local Development (without Docker)
+
+Run only the API and tests locally — useful for fast iteration:
+
+```bash
+# 1. Create and activate a virtual environment
+python -m venv .venv && source .venv/bin/activate
+
+# 2. Install API dependencies
+pip install -r requirements-api.txt
+
+# 3. Set environment variables (or use a .env file with python-dotenv)
+export DATABASE_URL=postgresql://supplychain:supplychain_secret@localhost:5433/supply_chain_db
+export ANTHROPIC_API_KEY=sk-ant-...
+export GOLD_PATH=data/gold
+export SILVER_PATH=data/silver
+export BRONZE_PATH=data/bronze
+
+# 4. Run database migrations
+alembic upgrade head
+
+# 5. Start FastAPI
+uvicorn api.main:app --reload --port 8000
+
+# 6. Run tests (no live DB needed)
+pytest tests/ -v -m "not docker_only"
+```
+
+For Dagster pipeline development:
+```bash
+pip install -r requirements-dagster.txt
+dagster dev -m pipeline.definitions_medallion
+```
+
+---
+
+## Database Migrations (Alembic)
+
+```bash
+# Apply all migrations
+alembic upgrade head
+
+# Check current revision
+alembic current
+
+# Create a new migration
+alembic revision --autogenerate -m "add my_table"
+```
+
+Migration files in `alembic/versions/`:
+| Revision | Description |
+|---|---|
+| `001` | Initial schema — orders, suppliers, deviations, order_events |
+| `002` | Add pending_actions table |
+| `003` | Add indexes + outcome tracking columns |
+| `004` | Add confidence column to pending_actions |
 
 ---
 
 ## Testing
 
 ```bash
-python -m pytest tests/ -v
-# 70 collected — 62 passed, 8 skipped (kafka/dagster/schema-registry tests skip locally without Docker)
+# Run all tests (no Docker required)
+pytest tests/ -v -m "not docker_only"
+# 70 collected — 62 passed, 8 skipped (kafka/dagster/schema-registry tests skip without Docker)
+
+# Run a specific test file
+pytest tests/test_api_health.py -v
+pytest tests/test_ml_scoring.py -v
+
+# Run with coverage
+pytest tests/ --cov=api --cov=ingestion --cov=reasoning -m "not docker_only"
 ```
+
+CI runs on every push to `main` and `ujjwal` branches via GitHub Actions (`.github/workflows/ci.yml`).
 
 ---
 
@@ -458,22 +648,48 @@ pip install soda-core soda-core-postgres
 soda scan -d supply_chain_db -c contracts/soda_connection.yml contracts/orders.yml
 ```
 
+Contracts defined in `contracts/`:
+- `orders.yml` — 11 checks: row count, nulls, duplicates, valid status enum, delay day bounds, freshness
+- `silver_orders.yml` — silver layer post-transform quality gate
+
 ---
 
 ## Project Structure
 
 ```
 supply-chain-os/
-├── .github/workflows/ci.yml      # CI/CD pipeline
-├── api/                           # FastAPI: 13 routers, event_store, telemetry
-├── contracts/                     # Soda Core data contracts
-├── dashboard/                     # Next.js 14 App Router
+├── .github/workflows/ci.yml      # CI/CD: pytest + dbt validate + docker check + auto-tag
+├── alembic/                       # Database migrations (4 revisions)
+│   └── versions/
+├── api/                           # FastAPI application
+│   ├── routers/                   # 14 routers: orders, suppliers, alerts, ml, ai, events...
+│   ├── database.py                # SQLAlchemy async engine
+│   ├── event_store.py             # Append-only order_events store
+│   ├── models.py                  # SQLAlchemy ORM models
+│   └── telemetry.py               # OpenTelemetry setup
+├── assets/                        # README screenshots + GIFs
+├── contracts/                     # Soda Core data quality contracts
+├── dashboard/                     # Next.js 14 App Router (9 pages)
 ├── docker/                        # Dockerfiles + Grafana provisioning
-├── ingestion/                     # Kafka producer + pg-writer + batch loader
-├── pipeline/                      # Dagster: assets, sensors, ml_model, graph_ml
-├── reasoning/engine.py            # Multi-model AI + quality scoring
+├── ingestion/                     # Kafka producer, pg-writer, batch_loader
+├── integrations/
+│   └── action_executor.py         # Autonomous action execution engine
+├── pipeline/                      # Dagster: medallion assets, sensors, ML, Graph ML
+│   ├── assets_medallion.py        # Bronze/Silver/Gold + XGBoost + Prophet assets
+│   ├── ml_model.py                # XGBoost training + MLflow logging
+│   ├── demand_forecast.py         # Prophet 30-day forecasting
+│   ├── graph_ml.py                # NetworkX betweenness + cascade risk
+│   ├── lineage_resource.py        # OpenLineage START/COMPLETE/FAIL emitter
+│   └── sensors.py                 # Self-healing sensor (auto-retry after 3 failures)
+├── quality/                       # Great Expectations suites
+├── reasoning/
+│   └── engine.py                  # Multi-model AI: Claude + GPT-4o fallback + quality score
+├── scripts/                       # Seed, sync, and data download scripts
 ├── streaming/                     # ksqlDB SQL + Python client
-├── tests/                         # 62 pytest tests
-├── transforms/                    # dbt models + packages.yml + contracts
-└── docker-compose.yml             # 17-service production stack
+├── tests/                         # 70 pytest tests (62 pass, 8 skip without Docker)
+├── transforms/                    # dbt project (staging + marts + dbt-expectations)
+├── docker-compose.yml             # 17-service production stack
+├── requirements-api.txt           # FastAPI + ML dependencies
+├── requirements-dagster.txt       # Dagster + dbt + PySpark dependencies
+└── requirements-ingestion.txt     # Kafka + ingestion dependencies
 ```
