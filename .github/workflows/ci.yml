@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: pip install pytest pandas pyarrow numpy jsonschema pyyaml requests fastapi "sqlalchemy[asyncio]" pydantic anthropic httpx psycopg2-binary asyncpg
+        run: pip install pytest pandas pyarrow numpy jsonschema pyyaml requests fastapi "sqlalchemy[asyncio]" pydantic anthropic httpx psycopg2-binary asyncpg prometheus-fastapi-instrumentator
       - name: Run tests (skip docker-only)
         run: pytest tests/ -v --tb=short -m "not docker_only"
 
