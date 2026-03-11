@@ -116,9 +116,30 @@ _order_counter = 0
 # raises the probability of downstream STOCKOUT events.
 _supplier_state: dict[str, str] = {}            # SUP-XXX → NORMAL|DEGRADING|CRITICAL
 _supplier_anomaly_count: dict[str, int] = {}    # rolling anomaly hit counter
+_MAX_SUPPLIER_STATE_ENTRIES = 500               # prevent unbounded growth
 # Pending causality events: list of (fire_at_tick, event_dict)
 _causality_queue: list[tuple[int, dict]] = []
 _tick: int = 0                                  # incremented on every event send
+
+
+def _cleanup_supplier_state() -> None:
+    """Prune supplier state dicts when they exceed the max entry limit.
+    Keeps NORMAL suppliers (already recovered) first since they're safe to remove.
+    """
+    if len(_supplier_state) <= _MAX_SUPPLIER_STATE_ENTRIES:
+        return
+    # Remove NORMAL entries first (fully recovered, no active risk)
+    normal_keys = [k for k, v in _supplier_state.items() if v == "NORMAL"]
+    for k in normal_keys:
+        _supplier_state.pop(k, None)
+        _supplier_anomaly_count.pop(k, None)
+    # If still over limit, remove oldest by insertion order
+    overflow = len(_supplier_state) - _MAX_SUPPLIER_STATE_ENTRIES
+    if overflow > 0:
+        for k in list(_supplier_state.keys())[:overflow]:
+            _supplier_state.pop(k, None)
+            _supplier_anomaly_count.pop(k, None)
+    logger.debug("Pruned supplier state to %d entries", len(_supplier_state))
 
 
 def _get_supplier_state(supplier_id: str) -> str:
@@ -270,6 +291,9 @@ def generate_event() -> OrderEvent:
     """Generate a validated order event, with anomalies and causality chains."""
     global _tick
     _tick += 1
+    # Periodic cleanup every 1000 ticks to prevent unbounded dict growth
+    if _tick % 1000 == 0:
+        _cleanup_supplier_state()
 
     # ── Check causality queue for due events ────────────────────────────────
     due = [(t, p) for (t, p) in _causality_queue if _tick >= t]

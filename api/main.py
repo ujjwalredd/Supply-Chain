@@ -110,8 +110,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Request-ID", "Accept"],
 )
 app.add_middleware(_RequestIDMiddleware)
 
@@ -201,9 +201,16 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.info("WebSocket client disconnected")
 
 
+def _log_broadcast_error(task: asyncio.Task) -> None:
+    """Log unhandled exceptions from the fire-and-forget broadcast task."""
+    if not task.cancelled() and task.exception():
+        logger.error("WebSocket broadcast failed: %s", task.exception())
+
+
 def publish_deviation(deviation: dict) -> None:
     """Call from pipeline/consumer when new deviation detected. Triggers broadcast."""
-    asyncio.create_task(broadcast_deviation(deviation))
+    task = asyncio.create_task(broadcast_deviation(deviation))
+    task.add_done_callback(_log_broadcast_error)
 
 
 @app.get("/health")

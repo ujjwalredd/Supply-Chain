@@ -19,6 +19,7 @@ router = APIRouter(prefix="/lineage", tags=["lineage"])
 async def get_lineage(
     job_name: str | None = Query(None, description="Filter by asset/job name"),
     limit: int = Query(100, le=500),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Return recent lineage events from the lineage_events table."""
@@ -36,18 +37,19 @@ async def get_lineage(
                 text(
                     "SELECT run_id, job_name, event_type, inputs, output, namespace, "
                     "started_at, ended_at, metadata, created_at "
-                    "FROM lineage_events WHERE job_name = :job ORDER BY created_at DESC LIMIT :limit"
+                    "FROM lineage_events WHERE job_name = :job ORDER BY created_at DESC "
+                    "LIMIT :limit OFFSET :offset"
                 ),
-                {"job": job_name, "limit": limit},
+                {"job": job_name, "limit": limit, "offset": offset},
             )
         else:
             result = await db.execute(
                 text(
                     "SELECT run_id, job_name, event_type, inputs, output, namespace, "
                     "started_at, ended_at, metadata, created_at "
-                    "FROM lineage_events ORDER BY created_at DESC LIMIT :limit"
+                    "FROM lineage_events ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
                 ),
-                {"limit": limit},
+                {"limit": limit, "offset": offset},
             )
 
         rows = result.mappings().all()

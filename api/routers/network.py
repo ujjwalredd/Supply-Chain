@@ -1,5 +1,6 @@
 """Feature 6: Supply chain network graph router — Plant → Port → Supplier topology."""
 
+import asyncio
 import csv
 import logging
 import os
@@ -109,7 +110,8 @@ async def get_network_graph():
     global _NETWORK_CACHE, _NETWORK_CACHE_AT
     if _NETWORK_CACHE and (time.monotonic() - _NETWORK_CACHE_AT) < _NETWORK_CACHE_TTL:
         return _NETWORK_CACHE
-    _NETWORK_CACHE = _build_graph()
+    # _build_graph reads CSV files (blocking I/O) — run in thread pool
+    _NETWORK_CACHE = await asyncio.to_thread(_build_graph)
     _NETWORK_CACHE_AT = time.monotonic()
     return _NETWORK_CACHE
 
@@ -126,7 +128,7 @@ async def get_network_risk():
     """
     global _NETWORK_CACHE, _NETWORK_CACHE_AT
     if not (_NETWORK_CACHE and (time.monotonic() - _NETWORK_CACHE_AT) < _NETWORK_CACHE_TTL):
-        _NETWORK_CACHE = _build_graph()
+        _NETWORK_CACHE = await asyncio.to_thread(_build_graph)
         _NETWORK_CACHE_AT = time.monotonic()
 
     graph_data = _NETWORK_CACHE
@@ -154,21 +156,25 @@ async def get_network_risk():
     # Build node lookup for label/type
     node_lookup: dict[str, dict] = {n["id"]: n for n in nodes}
 
-    # Compute graph density using networkx if available
-    graph_density = 0.0
-    try:
-        import networkx as nx
-        G = nx.DiGraph()
-        for node in nodes:
-            G.add_node(node["id"])
-        for edge in edges:
-            G.add_edge(edge["source"], edge["target"])
-        graph_density = round(nx.density(G), 6)
-    except ImportError:
-        n_nodes = len(nodes)
-        n_edges = len(edges)
-        if n_nodes > 1:
-            graph_density = round(n_edges / (n_nodes * (n_nodes - 1)), 6)
+    # Compute graph density — cache result in _NETWORK_CACHE to avoid rebuilding DiGraph on every call
+    if "graph_density" in graph_data:
+        graph_density = graph_data["graph_density"]
+    else:
+        graph_density = 0.0
+        try:
+            import networkx as nx
+            G = nx.DiGraph()
+            for node in nodes:
+                G.add_node(node["id"])
+            for edge in edges:
+                G.add_edge(edge["source"], edge["target"])
+            graph_density = round(nx.density(G), 6)
+        except ImportError:
+            n_nodes = len(nodes)
+            n_edges = len(edges)
+            if n_nodes > 1:
+                graph_density = round(n_edges / (n_nodes * (n_nodes - 1)), 6)
+        graph_data["graph_density"] = graph_density  # cache for subsequent calls
 
     # Sort nodes by cascade_risk_score descending, take top 20
     sorted_nodes = sorted(

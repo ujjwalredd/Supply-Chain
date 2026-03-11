@@ -5,9 +5,10 @@ import json
 import logging
 import os
 import time
+from collections import defaultdict
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, or_, select
@@ -27,6 +28,25 @@ from reasoning.engine import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# ── In-process rate limiter for AI endpoints ──────────────────────────────────
+# Configurable via AI_RATE_LIMIT_PER_MIN env var (default: 30 req/min/IP).
+# For multi-worker deployments, swap this for Redis-backed fastapi-limiter.
+_AI_RATE_LIMIT_STORE: dict[str, list[float]] = defaultdict(list)
+_AI_RATE_WINDOW = 60.0
+_AI_RATE_MAX = int(os.getenv("AI_RATE_LIMIT_PER_MIN", "30"))
+
+
+def _check_ai_rate_limit(client_ip: str) -> bool:
+    """Return True if within rate limit, False if exceeded."""
+    now = time.monotonic()
+    cutoff = now - _AI_RATE_WINDOW
+    calls = _AI_RATE_LIMIT_STORE[client_ip]
+    calls[:] = [t for t in calls if t > cutoff]
+    if len(calls) >= _AI_RATE_MAX:
+        return False
+    calls.append(now)
+    return True
 
 _SSE_HEADERS = {
     "Cache-Control": "no-cache",
@@ -347,9 +367,17 @@ async def whatif_stream(
 @router.post("/analyze", response_model=dict)
 async def analyze_structured_endpoint(
     body: AnalyzeBody,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Structured AI analysis with network context + computed financial impact. Cached 1h."""
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_ai_rate_limit(client_ip):
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded: max {_AI_RATE_MAX} requests/minute per IP",
+        )
+
     cache_key = f"ai:analysis:{body.deviation_id}:{body.deviation_type}:{body.severity}"
 
     redis = await _get_redis_cache()
@@ -391,7 +419,10 @@ async def analyze_structured_endpoint(
         return result_dict
     finally:
         if redis:
-            await redis.aclose()
+            try:
+                await asyncio.wait_for(redis.aclose(), timeout=1.0)
+            except Exception:
+                pass
 
 
 class ScoredAnalyzeBody(BaseModel):
@@ -427,7 +458,10 @@ async def analyze_scored_endpoint(body: ScoredAnalyzeBody):
         "clear, actionable recommendations. Write in plain prose with no markdown headers or emojis."
     )
 
-    result = analyze_with_quality_scoring(
+    # analyze_with_quality_scoring is a blocking sync call (Claude + optional GPT-4o).
+    # Run in thread pool to avoid blocking the async event loop.
+    result = await asyncio.to_thread(
+        analyze_with_quality_scoring,
         prompt=body.prompt,
         system=system,
         deviation_id=body.deviation_id,

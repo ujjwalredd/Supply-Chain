@@ -106,10 +106,18 @@ def silver_orders(context: AssetExecutionContext) -> MaterializeResult:
     # Dedupe by order_id (keep last)
     df = df.drop_duplicates(subset=["order_id"], keep="last")
 
-    # Write silver as Parquet
+    # Write silver as Parquet — incremental: merge with existing data and dedup
     silver_path = os.path.join(SILVER_PATH, "orders")
     Path(silver_path).mkdir(parents=True, exist_ok=True)
-    df.to_parquet(os.path.join(silver_path, "data.parquet"), index=False)
+    silver_out = os.path.join(silver_path, "data.parquet")
+    if Path(silver_out).exists():
+        try:
+            existing = pd.read_parquet(silver_out)
+            df = pd.concat([existing, df], ignore_index=True)
+            df = df.drop_duplicates(subset=["order_id"], keep="last")
+        except Exception as e:
+            logger.warning("Could not merge with existing silver data, overwriting: %s", e)
+    df.to_parquet(silver_out, index=False)
 
     count = len(df)
     delayed_count = int((df["delay_days"] > 0).sum())

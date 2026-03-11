@@ -31,8 +31,10 @@ def new_kafka_messages_sensor(context: SensorEvaluationContext) -> Optional[Sens
             bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS.split(","),
             consumer_timeout_ms=3000,
         )
-        partitions = consumer.partitions_for_topic(os.getenv("KAFKA_TOPIC", "supply-chain-events")) or []
-        consumer.close()
+        try:
+            partitions = consumer.partitions_for_topic(os.getenv("KAFKA_TOPIC", "supply-chain-events")) or []
+        finally:
+            consumer.close()
         if partitions:
             return SensorResult(run_requests=[RunRequest(run_key="kafka_trigger")])
         return SkipReason("Kafka topic not available")
