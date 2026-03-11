@@ -1,9 +1,10 @@
 """SQLAlchemy models for operational database."""
 
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, JSON, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -41,6 +42,12 @@ class Order(Base):
 
     deviations = relationship("Deviation", back_populates="order")
 
+    __table_args__ = (
+        # Composite indexes for common query patterns
+        Index("ix_orders_supplier_status", "supplier_id", "status"),
+        Index("ix_orders_supplier_created", "supplier_id", "created_at"),
+    )
+
 
 class Supplier(Base):
     """Supplier metadata and trust scores."""
@@ -70,8 +77,8 @@ class Deviation(Base):
     deviation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     order_id: Mapped[str] = mapped_column(String(64), ForeignKey("orders.order_id"), index=True)
     type: Mapped[str] = mapped_column(String(32))  # DELAY | STOCKOUT | ANOMALY
-    severity: Mapped[str] = mapped_column(String(32))  # LOW | MEDIUM | HIGH | CRITICAL
-    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    severity: Mapped[str] = mapped_column(String(32), index=True)  # LOW | MEDIUM | HIGH | CRITICAL
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     ai_analysis: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     recommended_action: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     executed: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -122,7 +129,7 @@ class OrderEvent(Base):
     __tablename__ = "order_events"
 
     id = Column(Integer, primary_key=True, index=True)
-    event_id = Column(String, unique=True, nullable=False, index=True, default=lambda: str(__import__('uuid').uuid4()))
+    event_id = Column(String, unique=True, nullable=False, index=True, default=lambda: str(uuid.uuid4()))
     order_id = Column(String, nullable=False, index=True)
     event_type = Column(String, nullable=False)  # CREATED | STATUS_CHANGED | DELAYED | DELIVERED | CANCELLED
     old_status = Column(String, nullable=True)

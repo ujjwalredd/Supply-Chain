@@ -1,5 +1,6 @@
 """AI reasoning API router."""
 
+import asyncio
 import json
 import logging
 import os
@@ -372,7 +373,10 @@ async def analyze_structured_endpoint(
             "severity": body.severity,
             "context": body.context or {},
         }
-        result = analyze_structured(
+        # analyze_structured is a blocking sync call (Claude API, 5-30s).
+        # Run in thread pool to avoid blocking the async event loop.
+        result = await asyncio.to_thread(
+            analyze_structured,
             deviation, order_data, supplier_data, constraints,
             network_context=network_context,
         )

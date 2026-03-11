@@ -41,7 +41,6 @@ def _read_forecasted_risks() -> list[dict[str, Any]]:
         ] if c in df.columns]
         df = df[keep].copy()
         df = df.fillna("")
-        import pandas as pd
         dt_cols = [c for c in df.columns if pd.api.types.is_datetime64_any_dtype(df[c])]
         for col in dt_cols:
             df[col] = df[col].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -104,16 +103,14 @@ async def get_demand_forecast():
 
     if parquet_file.exists():
         try:
+            import asyncio
             import pandas as pd
-            df = pd.read_parquet(parquet_file)
-            records = []
-            for _, row in df.iterrows():
-                records.append({
-                    "ds": str(row["ds"]) if "ds" in df.columns else "",
-                    "yhat": float(row["yhat"]) if "yhat" in df.columns else 0.0,
-                    "yhat_lower": float(row["yhat_lower"]) if "yhat_lower" in df.columns else 0.0,
-                    "yhat_upper": float(row["yhat_upper"]) if "yhat_upper" in df.columns else 0.0,
-                })
+            df = await asyncio.to_thread(pd.read_parquet, parquet_file)
+            cols = {"ds", "yhat", "yhat_lower", "yhat_upper"} & set(df.columns)
+            df = df[list(cols)].copy()
+            for col in df.select_dtypes(include=["datetime64[ns]", "datetime64[ns, UTC]"]).columns:
+                df[col] = df[col].astype(str)
+            records = df.to_dict(orient="records")
             return {
                 "forecast": records,
                 "periods": len(records),
@@ -135,15 +132,10 @@ async def get_demand_forecast():
             "created_at": [d.isoformat() for d in dates],
             "order_value": np.random.uniform(500, 5000, 60).tolist(),
         })
-        forecast_df = forecast_demand(synthetic_df, periods=30)
-        records = []
-        for _, row in forecast_df.iterrows():
-            records.append({
-                "ds": str(row["ds"]),
-                "yhat": float(row["yhat"]),
-                "yhat_lower": float(row["yhat_lower"]),
-                "yhat_upper": float(row["yhat_upper"]),
-            })
+        forecast_df = await asyncio.to_thread(forecast_demand, synthetic_df, 30)
+        forecast_df = forecast_df[["ds", "yhat", "yhat_lower", "yhat_upper"]].copy()
+        forecast_df["ds"] = forecast_df["ds"].astype(str)
+        records = forecast_df.to_dict(orient="records")
         return {
             "forecast": records,
             "periods": len(records),
