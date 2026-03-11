@@ -9,7 +9,7 @@
 
 An **end-to-end AI-native supply chain control tower** demonstrating senior data engineering, MLOps, and AI engineering skills.
 
-Built on a production-grade 17-service Docker stack with real-time streaming, medallion lakehouse, ML model training & registry, distributed tracing, autonomous AI reasoning, and Auger-parity glass-box governance.
+Built on a production-grade 17-service Docker stack with real-time streaming, medallion lakehouse, ML model training & registry, distributed tracing, autonomous AI reasoning, and Adpot-parity glass-box governance.
 
 ---
 
@@ -152,7 +152,7 @@ docker exec supply-chain-api python scripts/download_supply_chain_data.py
 
 ## What's New in v8.0
 
-### Auger-Parity Features
+### Adpot-Parity Features
 
 | Feature | Description | Key files |
 |---|---|---|
@@ -210,7 +210,7 @@ docker exec supply-chain-api python scripts/download_supply_chain_data.py
 | **OpenTelemetry + Jaeger** | FastAPI + SQLAlchemy auto-instrumented; OTLP gRPC → Jaeger; graceful console fallback | `api/telemetry.py` |
 | **Event Sourcing** | `order_events` append-only table; full audit trail + point-in-time replay via `?version=N` | `api/models.py`, `api/event_store.py`, `api/routers/events.py` |
 
-### Tier 3 — Differentiators & v8.0 Auger-Parity
+### Tier 3 — Differentiators & v8.0 Adpot-Parity
 
 | Feature | What it does | Key files |
 |---|---|---|
