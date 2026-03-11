@@ -8,6 +8,12 @@ Built on a production-grade 17-service Docker stack with real-time streaming, me
 
 ---
 
+## Live Dashboard
+
+![Supply Chain Control Tower](assets/ai-analysis.gif)
+
+---
+
 ## Architecture at a Glance
 
 ```
@@ -119,8 +125,6 @@ docker exec supply-chain-api python scripts/download_supply_chain_data.py
 | **Multi-Model AI + Quality Scoring** | Claude primary; GPT-4o fallback on quality < 0.4; scores responses 0–1; `POST /ai/analyze-scored` | `reasoning/engine.py`, `api/routers/ai.py` |
 
 ---
-
-![Landing Page](assets/Grafana.png)
 
 ## API Endpoints
 
@@ -303,6 +307,8 @@ curl -X PATCH http://localhost:5001/api/2.0/mlflow/model-versions/update \
   -d '{"name": "delay_classifier", "version": "1", "stage": "Production"}'
 ```
 
+![MLflow Experiment — xgboost_delay_classifier](assets/Ml-Flow.png)
+
 ---
 
 ### Step 6 — ksqlDB: Initialize streams and query aggregations
@@ -405,6 +411,8 @@ Open **Grafana** at http://localhost:3002 (admin/admin)
 - **Supply Chain Overview** — order volumes, delay rates, supplier risk
 - **FastAPI Metrics** — request rate, latency p50/p95/p99, error rate (from `/metrics`)
 
+![Grafana Dashboard](assets/Grafana.png)
+
 ---
 
 ### Step 10 — Data contracts (Soda Core)
@@ -444,7 +452,7 @@ python -m soda scan -d supply_chain_db \
 
 ```bash
 python -m pytest tests/ -v
-# 62 passed, 8 skipped (kafka/dagster tests skip locally, pass in Docker)
+# 70 collected — 62 passed, 8 skipped (kafka/dagster/schema-registry tests skip locally without Docker)
 ```
 
 ---
