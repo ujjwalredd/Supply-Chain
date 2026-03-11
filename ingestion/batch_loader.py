@@ -64,8 +64,8 @@ def load_orderlist_csv(path: Path) -> Iterator[dict[str, Any]]:
 def _write_partitioned_parquet(df: "pd.DataFrame", path: "Path") -> None:
     """Write a date-partitioned Parquet snapshot for incremental Dagster processing."""
     import uuid
-    from datetime import datetime as _dt
-    today = _dt.utcnow()
+    from datetime import datetime as _dt, timezone as _tz
+    today = _dt.now(_tz.utc)
     partition_dir = path / f"year={today.year}" / f"month={today.month:02d}" / f"day={today.day:02d}"
     partition_dir.mkdir(parents=True, exist_ok=True)
     partition_file = partition_dir / f"batch_{uuid.uuid4().hex[:8]}.parquet"
