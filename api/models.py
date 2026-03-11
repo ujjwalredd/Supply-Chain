@@ -120,6 +120,29 @@ class PendingAction(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class SupplierPolicy(Base):
+    """
+    Glass-box autonomy policy per supplier.
+    Controls which actions auto-execute vs require human approval.
+    """
+    __tablename__ = "supplier_policies"
+
+    supplier_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    # Severity ceiling for autonomous execution: actions AT or ABOVE this level require human approval
+    # Values: CRITICAL | HIGH | MEDIUM | LOW (LOW = auto-execute everything except CRITICAL)
+    require_approval_at_severity: Mapped[str] = mapped_column(String(16), default="CRITICAL")
+    # Order value threshold: auto-execution blocked if linked order_value exceeds this
+    require_approval_above_value: Mapped[float] = mapped_column(Float, default=50000.0)
+    # Daily cap on autonomous executions for this supplier
+    max_auto_actions_per_day: Mapped[int] = mapped_column(Integer, default=10)
+    # Minimum AI confidence score required to auto-execute (0.0–1.0)
+    min_confidence: Mapped[float] = mapped_column(Float, default=0.70)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+
 class OrderEvent(Base):
     """
     Event sourcing table — append-only log of all order state transitions.

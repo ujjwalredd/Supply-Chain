@@ -1,10 +1,16 @@
-"""Ontology constraints API router."""
+"""
+Ontology constraints API router.
+
+Provides:
+  GET  /ontology/constraints       — list hard constraints per entity
+  POST /ontology/constraints       — create a new constraint
+  POST /ontology/normalize         — map messy field names to canonical schema (Auger-style)
+"""
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_db
@@ -15,6 +21,93 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# ── Canonical field name mapping (messy → internal) ───────────────────────────
+# Maps dozens of real-world variants to the internal supply chain schema field names.
+_FIELD_MAP: dict[str, str] = {
+    # Order identification
+    "order_number": "order_id",
+    "po_number": "order_id",
+    "purchase_order": "order_id",
+    "po": "order_id",
+    "order": "order_id",
+
+    # Supplier
+    "vendor": "supplier_id",
+    "vendor_id": "supplier_id",
+    "supplier": "supplier_id",
+    "plant": "supplier_id",
+    "plant_code": "supplier_id",
+    "manufacturer": "supplier_id",
+    "mfr": "supplier_id",
+
+    # Product
+    "sku": "product",
+    "item": "product",
+    "part_number": "product",
+    "part_no": "product",
+    "item_id": "product",
+    "product_id": "product",
+    "material": "product",
+
+    # Region / location
+    "destination": "region",
+    "dest": "region",
+    "dest_port": "region",
+    "ship_to": "region",
+    "delivery_location": "region",
+    "location": "region",
+    "country": "region",
+    "market": "region",
+
+    # Quantity
+    "qty": "quantity",
+    "units": "quantity",
+    "unit_quant": "quantity",
+    "pieces": "quantity",
+    "count": "quantity",
+    "volume": "quantity",
+
+    # Price / value
+    "price": "unit_price",
+    "cost": "unit_price",
+    "rate": "unit_price",
+    "unit_cost": "unit_price",
+    "total": "order_value",
+    "total_value": "order_value",
+    "amount": "order_value",
+    "invoice_amount": "order_value",
+
+    # Delivery dates
+    "delivery_date": "expected_delivery",
+    "due_date": "expected_delivery",
+    "eta": "expected_delivery",
+    "promised_date": "expected_delivery",
+    "ship_date": "expected_delivery",
+    "actual_delivery_date": "actual_delivery",
+    "received_date": "actual_delivery",
+    "delivery_actual": "actual_delivery",
+
+    # Delay
+    "days_late": "delay_days",
+    "lateness": "delay_days",
+    "overdue_days": "delay_days",
+    "ship_late_day_count": "delay_days",
+
+    # Status
+    "state": "status",
+    "order_status": "status",
+    "shipment_status": "status",
+
+    # Inventory
+    "stock": "inventory_level",
+    "stock_level": "inventory_level",
+    "on_hand": "inventory_level",
+    "available_qty": "inventory_level",
+    "inventory": "inventory_level",
+}
+
+_SEVERITY_WEIGHTS = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
+
 
 @router.get("/constraints", response_model=list[OntologyConstraintRead])
 async def list_constraints(
@@ -23,7 +116,8 @@ async def list_constraints(
     entity_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """List ontology constraints (Auger-style hard rules)."""
+    """List ontology constraints (Glass-box hard rules per entity)."""
+    from sqlalchemy import select
     q = select(OntologyConstraint).order_by(OntologyConstraint.id).limit(limit)
     if entity_type:
         q = q.where(OntologyConstraint.entity_type == entity_type)
@@ -32,3 +126,90 @@ async def list_constraints(
     result = await db.execute(q)
     constraints = result.scalars().all()
     return [OntologyConstraintRead.model_validate(c) for c in constraints]
+
+
+@router.post("/constraints", response_model=OntologyConstraintRead, status_code=201)
+async def create_constraint(
+    entity_id: str = Body(...),
+    entity_type: str = Body(..., description="SUPPLIER | PRODUCT | REGION"),
+    constraint_type: str = Body(..., description="e.g. MAX_DELAY_DAYS, MIN_TRUST_SCORE, MAX_SPEND_USD"),
+    value: float = Body(...),
+    hard_limit: bool = Body(True),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create a new ontology constraint (Auger-style hard business rule).
+
+    Examples:
+      - MAX_DELAY_DAYS on supplier SUP-001, value=7.0  → auto-escalate if >7d late
+      - MIN_TRUST_SCORE on supplier SUP-002, value=0.75 → block auto-execute if trust drops below
+      - MAX_SPEND_USD on region APAC, value=500000     → require approval if order_value > 500k
+    """
+    _VALID_TYPES = {"SUPPLIER", "PRODUCT", "REGION"}
+    if entity_type not in _VALID_TYPES:
+        raise HTTPException(status_code=422, detail=f"entity_type must be one of {_VALID_TYPES}")
+
+    constraint = OntologyConstraint(
+        entity_id=entity_id,
+        entity_type=entity_type,
+        constraint_type=constraint_type.upper(),
+        value=value,
+        hard_limit=hard_limit,
+    )
+    db.add(constraint)
+    await db.commit()
+    await db.refresh(constraint)
+    return OntologyConstraintRead.model_validate(constraint)
+
+
+@router.post("/normalize")
+async def normalize_fields(
+    fields: dict[str, Any] = Body(
+        ...,
+        examples=[{
+            "po_number": "ORD-001",
+            "vendor": "SUP-007",
+            "sku": "SENSOR-PACK-A",
+            "qty": 500,
+            "eta": "2026-04-15",
+            "ship_late_day_count": 3,
+        }],
+    ),
+) -> dict[str, Any]:
+    """
+    Auger-style schema normalization: map messy / legacy field names to canonical
+    internal schema fields.
+
+    Returns:
+      - normalized: dict with canonical field names
+      - unmapped: fields that had no mapping (passed through as-is)
+      - mapping_applied: list of (original → canonical) substitutions made
+    """
+    normalized: dict[str, Any] = {}
+    unmapped: dict[str, Any] = {}
+    mapping_applied: list[dict[str, str]] = []
+
+    for raw_key, value in fields.items():
+        canonical = _FIELD_MAP.get(raw_key.lower().strip())
+        if canonical:
+            normalized[canonical] = value
+            mapping_applied.append({"from": raw_key, "to": canonical})
+        else:
+            # Try partial match — e.g. "order_no" → contains "order" → "order_id"
+            lower = raw_key.lower().strip()
+            partial_match = next(
+                (canon for alias, canon in _FIELD_MAP.items() if alias in lower or lower in alias),
+                None,
+            )
+            if partial_match:
+                normalized[partial_match] = value
+                mapping_applied.append({"from": raw_key, "to": partial_match, "match": "partial"})
+            else:
+                unmapped[raw_key] = value
+
+    return {
+        "normalized": normalized,
+        "unmapped": unmapped,
+        "mapping_applied": mapping_applied,
+        "canonical_fields": sorted(set(_FIELD_MAP.values())),
+    }

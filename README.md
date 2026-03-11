@@ -1,4 +1,4 @@
-# Supply Chain AI OS — v7.0
+# Supply Chain AI OS — v8.0
 
 [![CI](https://github.com/ujjwalredd/Supply-Chain/actions/workflows/ci.yml/badge.svg)](https://github.com/ujjwalredd/Supply-Chain/actions/workflows/ci.yml)
 [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://supply-chain-silk.vercel.app)
@@ -9,26 +9,76 @@
 
 An **end-to-end AI-native supply chain control tower** demonstrating senior data engineering, MLOps, and AI engineering skills.
 
-Built on a production-grade 17-service Docker stack with real-time streaming, medallion lakehouse, ML model training & registry, distributed tracing, and autonomous AI reasoning.
+Built on a production-grade 17-service Docker stack with real-time streaming, medallion lakehouse, ML model training & registry, distributed tracing, autonomous AI reasoning, and Auger-parity glass-box governance.
 
 ---
 
 ## Architecture at a Glance
 
 ```
-Kafka (events) ──► ksqlDB (streaming aggregations)
-       │                        │
-       ▼                        ▼
-pg-writer ──► PostgreSQL ◄── FastAPI ──► Next.js 14
-       │              │          │
-       ▼              │          ▼
-MinIO/Delta      Dagster ──► MLflow
-(bronze/silver/gold)    │
-       │           ▼
-       └── XGBoost model ──► /ml/predict
-                │
-                ▼
-           OpenTelemetry ──► Jaeger
+┌─────────────────────────────────────────────────────────────────────┐
+│                         INGESTION LAYER                             │
+│                                                                     │
+│  CSV / API ──► Kafka (supply-chain-events)                          │
+│                    │           │                                    │
+│                    │           └──► supply-chain-dlq (Dead Letter)  │
+│                    ▼                                                │
+│              ksqlDB (5-min tumbling windows)                        │
+│              └── delay_rate_5m, region_demand_5m                    │
+└───────────────────────┬─────────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                      STORAGE & TRANSFORM                            │
+│                                                                     │
+│  pg-writer (consumer) ──► PostgreSQL (orders, deviations, events)   │
+│                                                                     │
+│  batch_loader ──► MinIO / Delta Lake                                │
+│                   ├── bronze/orders  (raw, partitioned Parquet)     │
+│                   ├── silver/orders  (validated, deduped)           │
+│                   └── gold/          (AI-ready features)            │
+│                                                                     │
+│  Dagster (orchestration)                                            │
+│  ├── medallion assets  (Bronze → Silver → Gold)                     │
+│  ├── dbt transforms    (incremental models, dbt-expectations)       │
+│  ├── XGBoost trainer   ──► MLflow registry                          │
+│  ├── Prophet forecast  ──► demand 30-day yhat                       │
+│  ├── NetworkX Graph ML ──► cascade risk scores                      │
+│  ├── OpenLineage       ──► lineage_events table                     │
+│  ├── Delta maintenance ──► OPTIMIZE + VACUUM                        │
+│  └── self-healing sensor (auto-retry after 3 failures)              │
+└───────────────────────┬─────────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                         API LAYER (FastAPI)                         │
+│                                                                     │
+│  /orders  /suppliers  /alerts/enriched  /forecasts  /network        │
+│  /ml/predict  /ai/analyze (stream)  /ai/query  /ai/whatif           │
+│  /ontology/normalize  /ontology/constraints                         │
+│  /suppliers/{id}/policy  /actions  /events  /lineage  /streaming    │
+│                                                                     │
+│  Glass-Box Autonomy ──► ActionExecutor                              │
+│  ├── Gate 1: global confidence threshold (AUTONOMY_CONFIDENCE)      │
+│  └── Gate 2: per-supplier SupplierPolicy (severity + order value)   │
+│                                                                     │
+│  AI Reasoning Engine (reasoning/engine.py)                          │
+│  ├── Claude sonnet-4-6  (primary)                                   │
+│  └── GPT-4o fallback    (quality < 0.4)                             │
+│                                                                     │
+│  OpenTelemetry ──► Jaeger (distributed traces)                      │
+│  Prometheus metrics ──► Grafana dashboards                          │
+└───────────────────────┬─────────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                       DASHBOARD (Next.js 14)                        │
+│                                                                     │
+│  Control Tower · Alerts · Orders · Suppliers · Scorecard            │
+│  Analytics · Actions · Network (Neo4j-style) · What-If              │
+│                                                                     │
+│  WebSocket (/ws) ──► real-time deviation feed                       │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -100,7 +150,32 @@ docker exec supply-chain-api python scripts/download_supply_chain_data.py
 
 ---
 
-## Data Engineering Features (v7.0 — All Built & Tested)
+## What's New in v8.0
+
+### Auger-Parity Features
+
+| Feature | Description | Key files |
+|---|---|---|
+| **Ontology Schema Normalization** | `POST /ontology/normalize` maps 60+ messy ERP field aliases (vendor, sku, po_number, eta…) to canonical internal schema. Supports exact + partial matching. Returns `{normalized, unmapped, mapping_applied, canonical_fields}`. | `api/routers/ontology.py` |
+| **Glass-Box Autonomy Policies** | Per-supplier `SupplierPolicy` controls which actions auto-execute. `GET/PUT /suppliers/{id}/policy` exposes `require_approval_at_severity`, `require_approval_above_value`, `max_auto_actions_per_day`, `min_confidence`. ActionExecutor dual-gates every action: (1) global confidence threshold, (2) per-supplier policy. | `api/routers/suppliers.py`, `integrations/action_executor.py`, `alembic/versions/006_add_supplier_policy.py` |
+| **Financial Impact Scoring** | `GET /alerts/enriched` computes `cost_impact_usd = delay_days × order_value × 0.02` (2% daily carrying cost) and risk tier (`CRITICAL_COST >$10k`, `HIGH_COST >$2k`, `MODERATE`). Returns aggregate `total_cost_impact_usd` and `critical_cost_count`. | `api/routers/alerts.py` |
+
+### Dashboard Upgrades
+
+| Upgrade | Description |
+|---|---|
+| **Neo4j-style Network Graph** | Force-directed SVG simulation — Coulomb repulsion, spring edges, center gravity, alpha cooling. Dark background (#0f172a), glowing nodes (indigo/sky/emerald), arrow markers, hover highlighting. Pure JS (no D3). | `dashboard/components/SupplyChainGraph.tsx` |
+| **Supplier Scorecard — Dual Y-axis** | Fixed chart: `ComposedChart` with left axis (0–100%) for On-Time % `Area` and right axis for `Bar` (Deviations, red) + dashed `Area` (Avg Delay, amber). Custom tooltip with TypeScript types. | `dashboard/components/SupplierScorecard.tsx` |
+
+### Infrastructure
+
+- **ksqlDB memory fix**: Reduced heap from `-Xmx768m` → `-Xmx512m -Xms128m`, added `mem_limit: 768m` — eliminates OOM-kill (exit 137) on resource-constrained machines.
+- **Alembic migration 006**: `supplier_policies` table. DB now at revision head=006.
+- **Code audit**: Removed redundant inline `import datetime` statements from `actions.py`, `orders.py` — already imported at module level.
+
+---
+
+## Data Engineering Features
 
 | # | Feature | Location |
 |---|---|---|
@@ -115,7 +190,7 @@ docker exec supply-chain-api python scripts/download_supply_chain_data.py
 
 ---
 
-## Extraordinary Features (v7.0)
+## Feature Catalog (v8.0)
 
 ### Tier 1 — High Signal
 
@@ -135,12 +210,16 @@ docker exec supply-chain-api python scripts/download_supply_chain_data.py
 | **OpenTelemetry + Jaeger** | FastAPI + SQLAlchemy auto-instrumented; OTLP gRPC → Jaeger; graceful console fallback | `api/telemetry.py` |
 | **Event Sourcing** | `order_events` append-only table; full audit trail + point-in-time replay via `?version=N` | `api/models.py`, `api/event_store.py`, `api/routers/events.py` |
 
-### Tier 3 — Differentiators
+### Tier 3 — Differentiators & v8.0 Auger-Parity
 
 | Feature | What it does | Key files |
 |---|---|---|
 | **Self-Healing Pipeline** | Dagster sensor auto-triggers RunRequest after 3 consecutive failures; writes JSON audit log | `pipeline/sensors.py` |
 | **Multi-Model AI + Quality Scoring** | Claude primary; GPT-4o fallback on quality < 0.4; scores responses 0–1; `POST /ai/analyze-scored` | `reasoning/engine.py`, `api/routers/ai.py` |
+| **Ontology Schema Normalization** | 60-alias `_FIELD_MAP` + partial matching; maps legacy ERP fields (vendor, sku, eta…) to canonical schema; `POST /ontology/normalize` | `api/routers/ontology.py` |
+| **Glass-Box Autonomy Policies** | Per-supplier `SupplierPolicy` dual-gates every action: global confidence threshold + per-supplier severity/value ceiling; `GET/PUT /suppliers/{id}/policy` | `integrations/action_executor.py`, `api/routers/suppliers.py` |
+| **Financial Impact Scoring** | `cost_impact_usd = delay_days × order_value × 0.02`; CRITICAL_COST / HIGH_COST / MODERATE tiers; `GET /alerts/enriched` | `api/routers/alerts.py` |
+| **Neo4j-style Network Graph** | Force-directed SVG with Coulomb repulsion, spring edges, alpha cooling, glow filters, dark canvas, drag interaction | `dashboard/components/SupplyChainGraph.tsx` |
 
 ---
 
@@ -154,10 +233,10 @@ The Next.js 14 dashboard at http://localhost:3000 has 9 pages:
 | **Alerts** | `/alerts` | Active deviations by severity, trend chart, alert fatigue suppression |
 | **Orders** | `/orders` | Paginated order table with delay status, filter by supplier/region |
 | **Suppliers** | `/suppliers` | Supplier risk matrix, trust scores, delay rates |
-| **Scorecard** | `/scorecard` | KPI scorecard: fill rate, OTIF, COGS, inventory turns |
+| **Scorecard** | `/scorecard` | Per-supplier weekly scorecard: dual Y-axis chart (On-Time % + Delay/Deviations), KPI strip |
 | **Analytics** | `/analytics` | Delay predictions, trend chart, risk forecast, cost analytics, benchmarks |
 | **Actions** | `/actions` | Autonomous AI action log, resolve/fail buttons, MTTR tracker |
-| **Network** | `/network` | Plant-port topology graph, NetworkX cascade risk visualization |
+| **Network** | `/network` | Neo4j-style force-directed topology graph, NetworkX cascade risk, glow nodes |
 | **What-If** | `/whatif` | Scenario simulator: change inventory/delay params, see risk impact |
 
 ---
@@ -190,6 +269,12 @@ GET  /actions/stats                   — MTTR + resolution stats
 GET  /orders/delay-predictions        — batch delay predictions
 GET  /suppliers/cost-analytics        — cost breakdown per supplier
 GET  /suppliers/benchmarks            — supplier benchmark comparison
+GET  /suppliers/{id}/policy           — get per-supplier autonomy policy (auto-creates default)
+PUT  /suppliers/{id}/policy           — update per-supplier autonomy policy
+GET  /alerts/enriched                 — alerts with financial impact scoring + risk tier
+GET  /ontology/constraints            — list hard business rules per entity
+POST /ontology/constraints            — create new ontology constraint (MAX_DELAY_DAYS, MIN_TRUST_SCORE…)
+POST /ontology/normalize              — map legacy ERP field names to canonical schema
 GET  /metrics                         — Prometheus metrics
 WS   /ws                              — real-time deviation feed
 ```
@@ -540,6 +625,45 @@ curl http://localhost:8000/lineage
 # Returns lineage events + upstream/downstream asset graph
 ```
 
+**Financial impact scoring (v8.0):**
+```bash
+curl "http://localhost:8000/alerts/enriched?limit=20&severity=CRITICAL"
+# Returns alerts with cost_impact_usd, risk_tier (CRITICAL_COST/HIGH_COST/MODERATE),
+# total_cost_impact_usd, and critical_cost_count
+```
+
+**Ontology schema normalization (v8.0):**
+```bash
+curl -X POST http://localhost:8000/ontology/normalize \
+  -H "Content-Type: application/json" \
+  -d '{
+    "po_number": "ORD-001",
+    "vendor": "SUP-007",
+    "sku": "SENSOR-PACK-A",
+    "qty": 500,
+    "eta": "2026-04-15",
+    "ship_late_day_count": 3
+  }'
+# Returns: { "normalized": {"order_id": "ORD-001", "supplier_id": "SUP-007", ...},
+#            "unmapped": {}, "mapping_applied": [...], "canonical_fields": [...] }
+```
+
+**Glass-Box supplier policy (v8.0):**
+```bash
+# Get current policy (auto-creates default on first call)
+curl http://localhost:8000/suppliers/SUP-001/policy
+
+# Update: require human approval for HIGH+ severity or orders > $25k
+curl -X PUT http://localhost:8000/suppliers/SUP-001/policy \
+  -H "Content-Type: application/json" \
+  -d '{
+    "require_approval_at_severity": "HIGH",
+    "require_approval_above_value": 25000,
+    "max_auto_actions_per_day": 5,
+    "min_confidence": 0.80
+  }'
+```
+
 ---
 
 ### Step 9 — Grafana dashboards
@@ -599,7 +723,7 @@ docker exec supply-chain-api python scripts/sync_gold_to_postgres.py
 |---|---|
 | Services stuck in "starting" | Increase Docker Desktop RAM to ≥ 8 GB and retry |
 | MLflow not loading | Wait 30s after `docker compose up`; check `docker logs supply-chain-mlflow` |
-| ksqlDB OOM-killed (exit 137) | Run `docker compose up -d ksqldb-server ksqldb-init`; increase Docker memory |
+| ksqlDB OOM-killed (exit 137) | Already fixed in v8.0 (heap capped at 512m, `mem_limit: 768m`). If it still fails, increase Docker Desktop RAM to ≥ 10 GB. |
 | ksqlDB streams empty after restart | Run `curl -X POST http://localhost:8000/streaming/init` then produce Kafka events |
 | Dagster assets stale | Click **Materialize all** in Dagster UI at http://localhost:3001 |
 | Jaeger shows no traces | Make at least one API request first; `OTEL_ENABLED=true` must be set in `.env` |
@@ -668,6 +792,8 @@ Migration files in `alembic/versions/`:
 | `002` | Add pending_actions table |
 | `003` | Add indexes + outcome tracking columns |
 | `004` | Add confidence column to pending_actions |
+| `005` | Add ontology_constraints table |
+| `006` | Add supplier_policies table (Glass-Box Autonomy) |
 
 ---
 
@@ -708,13 +834,13 @@ Contracts defined in `contracts/`:
 ```
 supply-chain-os/
 ├── .github/workflows/ci.yml      # CI/CD: pytest + dbt validate + docker check + auto-tag
-├── alembic/                       # Database migrations (4 revisions)
+├── alembic/                       # Database migrations (6 revisions)
 │   └── versions/
 ├── api/                           # FastAPI application
-│   ├── routers/                   # 14 routers: orders, suppliers, alerts, ml, ai, events...
+│   ├── routers/                   # 15 routers: orders, suppliers, alerts, ontology, ml, ai, events...
 │   ├── database.py                # SQLAlchemy async engine
 │   ├── event_store.py             # Append-only order_events store
-│   ├── models.py                  # SQLAlchemy ORM models
+│   ├── models.py                  # SQLAlchemy ORM models (incl. SupplierPolicy)
 │   └── telemetry.py               # OpenTelemetry setup
 ├── assets/                        # README screenshots + GIFs
 ├── contracts/                     # Soda Core data quality contracts
@@ -722,7 +848,7 @@ supply-chain-os/
 ├── docker/                        # Dockerfiles + Grafana provisioning
 ├── ingestion/                     # Kafka producer, pg-writer, batch_loader
 ├── integrations/
-│   └── action_executor.py         # Autonomous action execution engine
+│   └── action_executor.py         # Autonomous action execution — confidence gate + per-supplier policy gate
 ├── pipeline/                      # Dagster: medallion assets, sensors, ML, Graph ML
 │   ├── assets_medallion.py        # Bronze/Silver/Gold + XGBoost + Prophet assets
 │   ├── ml_model.py                # XGBoost training + MLflow logging

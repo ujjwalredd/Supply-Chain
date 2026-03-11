@@ -16,6 +16,7 @@ Called by:
 import json
 import logging
 import os
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -44,10 +45,53 @@ class ActionExecutor:
     def __init__(self, session):
         self.session = session
 
+    def _check_policy(self, action, order_value: float, severity: str) -> bool:
+        """
+        Glass-Box Policy gate. Returns True if auto-execution is allowed for this supplier.
+        Promotes action to ESCALATE and returns False if policy blocks it.
+        """
+        _SEV_ORDER = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
+        try:
+            from sqlalchemy import select
+            from api.models import Deviation, Order, SupplierPolicy
+
+            dev = self.session.execute(
+                select(Deviation).where(Deviation.deviation_id == action.deviation_id)
+            ).scalar_one_or_none()
+            supplier_id = None
+            if dev:
+                order = self.session.execute(
+                    select(Order).where(Order.order_id == dev.order_id)
+                ).scalar_one_or_none()
+                if order:
+                    supplier_id = order.supplier_id
+                    order_value = order_value or float(order.order_value or 0)
+
+            if supplier_id:
+                policy = self.session.execute(
+                    select(SupplierPolicy).where(SupplierPolicy.supplier_id == supplier_id)
+                ).scalar_one_or_none()
+                if policy:
+                    sev_level = _SEV_ORDER.get(severity, 0)
+                    approval_level = _SEV_ORDER.get(policy.require_approval_at_severity, 3)
+                    if sev_level >= approval_level:
+                        logger.warning(
+                            "Policy block (supplier=%s): severity %s >= approval_at %s. Escalating.",
+                            supplier_id, severity, policy.require_approval_at_severity,
+                        )
+                        return False
+                    if order_value > policy.require_approval_above_value:
+                        logger.warning(
+                            "Policy block (supplier=%s): order_value $%.0f > threshold $%.0f. Escalating.",
+                            supplier_id, order_value, policy.require_approval_above_value,
+                        )
+                        return False
+        except Exception as e:
+            logger.debug("Policy check skipped (non-blocking): %s", e)
+        return True
+
     def execute(self, action) -> bool:
         """Dispatch to the correct handler. Returns True on success."""
-        from datetime import datetime, timezone
-
         handlers = {
             "REROUTE": self._handle_reroute,
             "EXPEDITE": self._handle_expedite,
@@ -60,9 +104,13 @@ class ActionExecutor:
             logger.warning("No executor for action_type=%s", action.action_type)
             return False
 
-        # Confidence gate: ESCALATE actions bypass this check (they are human-review only)
+        payload = action.payload or {}
+        severity = payload.get("severity", "MEDIUM")
+        order_value = float(payload.get("order_value", 0))
+
+        # Gate 1: Confidence gate (global threshold)
         if action.action_type != "ESCALATE":
-            payload_confidence = float((action.payload or {}).get("execution_confidence", 1.0))
+            payload_confidence = float(payload.get("execution_confidence", 1.0))
             if payload_confidence < AUTONOMY_CONFIDENCE_THRESHOLD:
                 logger.warning(
                     "Action id=%s blocked by confidence gate: %.2f < %.2f (threshold). "
@@ -75,6 +123,12 @@ class ActionExecutor:
                     + action.description
                 )
                 handler = self._handle_escalate
+
+        # Gate 2: Per-supplier Glass-Box policy
+        if action.action_type != "ESCALATE" and not self._check_policy(action, order_value, severity):
+            action.action_type = "ESCALATE"
+            action.description = "[Policy gate: requires human approval] " + action.description
+            handler = self._handle_escalate
 
         try:
             handler(action)
