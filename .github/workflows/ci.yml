@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: pip install pytest pandas pyarrow jsonschema pyyaml requests
+        run: pip install pytest pandas pyarrow numpy jsonschema pyyaml requests fastapi sqlalchemy pydantic anthropic httpx
       - name: Run tests (skip docker-only)
         run: pytest tests/ -v --tb=short -m "not docker_only"
 
@@ -42,6 +42,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Create stub .env for compose validation
+        run: cp .env.example .env
       - name: Validate docker-compose syntax
         run: docker compose config --quiet
 

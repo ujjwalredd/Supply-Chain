@@ -107,8 +107,9 @@ def test_partitioned_parquet_has_correct_row_count():
 
         today = datetime.now(timezone.utc)
         partition_dir = Path(tmpdir) / "orders" / f"year={today.year}" / f"month={today.month:02d}" / f"day={today.day:02d}"
-        parquet_file = partition_dir / "batch.parquet"
-        df = pd.read_parquet(str(parquet_file))
+        parquet_files = list(partition_dir.glob("*.parquet"))
+        assert len(parquet_files) == 1, f"Expected 1 parquet file, got: {parquet_files}"
+        df = pd.read_parquet(str(parquet_files[0]))
         assert len(df) == n_records
 
 

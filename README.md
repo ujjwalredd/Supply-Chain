@@ -76,7 +76,7 @@ docker exec supply-chain-api python scripts/download_supply_chain_data.py
 
 ---
 
-## Data Engineering Features (v6.0 — All Built & Tested)
+## Data Engineering Features (v7.0 — All Built & Tested)
 
 | # | Feature | Location |
 |---|---|---|
@@ -119,6 +119,8 @@ docker exec supply-chain-api python scripts/download_supply_chain_data.py
 | **Multi-Model AI + Quality Scoring** | Claude primary; GPT-4o fallback on quality < 0.4; scores responses 0–1; `POST /ai/analyze-scored` | `reasoning/engine.py`, `api/routers/ai.py` |
 
 ---
+
+![Landing Page](assets/Grafana.png)
 
 ## API Endpoints
 
