@@ -8,12 +8,6 @@ Built on a production-grade 17-service Docker stack with real-time streaming, me
 
 ---
 
-## Live Dashboard
-
-![Supply Chain Control Tower](assets/ai-analysis.gif)
-
----
-
 ## Architecture at a Glance
 
 ```
@@ -307,7 +301,7 @@ curl -X PATCH http://localhost:5001/api/2.0/mlflow/model-versions/update \
   -d '{"name": "delay_classifier", "version": "1", "stage": "Production"}'
 ```
 
-![MLflow Experiment — xgboost_delay_classifier](assets/Ml-Flow.png)
+![MLflow Experiment — xgboost_delay_classifier](assets/flow.png)
 
 ---
 
