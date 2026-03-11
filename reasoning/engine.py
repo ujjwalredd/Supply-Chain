@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
+MODEL = os.getenv("CLAUDEMODEL", "claude-sonnet-4-6")
 
 
 class TradeOffOption(BaseModel):
@@ -483,30 +483,23 @@ Be specific. Do not hedge without data."""
 
 # ── Multi-Model AI with Quality Scoring ──────────────────────────────────────
 
-import hashlib as _hashlib
-import time as _time
-
-# Alias for use in quality-scoring functions (MODEL is defined above)
-_MODEL = MODEL
-
 
 def _call_claude(prompt: str, system: str, max_tokens: int = 1024) -> tuple[str, float]:
     """
     Call Claude (primary model). Returns (response_text, latency_ms).
     """
-    start = _time.monotonic()
+    start = time.monotonic()
     try:
         client = _get_client()
         resp = client.messages.create(
-            model=_MODEL,
+            model=MODEL,
             max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": prompt}],
         )
-        latency = (_time.monotonic() - start) * 1000
+        latency = (time.monotonic() - start) * 1000
         return resp.content[0].text, latency
-    except Exception as e:
-        latency = (_time.monotonic() - start) * 1000
+    except Exception:
         raise
 
 
@@ -520,7 +513,7 @@ def _call_openai_fallback(prompt: str, system: str, max_tokens: int = 1024) -> t
     if not api_key:
         return "", 0.0
 
-    start = _time.monotonic()
+    start = time.monotonic()
     try:
         import openai
         client = openai.OpenAI(api_key=api_key)
@@ -532,10 +525,10 @@ def _call_openai_fallback(prompt: str, system: str, max_tokens: int = 1024) -> t
                 {"role": "user", "content": prompt},
             ],
         )
-        latency = (_time.monotonic() - start) * 1000
+        latency = (time.monotonic() - start) * 1000
         return resp.choices[0].message.content or "", latency
     except Exception as e:
-        latency = (_time.monotonic() - start) * 1000
+        latency = (time.monotonic() - start) * 1000
         logger.warning("OpenAI fallback failed: %s", e)
         return "", latency
 
@@ -595,7 +588,7 @@ def analyze_with_quality_scoring(
     """
     result = {
         "response": "",
-        "model_used": _MODEL,
+        "model_used": MODEL,
         "quality_score": 0.0,
         "latency_ms": 0.0,
         "fallback_used": False,
@@ -607,7 +600,7 @@ def analyze_with_quality_scoring(
         quality = _score_response_quality(text, {"deviation_id": deviation_id})
         result.update({
             "response": text,
-            "model_used": _MODEL,
+            "model_used": MODEL,
             "quality_score": quality,
             "latency_ms": round(latency, 1),
         })

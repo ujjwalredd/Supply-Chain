@@ -141,8 +141,6 @@ async def delay_predictions(
     Scores = weighted combination of supplier trust, avg_delay_days, lead_time_remaining.
     Returns orders sorted by delay probability descending.
     """
-    from datetime import datetime, timezone
-
     now = datetime.now(timezone.utc)
 
     result = await db.execute(
@@ -162,8 +160,7 @@ async def delay_predictions(
         # Lead time remaining in days
         exp_dt = order.expected_delivery
         if hasattr(exp_dt, 'tzinfo') and exp_dt.tzinfo is None:
-            from datetime import timezone as tz
-            exp_dt = exp_dt.replace(tzinfo=tz.utc)
+            exp_dt = exp_dt.replace(tzinfo=timezone.utc)
         days_remaining = (exp_dt - now).days
 
         # Already overdue
