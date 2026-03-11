@@ -9,7 +9,7 @@ export function Hero() {
     <section className="relative pt-32 pb-20 md:pt-48 md:pb-32 overflow-hidden">
       {/* Soft Ambient Glow */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-hero-glow pointer-events-none" />
-      
+
       {/* Very faint background grid */}
       <div className="absolute inset-0 bg-subtle-grid pointer-events-none [background-size:24px_24px] [mask-image:linear-gradient(to_bottom,white,transparent)]" />
 
@@ -21,10 +21,10 @@ export function Hero() {
           className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-black/5 bg-white shadow-sm mb-8"
         >
           <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-          <span className="text-[10px] font-mono tracking-widest text-steel uppercase text-ink">System online · v4.0 Active</span>
+          <span className="text-[10px] font-mono tracking-widest text-steel uppercase text-ink">System online · v7.0 Active</span>
         </motion.div>
 
-        <motion.h1 
+        <motion.h1
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ ...smoothTransition, delay: 0.1 }}
@@ -33,17 +33,17 @@ export function Hero() {
           From signal to execution.<br />Zero latency reasoning.
         </motion.h1>
 
-        <motion.p 
+        <motion.p
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ ...smoothTransition, delay: 0.2 }}
           className="text-steel text-lg md:text-xl max-w-2xl font-light leading-relaxed mb-10"
         >
-          The AI-native supply chain control tower. We don't just detect deviations. 
+          The AI-native supply chain control tower. We don't just detect deviations.
           We reason through multi-node ontology, forecast financial impact, and execute autonomous reroutes in milliseconds.
         </motion.p>
 
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 20, filter: 'blur(4px)' }}
           animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
           transition={{ ...smoothTransition, delay: 0.3 }}
@@ -70,11 +70,11 @@ export function Hero() {
           <div className="text-[10px] font-mono font-medium text-steel uppercase tracking-widest mb-6">
             Powered by an Enterprise Data Stack
           </div>
-          
+
           {/* Gradients for fading effect on edges */}
           <div className="absolute left-0 top-10 bottom-0 w-24 bg-gradient-to-r from-paper to-transparent z-10" />
           <div className="absolute right-0 top-10 bottom-0 w-24 bg-gradient-to-l from-paper to-transparent z-10" />
-          
+
           <div className="flex w-[200%] animate-infinite-scroll hover:[animation-play-state:paused] cursor-default">
             {/* First Set */}
             <div className="flex w-1/2 justify-around items-center min-w-max gap-12 sm:gap-20 px-6">
