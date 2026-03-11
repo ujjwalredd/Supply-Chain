@@ -4,7 +4,7 @@ import { Database, Zap, Layers, Server } from 'lucide-react';
 
 export function Architecture() {
   const containerRef = useRef<HTMLDivElement>(null);
-  
+
   const { scrollYProgress } = useScroll({
     target: containerRef,
     offset: ["start end", "center center"]
@@ -13,20 +13,20 @@ export function Architecture() {
   const pathDraw = useTransform(scrollYProgress, [0, 1], [0, 1]);
 
   const stack = [
-    { name: 'Kafka Event Stream', desc: '50+ events/min. Supplier state machines & causality chains.', icon: Zap, color: 'text-warning border-warning/20 bg-warning/5' },
-    { name: 'Dagster Pipeline', desc: '14-asset medallion lakehouse. Bronze, Silver, Gold transformations.', icon: Layers, color: 'text-success border-success/20 bg-success/5' },
-    { name: 'PostgreSQL Operational', desc: 'Underpinning the state. Real-time deviations & pending actions.', icon: Database, color: 'text-accent border-accent/20 bg-accent/5' },
-    { name: 'Next.js App Router', desc: 'Zero-latency WebSocket control tower pushed via Redis Pub/Sub.', icon: Server, color: 'text-ink border-ink/10 bg-surface' },
+    { name: 'Kafka & ksqlDB', desc: 'Real-time 5-min tumbling windows processing supply chain telemetry.', icon: Zap, color: 'text-warning border-warning/20 bg-warning/5' },
+    { name: 'Dagster Lakehouse', desc: 'Medallion architecture managing Bronze/Silver/Gold analytics Parquet.', icon: Layers, color: 'text-success border-success/20 bg-success/5' },
+    { name: 'Event-Sourced PostgreSQL', desc: 'Point-in-time recovery via immutable ledger. Fast CRUD via FastAPI.', icon: Database, color: 'text-accent border-accent/20 bg-accent/5' },
+    { name: 'MLflow & OpenTelemetry', desc: 'XGBoost forecasting model registry + end-to-end Jaeger distributed tracing.', icon: Server, color: 'text-ink border-ink/10 bg-surface' },
   ];
 
   return (
     <section id="architecture" className="py-24 bg-surface" ref={containerRef}>
       <div className="max-w-7xl mx-auto px-6 text-center">
         <motion.div
-           initial={{ opacity: 0, y: 20 }}
-           whileInView={{ opacity: 1, y: 0 }}
-           viewport={{ once: true }}
-           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
         >
           <h2 className="text-sm font-mono text-steel uppercase tracking-widest mb-4 font-semibold">Enterprise Grade Infrastructure</h2>
           <h3 className="text-3xl lg:text-4xl font-semibold tracking-tight text-ink mb-16">
@@ -42,12 +42,12 @@ export function Architecture() {
               <path d="M 125,50 L 375,50" stroke="#E4E4E7" strokeWidth="2" strokeDasharray="4 4" fill="none" opacity="0.5" />
               <path d="M 375,50 L 625,50" stroke="#E4E4E7" strokeWidth="2" strokeDasharray="4 4" fill="none" opacity="0.5" />
               <path d="M 625,50 L 875,50" stroke="#E4E4E7" strokeWidth="2" strokeDasharray="4 4" fill="none" opacity="0.5" />
-              
+
               {/* Scroll Triggered Draw Tracks */}
               <motion.path d="M 125,50 L 375,50" stroke="#0070F3" strokeWidth="2" fill="none" style={{ pathLength: pathDraw }} />
               <motion.path d="M 375,50 L 625,50" stroke="#10B981" strokeWidth="2" fill="none" style={{ pathLength: pathDraw }} />
               <motion.path d="M 625,50 L 875,50" stroke="#F59E0B" strokeWidth="2" fill="none" style={{ pathLength: pathDraw }} />
-              
+
               {/* Persistent Animated Packets over the drawn lines */}
               <circle r="4" fill="#0070F3" className="shadow-lg">
                 <animateMotion dur="2.5s" repeatCount="indefinite" path="M 125,50 L 375,50" keyPoints="0;1" keyTimes="0;1" calcMode="linear" />
@@ -65,7 +65,7 @@ export function Architecture() {
             {stack.map((item, idx) => {
               const Icon = item.icon;
               return (
-                <motion.div 
+                <motion.div
                   key={idx}
                   initial={{ opacity: 0, y: 20 }}
                   whileInView={{ opacity: 1, y: 0 }}
@@ -74,7 +74,7 @@ export function Architecture() {
                   className="bg-white p-6 rounded-2xl flex flex-col border border-black/5 shadow-card hover:shadow-glass hover:border-black/10 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-2 relative overflow-hidden group"
                 >
                   <div className="absolute inset-0 bg-gradient-to-br from-white via-white to-black/[0.02] opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-                  
+
                   <div className={`w-12 h-12 rounded-xl flex items-center justify-center border mb-6 relative z-10 bg-white shadow-sm ${item.color}`}>
                     <Icon size={24} />
                   </div>
