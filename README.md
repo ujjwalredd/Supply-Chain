@@ -3,7 +3,7 @@
 [![CI](https://github.com/ujjwalredd/Supply-Chain/actions/workflows/ci.yml/badge.svg)](https://github.com/ujjwalredd/Supply-Chain/actions/workflows/ci.yml)
 [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://supply-chain-silk.vercel.app)
 
-Live Demo → supply-chain-silk.vercel.app](https://supply-chain-silk.vercel.app)**
+[Live Demo → supply-chain-silk.vercel.app](https://supply-chain-silk.vercel.app)
 
 ![Landing Page](assets/landing_page.png)
 
