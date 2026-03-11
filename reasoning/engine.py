@@ -263,16 +263,24 @@ async def stream_analysis_async(
     queue: asyncio.Queue[str] = asyncio.Queue()
 
     def _run_stream() -> None:
-        for token in stream_analysis(deviation, order, supplier, ontology_constraints):
-            loop.call_soon_threadsafe(queue.put_nowait, token)
-        loop.call_soon_threadsafe(queue.put_nowait, "")
+        try:
+            for token in stream_analysis(deviation, order, supplier, ontology_constraints):
+                loop.call_soon_threadsafe(queue.put_nowait, token)
+        except Exception as exc:
+            loop.call_soon_threadsafe(queue.put_nowait, f"\n\nError: {exc}")
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, "")
 
-    asyncio.create_task(asyncio.to_thread(_run_stream))
-    while True:
-        token = await queue.get()
-        if not token:
-            break
-        yield token
+    task = asyncio.create_task(asyncio.to_thread(_run_stream))
+    try:
+        while True:
+            token = await queue.get()
+            if not token:
+                break
+            yield token
+    finally:
+        # Ensure background task is cleaned up if consumer exits early
+        task.cancel()
 
 
 def analyze_structured(

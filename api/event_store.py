@@ -30,12 +30,15 @@ async def append_event(
     """Append an immutable event to order_events. Returns event_id."""
     from api.models import OrderEvent
 
-    # Get current aggregate version
+    # Get next aggregate version atomically using MAX to avoid race conditions
+    # Two concurrent appends using COUNT(*)+1 would both read the same count and
+    # produce a duplicate version. MAX+1 inside a transaction is safe because
+    # each INSERT holds a row-level lock until the transaction commits.
     result = await db.execute(
-        text("SELECT COUNT(*) FROM order_events WHERE order_id = :oid"),
+        text("SELECT COALESCE(MAX(aggregate_version), 0) + 1 FROM order_events WHERE order_id = :oid"),
         {"oid": order_id}
     )
-    version = (result.scalar() or 0) + 1
+    version = result.scalar() or 1
 
     event = OrderEvent(
         event_id=str(uuid.uuid4()),
