@@ -756,8 +756,25 @@ curl -X PUT http://localhost:8000/suppliers/SUP-001/policy \
 
 Open **Grafana** at http://localhost:3002 (admin/admin)
 
-- **Supply Chain Overview** — order volumes, delay rates, supplier risk
-- **FastAPI Metrics** — request rate, latency p50/p95/p99, error rate (from `/metrics`)
+Grafana queries **PostgreSQL directly** — no Prometheus required. Make sure the database has been seeded before opening.
+
+```bash
+# If this is a fresh stack or you changed POSTGRES_PASSWORD, force re-provisioning:
+docker compose restart grafana
+```
+
+**Supply Chain OS dashboard** (auto-loaded on startup):
+
+| Panel | What it shows |
+|---|---|
+| Total Orders | `COUNT(*)` from orders table |
+| Delayed Orders | Orders where `delay_days > 0` |
+| Active Deviations | Unexecuted deviations |
+| Critical Alerts | `CRITICAL` severity unexecuted deviations |
+| MTTR (minutes) | Avg time from deviation detected → action completed |
+| Deviations by Severity | Stacked bar chart — last 7 days, CRITICAL/HIGH/MEDIUM/LOW |
+| Supplier Trust Scores | All suppliers sorted by trust score ascending |
+| Recent Active Deviations | Latest 20 unexecuted deviations |
 
 ![Grafana Dashboard](assets/Grafana.png)
 
@@ -818,7 +835,7 @@ docker exec supply-chain-api python scripts/sync_gold_to_postgres.py
 | `soda` command not found | Use `python -m soda scan ...` instead |
 | `/orders?limit=10` — zsh glob error | Quote the URL: `curl "http://localhost:8000/orders?limit=10"` |
 | `DATABASE_URL` connection refused | Confirm `POSTGRES_PORT=5433` in `.env`; host is `localhost` outside Docker |
-| Grafana shows no data | Run Dagster pipeline first so Prometheus has metrics to scrape |
+| Grafana shows no data | Grafana queries PostgreSQL directly. Run `scripts/seed_db.py` first, then start the OpenBoxes connector. If datasource shows "Connection refused", restart Grafana after confirming `POSTGRES_PASSWORD` in `.env` matches the DB: `docker compose restart grafana` |
 
 ---
 
