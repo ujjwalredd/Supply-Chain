@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pydantic import ValidationError
 from sqlalchemy import create_engine, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.engine import URL
 from sqlalchemy.orm import sessionmaker
 
 from ingestion.schemas import DemandEvent, OrderEvent
@@ -47,10 +48,34 @@ logger = logging.getLogger("pg-writer")
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9093")
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "supply-chain-events")
 DLQ_TOPIC = os.getenv("KAFKA_DLQ_TOPIC", "supply-chain-dlq")
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://supplychain:supplychain_secret@localhost:5432/supply_chain_db",
-)
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    _pg_user = os.getenv("POSTGRES_USER", "supplychain")
+    _pg_pass = os.getenv("POSTGRES_PASSWORD", "")
+    _pg_host = os.getenv("POSTGRES_HOST", "localhost")
+    _pg_port = os.getenv("POSTGRES_PORT", "5432")
+    _pg_db = os.getenv("POSTGRES_DB", "supply_chain_db")
+    if not _pg_pass:
+        raise RuntimeError(
+            "pg_writer: database credentials not configured. "
+            "Set DATABASE_URL or POSTGRES_PASSWORD in environment."
+        )
+    try:
+        _pg_port_int = int(_pg_port)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"pg_writer: invalid POSTGRES_PORT '{_pg_port}'. Must be an integer."
+        ) from exc
+
+    # Use SQLAlchemy URL builder so special chars in credentials are safely encoded.
+    DATABASE_URL = URL.create(
+        drivername="postgresql",
+        username=_pg_user,
+        password=_pg_pass,
+        host=_pg_host,
+        port=_pg_port_int,
+        database=_pg_db,
+    ).render_as_string(hide_password=False)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 REDIS_CHANNEL = "deviations"
 BATCH_SIZE = int(os.getenv("PG_WRITER_BATCH_SIZE", "10"))
