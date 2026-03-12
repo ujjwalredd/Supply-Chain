@@ -6,5 +6,6 @@ COPY requirements-ingestion.txt .
 RUN pip install --no-cache-dir -r requirements-ingestion.txt
 
 COPY ingestion/ ingestion/
+COPY api/ api/
 
 ENV PYTHONPATH=/app

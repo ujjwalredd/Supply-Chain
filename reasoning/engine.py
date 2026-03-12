@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-MODEL = os.getenv("CLAUDEMODEL", "claude-sonnet-4-6")
+MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
 
 class TradeOffOption(BaseModel):

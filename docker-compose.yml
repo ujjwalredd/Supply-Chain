@@ -151,6 +151,11 @@ services:
       DAGSTER_POSTGRES_DB: dagster
       DAGSTER_WEBSERVER_HOST: 0.0.0.0
       DAGSTER_CURRENT_IMAGE: supply-chain-dagster
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-supplychain}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-supplychain_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-supply_chain_db}
       S3_STORAGE_BUCKET: supply-chain-lakehouse
       MINIO_ENDPOINT_URL: http://minio:9000
       DATA_DIR: /opt/dagster/app/data/source
@@ -187,6 +192,11 @@ services:
       DAGSTER_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-supplychain_secret}
       DAGSTER_POSTGRES_DB: dagster
       DAGSTER_CURRENT_IMAGE: supply-chain-dagster
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-supplychain}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-supplychain_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-supply_chain_db}
       S3_STORAGE_BUCKET: supply-chain-lakehouse
       MINIO_ENDPOINT_URL: http://minio:9000
       DATA_DIR: /opt/dagster/app/data/source
@@ -226,6 +236,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-4-6}
       AUTONOMY_CONFIDENCE_THRESHOLD: ${AUTONOMY_CONFIDENCE_THRESHOLD:-0.70}
       DATA_DIR: /app/data/source
       DATA_ROOT: /app/data
@@ -242,6 +253,12 @@ services:
       OTEL_SERVICE_NAME: supply-chain-api
       OTEL_ENABLED: "true"
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
     volumes:
       - ./api:/app/api
       - ./streaming:/app/streaming
@@ -305,6 +322,34 @@ services:
       REDIS_URL: redis://redis:6379/0
       PG_WRITER_BATCH_SIZE: "10"
     command: ["python", "ingestion/pg_writer.py"]
+
+  # OpenBoxes connector — polls OpenBoxes Purchase Orders + Stock Movements,
+  # normalizes via ontology layer, publishes canonical OrderEvents to Kafka.
+  # Mock mode (default): generates realistic OpenBoxes-formatted payloads, no server needed.
+  # Live mode: set OPENBOXES_MOCK=false — uses demo.openboxes.com (free, no signup required)
+  openboxes-connector:
+    build:
+      context: .
+      dockerfile: docker/Producer.Dockerfile
+    container_name: supply-chain-openboxes-connector
+    env_file: .env
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+      fastapi:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: supply-chain-events
+      API_BASE: http://fastapi:8000
+      OPENBOXES_MOCK: ${OPENBOXES_MOCK:-true}
+      OPENBOXES_URL: ${OPENBOXES_URL:-https://demo.openboxes.com/openboxes}
+      OPENBOXES_USERNAME: ${OPENBOXES_USERNAME:-admin}
+      OPENBOXES_PASSWORD: ${OPENBOXES_PASSWORD:-password}
+      OPENBOXES_POLL_INTERVAL: ${OPENBOXES_POLL_INTERVAL:-30}
+      OPENBOXES_BATCH_SIZE: ${OPENBOXES_BATCH_SIZE:-25}
+    command: ["python", "ingestion/openboxes_connector.py"]
 
   # --- STREAMING ANALYTICS ---
   schema-registry:

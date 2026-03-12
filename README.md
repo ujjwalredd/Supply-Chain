@@ -9,7 +9,7 @@
 
 An **end-to-end AI-native supply chain control tower** demonstrating senior data engineering, MLOps, and AI engineering skills.
 
-Built on a production-grade 17-service Docker stack with real-time streaming, medallion lakehouse, ML model training & registry, distributed tracing, autonomous AI reasoning, and Adpot-parity glass-box governance.
+Built on a production-grade 18-service Docker stack with real-time streaming, medallion lakehouse, ML model training & registry, distributed tracing, autonomous AI reasoning, and Adpot-parity glass-box governance.
 
 ---
 
@@ -167,6 +167,35 @@ docker exec supply-chain-api python scripts/download_supply_chain_data.py
 | **Neo4j-style Network Graph** | Force-directed SVG simulation — Coulomb repulsion, spring edges, center gravity, alpha cooling. Dark background (#0f172a), glowing nodes (indigo/sky/emerald), arrow markers, hover highlighting. Pure JS (no D3). | `dashboard/components/SupplyChainGraph.tsx` |
 | **Supplier Scorecard — Dual Y-axis** | Fixed chart: `ComposedChart` with left axis (0–100%) for On-Time % `Area` and right axis for `Bar` (Deviations, red) + dashed `Area` (Avg Delay, amber). Custom tooltip with TypeScript types. | `dashboard/components/SupplierScorecard.tsx` |
 
+### OpenBoxes Connector (v8.0)
+
+`ingestion/openboxes_connector.py` bridges [OpenBoxes](https://openboxes.com) (free, open-source WMS/SCM) to the pipeline. No API key, no payment required.
+
+| Mode | How | Config |
+|---|---|---|
+| **Mock** (default) | Generates realistic OpenBoxes-formatted POs locally — no server needed | `OPENBOXES_MOCK=true` |
+| **Live — Public Demo** | Polls `demo.openboxes.com` (free, always up, `admin/password`) | `OPENBOXES_MOCK=false` |
+| **Live — Self-hosted** | Polls your own OpenBoxes instance | `OPENBOXES_URL=http://your-host:8080/openboxes` |
+
+Flow: `OpenBoxes PO (nested JSON)` → `_flatten_po()` → `POST /ontology/normalize` → `canonical OrderEvent` → `Kafka`
+
+OpenBoxes field aliases added to `_FIELD_MAP` (60+ total): `orderNumber→order_id`, `originName→supplier_id`, `productCode→product`, `destinationName→region`, `quantityOrdered→quantity`, `unitPrice→unit_price`, `totalPrice→order_value`, `estimatedDeliveryDate→expected_delivery`, `dateReceived→actual_delivery`, `daysLate→delay_days`, `currentStockLevel→inventory_level`, and more.
+
+```bash
+# Run standalone (mock mode — no server needed)
+python ingestion/openboxes_connector.py
+
+# Connect to free public demo
+OPENBOXES_MOCK=false OPENBOXES_URL=https://demo.openboxes.com/openboxes \
+  OPENBOXES_USERNAME=admin OPENBOXES_PASSWORD=password \
+  python ingestion/openboxes_connector.py
+
+# Connect to self-hosted OpenBoxes
+OPENBOXES_MOCK=false OPENBOXES_URL=http://localhost:8080/openboxes \
+  OPENBOXES_USERNAME=admin OPENBOXES_PASSWORD=yourpassword \
+  python ingestion/openboxes_connector.py
+```
+
 ### Infrastructure
 
 - **ksqlDB memory fix**: Reduced heap from `-Xmx768m` → `-Xmx512m -Xms128m`, added `mem_limit: 768m` — eliminates OOM-kill (exit 137) on resource-constrained machines.
@@ -314,6 +343,11 @@ transforms/models/
 
 Run dbt manually inside the dagster container:
 ```bash
+# Install dbt packages first (only needed once, or after dbt_packages is wiped)
+docker exec supply-chain-dagster-webserver \
+  dbt deps --profiles-dir /opt/dagster/app/transforms --project-dir /opt/dagster/app/transforms
+
+# Run all models
 docker exec supply-chain-dagster-webserver \
   dbt run --profiles-dir /opt/dagster/app/transforms --project-dir /opt/dagster/app/transforms
 ```
@@ -846,7 +880,7 @@ supply-chain-os/
 ├── contracts/                     # Soda Core data quality contracts
 ├── dashboard/                     # Next.js 14 App Router (9 pages)
 ├── docker/                        # Dockerfiles + Grafana provisioning
-├── ingestion/                     # Kafka producer, pg-writer, batch_loader
+├── ingestion/                     # Kafka producer, pg-writer, batch_loader, openboxes_connector
 ├── integrations/
 │   └── action_executor.py         # Autonomous action execution — confidence gate + per-supplier policy gate
 ├── pipeline/                      # Dagster: medallion assets, sensors, ML, Graph ML

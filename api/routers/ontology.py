@@ -104,9 +104,87 @@ _FIELD_MAP: dict[str, str] = {
     "on_hand": "inventory_level",
     "available_qty": "inventory_level",
     "inventory": "inventory_level",
+
+    # ── OpenBoxes / WMS field aliases ────────────────────────────────────────
+    # Order identification
+    "orderNumber": "order_id",
+    "order_number": "order_id",
+    "identifier": "order_id",
+    "po_ref": "order_id",
+    "purchase_order_no": "order_id",
+    "docname": "order_id",
+
+    # Supplier (OpenBoxes nests supplier as 'origin' — flattened to originName)
+    "originName": "supplier_id",
+    "originId": "supplier_id",
+    "supplier_name": "supplier_id",
+    "vendor_code": "supplier_id",
+    "party": "supplier_id",
+
+    # Product (OpenBoxes uses productCode inside orderItems)
+    "productCode": "product",
+    "productName": "product",
+    "item_code": "product",
+    "item_name": "product",
+    "part_code": "product",
+    "article_number": "product",
+
+    # Region (OpenBoxes nests warehouse as 'destination' — flattened to destinationName)
+    "destinationName": "region",
+    "set_warehouse": "region",
+    "warehouse": "region",
+    "delivery_warehouse": "region",
+    "ship_to_location": "region",
+
+    # Order value (OpenBoxes uses totalPrice on line items)
+    "totalPrice": "order_value",
+    "grand_total": "order_value",
+    "net_total": "order_value",
+    "rounded_total": "order_value",
+
+    # Unit price (OpenBoxes line item field)
+    "unitPrice": "unit_price",
+    "base_rate": "unit_price",
+    "price_list_rate": "unit_price",
+
+    # Quantity (OpenBoxes line item)
+    "quantityOrdered": "quantity",
+    "quantityRequested": "quantity",
+    "ordered_qty": "quantity",
+    "received_qty": "quantity",
+    "pending_qty": "quantity",
+
+    # Dates (OpenBoxes uses estimatedDeliveryDate / dateReceived)
+    "estimatedDeliveryDate": "expected_delivery",
+    "schedule_date": "expected_delivery",
+    "required_date": "expected_delivery",
+    "dateReceived": "actual_delivery",
+    "transaction_receipt_date": "actual_delivery",
+    "lr_date": "actual_delivery",
+
+    # Delay (OpenBoxes uses daysLate)
+    "daysLate": "delay_days",
+    "delay_in_days": "delay_days",
+    "days_overdue": "delay_days",
+    "late_days": "delay_days",
+
+    # Status
+    "workflow_state": "status",
+    "document_status": "status",
+    "fulfillment_status": "status",
+
+    # Inventory (OpenBoxes stock level fields)
+    "currentStockLevel": "inventory_level",
+    "quantityOnHand": "inventory_level",
+    "actual_qty": "inventory_level",
+    "projected_qty": "inventory_level",
+    "in_stock_qty": "inventory_level",
 }
 
 _SEVERITY_WEIGHTS = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
+
+# Lowercase-keyed version of _FIELD_MAP for case-insensitive exact lookup
+_FIELD_MAP_LOWER: dict[str, str] = {k.lower(): v for k, v in _FIELD_MAP.items()}
 
 
 @router.get("/constraints", response_model=list[OntologyConstraintRead])
@@ -190,15 +268,15 @@ async def normalize_fields(
     mapping_applied: list[dict[str, str]] = []
 
     for raw_key, value in fields.items():
-        canonical = _FIELD_MAP.get(raw_key.lower().strip())
+        lower = raw_key.lower().strip()
+        canonical = _FIELD_MAP_LOWER.get(lower)
         if canonical:
             normalized[canonical] = value
             mapping_applied.append({"from": raw_key, "to": canonical})
         else:
             # Try partial match — e.g. "order_no" → contains "order" → "order_id"
-            lower = raw_key.lower().strip()
             partial_match = next(
-                (canon for alias, canon in _FIELD_MAP.items() if alias in lower or lower in alias),
+                (canon for alias, canon in _FIELD_MAP_LOWER.items() if alias in lower or lower in alias),
                 None,
             )
             if partial_match:
