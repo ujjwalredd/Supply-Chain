@@ -181,8 +181,8 @@ async def resolve_action(
     action.resolved = True
     action.outcome_note = outcome_note
     action.resolved_at = datetime.now(timezone.utc)
-    # If success=False, mark as FAILED so it shows distinctly
-    if not success and action.status == "EXECUTED":
+    # If success=False, mark as FAILED so it shows distinctly in audit trail
+    if not success:
         action.status = "FAILED"
     await db.commit()
     return {"ok": True, "action_id": action_id, "resolved": True}

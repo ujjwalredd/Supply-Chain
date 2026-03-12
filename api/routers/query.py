@@ -56,6 +56,8 @@ async def query_stream(
     question = body.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="question must not be empty")
+    if len(question) > 2000:
+        raise HTTPException(status_code=400, detail="question must not exceed 2000 characters")
 
     # ── Pull a live data snapshot ────────────────────────────────────────────
     # Active deviations (limit 15)
