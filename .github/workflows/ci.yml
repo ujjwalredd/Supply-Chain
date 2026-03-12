@@ -1,4 +1,4 @@
-name: CI
+name: CI / CD
 
 on:
   push:
@@ -6,27 +6,100 @@ on:
   pull_request:
     branches: [main]
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install dependencies
-        run: pip install pytest pandas pyarrow numpy jsonschema pyyaml requests fastapi "sqlalchemy[asyncio]" pydantic anthropic httpx psycopg2-binary asyncpg prometheus-fastapi-instrumentator
-      - name: Run tests (skip docker-only)
-        run: pytest tests/ -v --tb=short -m "not docker_only"
+env:
+  PYTHON_VERSION: "3.11"
 
-  dbt-validate:
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # JOB 1: Unit Tests + Coverage
+  # ─────────────────────────────────────────────────────────────────
+  test:
+    name: Unit Tests
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest-cov
+
+      - name: Run tests with coverage
+        env:
+          DATABASE_URL: "postgresql://supplychain:ci_password@localhost:5432/supply_chain_db"
+          ANTHROPIC_API_KEY: "ci-placeholder"
+          GOLD_PATH: "data/gold"
+          SILVER_PATH: "data/silver"
+          BRONZE_PATH: "data/bronze"
+          API_KEYS: "ci-test-key"
+        run: |
+          python -m pytest tests/ -q \
+            --tb=short \
+            --cov=api \
+            --cov=ingestion \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-fail-under=55
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          file: coverage.xml
+          fail_ci_if_error: false
+
+  # ─────────────────────────────────────────────────────────────────
+  # JOB 2: Hardcoded Secret Detection
+  # ─────────────────────────────────────────────────────────────────
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for hardcoded credentials
+        run: |
+          FOUND=0
+          # Look for raw string assignments of password/secret/key values
+          # Excludes: env var reads, placeholders, test fixtures, comments
+          while IFS= read -r line; do
+            echo "POTENTIAL SECRET: $line"
+            FOUND=1
+          done < <(grep -rn \
+            --include="*.py" \
+            --exclude-dir=".git" \
+            --exclude="conftest.py" \
+            -E "(password|secret|api_key)\s*=\s*['\"][^'\"$\{\(]{10,}['\"]" \
+            api/ ingestion/ reasoning/ integrations/ 2>/dev/null || true)
+          if [ "$FOUND" -eq 1 ]; then
+            echo "Hardcoded secrets found — failing build."
+            exit 1
+          fi
+          echo "No hardcoded secrets detected."
+
+  # ─────────────────────────────────────────────────────────────────
+  # JOB 3: dbt Model Syntax Validation
+  # ─────────────────────────────────────────────────────────────────
+  dbt-validate:
+    name: dbt Validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - name: Check dbt model SQL syntax
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Validate dbt models have content
         run: |
           python -c "
           from pathlib import Path
@@ -35,30 +108,99 @@ jobs:
           for m in models:
               content = m.read_text()
               assert len(content) > 10, f'{m} appears empty'
-          print('All dbt models have content')
+          print('All dbt models OK')
           "
 
-  docker-build-check:
+  # ─────────────────────────────────────────────────────────────────
+  # JOB 4: Docker Compose Config Validation
+  # ─────────────────────────────────────────────────────────────────
+  docker-validate:
+    name: Docker Validate
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
-      - name: Create stub .env for compose validation
-        run: cp .env.example .env
+
+      - name: Create stub .env
+        run: |
+          cp .env.example .env
+          # Ensure required vars are present for config validation
+          echo "POSTGRES_PASSWORD=ci_password" >> .env
+          echo "API_KEYS=ci-key" >> .env
+
       - name: Validate docker-compose syntax
         run: docker compose config --quiet
 
-  tag-on-merge:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    needs: [test, dbt-validate]
+      - name: Validate docker-compose.prod.yml syntax
+        run: |
+          if [ -f docker-compose.prod.yml ]; then
+            docker compose -f docker-compose.prod.yml config --quiet
+          fi
+
+  # ─────────────────────────────────────────────────────────────────
+  # JOB 5: Auto-tag on merge to main
+  # ─────────────────────────────────────────────────────────────────
+  tag-release:
+    name: Tag Release
     runs-on: ubuntu-latest
+    needs: [test, secret-scan, dbt-validate, docker-validate]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: write
+
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Auto-tag version
         run: |
           VERSION=$(date +v%Y.%m.%d)-$(git rev-parse --short HEAD)
-          git tag $VERSION
-          git push origin $VERSION
+          git tag "$VERSION"
+          git push origin "$VERSION"
+          echo "Tagged: $VERSION"
+
+  # ─────────────────────────────────────────────────────────────────
+  # JOB 6: Deploy to Oracle VM (main branch only)
+  # Requires GitHub Secrets: VM_HOST, VM_USER, VM_SSH_KEY
+  # ─────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to Oracle VM
+    runs-on: ubuntu-latest
+    needs: [test, secret-scan, dbt-validate, docker-validate]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          port: 22
+          timeout: 180s
+          script: |
+            set -e
+            cd ~/supply-chain-os
+
+            echo "=== Pull latest ==="
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "=== Restart services ==="
+            docker compose -f docker-compose.prod.yml up -d --build \
+              fastapi pg-writer openboxes-connector nextjs
+
+            echo "=== Run migrations ==="
+            sleep 8
+            docker exec supply-chain-api alembic upgrade head
+
+            echo "=== Health check ==="
+            sleep 5
+            curl -sf -H "X-API-Key: $HEALTH_CHECK_KEY" \
+              http://localhost:8000/health | grep -q '"status":"ok"'
+
+            echo "=== Deploy OK: $(git rev-parse --short HEAD) ==="

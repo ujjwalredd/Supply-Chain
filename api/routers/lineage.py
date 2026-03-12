@@ -7,7 +7,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+logger = logging.getLogger(__name__)
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -97,7 +101,8 @@ async def get_lineage(
             },
         }
     except Exception as e:
-        return {"events": [], "total": 0, "error": str(e)}
+        logger.error("Lineage query failed: %s", e)
+        raise HTTPException(status_code=503, detail=f"Lineage query failed: {e}")
 
 
 @router.get("/jobs")
@@ -113,4 +118,5 @@ async def get_lineage_jobs(db: AsyncSession = Depends(get_db)) -> dict[str, Any]
         rows = result.mappings().all()
         return {"jobs": [dict(r) for r in rows]}
     except Exception as e:
-        return {"jobs": [], "error": str(e)}
+        logger.error("Lineage jobs query failed: %s", e)
+        raise HTTPException(status_code=503, detail=f"Lineage jobs query failed: {e}")
