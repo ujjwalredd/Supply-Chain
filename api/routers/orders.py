@@ -57,8 +57,14 @@ async def order_timeline(order_id: str, db: AsyncSession = Depends(get_db)):
 
     # 2. Transit start (estimated ~10% of lead time after creation)
     if order.status in ("IN_TRANSIT", "DELIVERED", "DELAYED"):
-        lead_secs = (order.expected_delivery - order.created_at).total_seconds()
-        transit_ts = order.created_at.timestamp() + lead_secs * 0.10
+        exp_dt = order.expected_delivery
+        cre_dt = order.created_at
+        if exp_dt.tzinfo is None:
+            exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+        if cre_dt.tzinfo is None:
+            cre_dt = cre_dt.replace(tzinfo=timezone.utc)
+        lead_secs = (exp_dt - cre_dt).total_seconds()
+        transit_ts = cre_dt.timestamp() + lead_secs * 0.10
         transit_dt = datetime.fromtimestamp(transit_ts, tz=timezone.utc)
         events.append({
             "event": "IN_TRANSIT",

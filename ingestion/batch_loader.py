@@ -7,7 +7,7 @@ Writes to bronze layer with full lineage metadata.
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -52,9 +52,9 @@ def load_orderlist_csv(path: Path) -> Iterator[dict[str, Any]]:
                     "delay_days": max(0, ship_late),
                     "status": "DELAYED" if ship_late > 0 else "DELIVERED",
                     "inventory_level": 80.0,  # CSV has no real inventory data; neutral default avoids label leakage
-                    "created_at": datetime.utcnow().isoformat() + "Z",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
                     "_source_file": path.name,
-                    "_source_ingested_at": datetime.utcnow().isoformat(),
+                    "_source_ingested_at": datetime.now(timezone.utc).isoformat(),
                 }
             except (ValueError, KeyError) as e:
                 logger.debug("Skip row %d: %s", i + 2, e)
@@ -140,7 +140,7 @@ def load_freight_rates_csv(path: Path) -> Iterator[dict[str, Any]]:
                     "transit_days": int(float(row.get("TPT_Day_Count", "0") or "0")),
                     "carrier_type": str(row.get("Carrier_Type", "")).strip(),
                     "_source_file": path.name,
-                    "_source_ingested_at": datetime.utcnow().isoformat(),
+                    "_source_ingested_at": datetime.now(timezone.utc).isoformat(),
                 }
             except (ValueError, KeyError):
                 continue
@@ -160,7 +160,7 @@ def load_wh_capacities_csv(path: Path) -> Iterator[dict[str, Any]]:
                     "plant_code": plant,
                     "daily_capacity": int(float(row.get("Daily_Capacity", "0") or "0")),
                     "_source_file": path.name,
-                    "_source_ingested_at": datetime.utcnow().isoformat(),
+                    "_source_ingested_at": datetime.now(timezone.utc).isoformat(),
                 }
             except (ValueError, KeyError):
                 continue
@@ -181,7 +181,7 @@ def load_plant_ports_csv(path: Path) -> Iterator[dict[str, Any]]:
                     "plant_code": plant,
                     "port": port,
                     "_source_file": path.name,
-                    "_source_ingested_at": datetime.utcnow().isoformat(),
+                    "_source_ingested_at": datetime.now(timezone.utc).isoformat(),
                 }
             except (ValueError, KeyError):
                 continue
@@ -202,7 +202,7 @@ def load_products_per_plant_csv(path: Path) -> Iterator[dict[str, Any]]:
                     "plant_code": plant,
                     "product_id": product,
                     "_source_file": path.name,
-                    "_source_ingested_at": datetime.utcnow().isoformat(),
+                    "_source_ingested_at": datetime.now(timezone.utc).isoformat(),
                 }
             except (ValueError, KeyError):
                 continue

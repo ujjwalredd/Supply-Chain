@@ -37,12 +37,20 @@ _AI_RATE_WINDOW = 60.0
 _AI_RATE_MAX = int(os.getenv("AI_RATE_LIMIT_PER_MIN", "30"))
 
 
+_AI_RATE_STORE_MAX_IPS = 10_000  # cap unique IPs to prevent unbounded memory growth
+
+
 def _check_ai_rate_limit(client_ip: str) -> bool:
     """Return True if within rate limit, False if exceeded."""
     now = time.monotonic()
     cutoff = now - _AI_RATE_WINDOW
     calls = _AI_RATE_LIMIT_STORE[client_ip]
     calls[:] = [t for t in calls if t > cutoff]
+    # Evict stale entries when store exceeds max IPs (remove IPs with no recent calls)
+    if len(_AI_RATE_LIMIT_STORE) > _AI_RATE_STORE_MAX_IPS:
+        stale = [ip for ip, ts in _AI_RATE_LIMIT_STORE.items() if not ts]
+        for ip in stale:
+            del _AI_RATE_LIMIT_STORE[ip]
     if len(calls) >= _AI_RATE_MAX:
         return False
     calls.append(now)

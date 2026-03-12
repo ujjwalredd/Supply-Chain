@@ -27,10 +27,7 @@ from typing import Generator
 
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://supplychain:supplychain_secret@localhost:5432/supply_chain_db",
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 MARQUEZ_URL = os.getenv("MARQUEZ_URL", "")  # e.g. http://marquez:5000
 NAMESPACE = os.getenv("LINEAGE_NAMESPACE", "supply-chain-os")
 
@@ -59,51 +56,56 @@ def _ensure_table(conn) -> None:
 
 def _emit_to_postgres(event: dict) -> None:
     """Write a lineage event to PostgreSQL."""
+    if not DATABASE_URL:
+        logger.debug("Lineage PG write skipped: DATABASE_URL not configured")
+        return
     try:
         import psycopg2
 
         conn = psycopg2.connect(DATABASE_URL)
         conn.autocommit = True
-        with conn.cursor() as cur:
-            # Ensure table exists
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS lineage_events (
-                    id          SERIAL PRIMARY KEY,
-                    run_id      TEXT NOT NULL,
-                    job_name    TEXT NOT NULL,
-                    event_type  TEXT NOT NULL,
-                    inputs      TEXT,
-                    output      TEXT,
-                    namespace   TEXT,
-                    started_at  TIMESTAMPTZ,
-                    ended_at    TIMESTAMPTZ,
-                    metadata    TEXT,
-                    created_at  TIMESTAMPTZ DEFAULT now()
+        try:
+            with conn.cursor() as cur:
+                # Ensure table exists
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS lineage_events (
+                        id          SERIAL PRIMARY KEY,
+                        run_id      TEXT NOT NULL,
+                        job_name    TEXT NOT NULL,
+                        event_type  TEXT NOT NULL,
+                        inputs      TEXT,
+                        output      TEXT,
+                        namespace   TEXT,
+                        started_at  TIMESTAMPTZ,
+                        ended_at    TIMESTAMPTZ,
+                        metadata    TEXT,
+                        created_at  TIMESTAMPTZ DEFAULT now()
+                    )
+                """)
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS ix_lineage_job_name
+                    ON lineage_events (job_name)
+                """)
+                cur.execute(
+                    """INSERT INTO lineage_events
+                       (run_id, job_name, event_type, inputs, output, namespace,
+                        started_at, ended_at, metadata)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    """,
+                    (
+                        event["run_id"],
+                        event["job_name"],
+                        event["event_type"],
+                        json.dumps(event.get("inputs", [])),
+                        event.get("output", ""),
+                        event.get("namespace", NAMESPACE),
+                        event.get("started_at"),
+                        event.get("ended_at"),
+                        json.dumps(event.get("metadata", {})),
+                    ),
                 )
-            """)
-            cur.execute("""
-                CREATE INDEX IF NOT EXISTS ix_lineage_job_name
-                ON lineage_events (job_name)
-            """)
-            cur.execute(
-                """INSERT INTO lineage_events
-                   (run_id, job_name, event_type, inputs, output, namespace,
-                    started_at, ended_at, metadata)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                """,
-                (
-                    event["run_id"],
-                    event["job_name"],
-                    event["event_type"],
-                    json.dumps(event.get("inputs", [])),
-                    event.get("output", ""),
-                    event.get("namespace", NAMESPACE),
-                    event.get("started_at"),
-                    event.get("ended_at"),
-                    json.dumps(event.get("metadata", {})),
-                ),
-            )
-        conn.close()
+        finally:
+            conn.close()
     except Exception as e:
         logger.debug("Lineage PG write skipped: %s", e)
 

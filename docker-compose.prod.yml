@@ -1,0 +1,170 @@
+# Supply Chain AI OS — Production Overrides
+#
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# What this file changes vs docker-compose.yml:
+#   1. Removes ALL source-code volume mounts (uses built image only)
+#   2. Disables Grafana anonymous access
+#   3. Enables Redis AUTH password
+#   4. Adds resource limits to prevent OOM on Oracle free VM (24GB total)
+#   5. Sets LOG_LEVEL=warning for production noise reduction
+#   6. Disables SQL_ECHO
+#   7. Removes dev-only ports that should not be public (Kafka, Zookeeper)
+
+services:
+
+  # ── API ──────────────────────────────────────────────────────────
+  fastapi:
+    volumes: []   # Override: remove live code mounts — use built image
+    environment:
+      LOG_LEVEL: warning
+      SQL_ECHO: "false"
+      API_KEYS: ${API_KEYS}
+      AI_RATE_LIMIT_PER_MIN: ${AI_RATE_LIMIT_PER_MIN:-30}
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+        reservations:
+          memory: 512m
+    restart: always
+
+  # ── pg-writer ─────────────────────────────────────────────────────
+  pg-writer:
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 128m
+    restart: always
+
+  # ── Producer ─────────────────────────────────────────────────────
+  producer:
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    restart: always
+
+  # ── OpenBoxes connector ───────────────────────────────────────────
+  openboxes-connector:
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    restart: always
+
+  # ── Next.js ──────────────────────────────────────────────────────
+  nextjs:
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    restart: always
+
+  # ── PostgreSQL ────────────────────────────────────────────────────
+  postgres:
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"  # Bind to loopback only — not public
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+        reservations:
+          memory: 512m
+    restart: always
+
+  # ── Redis — AUTH enabled ──────────────────────────────────────────
+  redis:
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-change_me_redis}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "127.0.0.1:6379:6379"   # Bind to loopback only
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change_me_redis}
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+    restart: always
+
+  # ── Kafka — not exposed publicly ──────────────────────────────────
+  kafka:
+    ports:
+      - "127.0.0.1:9092:9092"
+      - "127.0.0.1:9093:9093"
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+        reservations:
+          memory: 512m
+    restart: always
+
+  # ── Zookeeper — loopback only ──────────────────────────────────────
+  zookeeper:
+    ports:
+      - "127.0.0.1:2181:2181"
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    restart: always
+
+  # ── MinIO — strong credentials enforced via .env ──────────────────
+  minio:
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    restart: always
+
+  # ── Grafana — anonymous access DISABLED in production ─────────────
+  grafana:
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: ""
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_SERVER_DOMAIN: ${GRAFANA_DOMAIN:-localhost}
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s:%(http_port)s/grafana/"
+    ports:
+      - "127.0.0.1:3002:3000"   # Bind to loopback — proxy via Nginx
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    restart: always
+
+  # ── Dagster webserver ─────────────────────────────────────────────
+  dagster-webserver:
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+        reservations:
+          memory: 512m
+    restart: always
+
+  dagster-daemon:
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 256m
+    restart: always
+
+  # ── MLflow ────────────────────────────────────────────────────────
+  mlflow:
+    ports:
+      - "127.0.0.1:5001:5000"
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    restart: always

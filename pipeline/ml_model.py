@@ -306,10 +306,7 @@ def _heuristic_predict(features: dict) -> dict:
     prob = min(risk_score, 0.95)
     is_delayed = prob >= 0.35
 
-    if prob >= 0.6:
-        confidence = "LOW"  # heuristic is less reliable
-    else:
-        confidence = "LOW"
+    confidence = "LOW"  # heuristic is always low confidence
 
     return {
         "is_delayed": is_delayed,

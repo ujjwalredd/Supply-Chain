@@ -714,7 +714,7 @@ def run() -> None:
         KAFKA_TOPIC,
         bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS.split(","),
         auto_offset_reset="earliest",
-        enable_auto_commit=True,
+        enable_auto_commit=False,   # Manual commit: only after successful DB write
         group_id="pg-writer",
         value_deserializer=lambda v: json.loads(v.decode("utf-8")),
     )
@@ -738,6 +738,7 @@ def run() -> None:
                 o, d = process_batch(session, redis_client, batch)
                 total_orders += o
                 total_deviations += d
+            consumer.commit()
             batch = []
         logger.info("Flushed. Total: %d orders, %d deviations", total_orders, total_deviations)
         if sig:
@@ -769,6 +770,7 @@ def run() -> None:
                         continue
                     with Session() as session:
                         process_demand_event(session, redis_client, demand)
+                    consumer.commit()
                     continue
 
                 try:
@@ -791,6 +793,8 @@ def run() -> None:
                     o, d = process_batch(session, redis_client, batch)
                     total_orders += o
                     total_deviations += d
+                # Commit offset only AFTER successful DB write (at-least-once delivery)
+                consumer.commit()
                 logger.info(
                     "Batch flushed: +%d orders, +%d deviations | total: %d / %d",
                     o, d, total_orders, total_deviations,

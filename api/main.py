@@ -18,6 +18,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from api.auth import APIKeyMiddleware
 from api.database import init_db
 from api.routers import actions, ai, alerts, events, forecasts, lineage, ml, network, orders, ontology, query, streaming, suppliers
 from api.telemetry import setup_tracing
@@ -107,8 +108,9 @@ class _RequestIDMiddleware(BaseHTTPMiddleware):
 setup_tracing(app)
 
 # Middleware is applied in reverse order (last-added = outermost).
-# Desired request order: TrustedHost → CORS → RequestID → handler
+# Desired request order: TrustedHost → CORS → APIKey → RequestID → handler
 app.add_middleware(_RequestIDMiddleware)
+app.add_middleware(APIKeyMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,

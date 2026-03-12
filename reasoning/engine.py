@@ -498,7 +498,10 @@ def _call_claude(prompt: str, system: str, max_tokens: int = 1024) -> tuple[str,
             messages=[{"role": "user", "content": prompt}],
         )
         latency = (time.monotonic() - start) * 1000
-        return resp.content[0].text, latency
+        text_blocks = [b for b in resp.content if getattr(b, "type", None) == "text"]
+        if not text_blocks:
+            raise ValueError("Claude returned no text content block")
+        return text_blocks[0].text, latency
     except Exception:
         raise
 

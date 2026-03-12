@@ -106,8 +106,9 @@ async def get_demand_forecast():
             import asyncio
             import pandas as pd
             df = await asyncio.to_thread(pd.read_parquet, parquet_file)
-            cols = {"ds", "yhat", "yhat_lower", "yhat_upper"} & set(df.columns)
-            df = df[list(cols)].copy()
+            _wanted = ["ds", "yhat", "yhat_lower", "yhat_upper"]
+            cols = [c for c in _wanted if c in df.columns]
+            df = df[cols].copy()
             for col in df.select_dtypes(include=["datetime64[ns]", "datetime64[ns, UTC]"]).columns:
                 df[col] = df[col].astype(str)
             records = df.to_dict(orient="records")
