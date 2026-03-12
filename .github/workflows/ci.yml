@@ -45,7 +45,6 @@ jobs:
             --tb=short \
             --cov=api \
             --cov=ingestion \
-            --cov-omit=ingestion/consumer.py,ingestion/openboxes_connector.py \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
             --cov-fail-under=45
