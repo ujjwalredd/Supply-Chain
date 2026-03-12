@@ -7,9 +7,11 @@
 
 ![Landing Page](assets/landing_page.png)
 
-An **end-to-end AI-native supply chain control tower** demonstrating senior data engineering, MLOps, and AI engineering skills.
+An **end-to-end AI-native supply chain control tower** built for real-world client deployments.
 
-Built on a production-grade 18-service Docker stack with real-time streaming, medallion lakehouse, ML model training & registry, distributed tracing, autonomous AI reasoning, and Adpot-parity glass-box governance.
+Ingests live purchase-order data from **OpenBoxes** (open-source WMS/SCM), streams it through Kafka, and runs a full medallion lakehouse with AI reasoning, ML delay prediction, and autonomous action execution — on a production-grade 17-service Docker stack.
+
+> **Primary data source:** OpenBoxes (live WMS) · **Secondary / offline fallback:** CSV seed data
 
 ---
 
@@ -19,7 +21,8 @@ Built on a production-grade 18-service Docker stack with real-time streaming, me
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         INGESTION LAYER                             │
 │                                                                     │
-│  CSV / API ──► Kafka (supply-chain-events)                          │
+│  OpenBoxes WMS (live POs) ──► Kafka (supply-chain-events)           │
+│  CSV seed data (offline fallback) ─────────────────────────────────►│
 │                    │           │                                    │
 │                    │           └──► supply-chain-dlq (Dead Letter)  │
 │                    ▼                                                │
@@ -103,15 +106,27 @@ cp .env.example .env
 # Open .env and set:
 #   ANTHROPIC_API_KEY=sk-ant-...      (required)
 #   OPENAI_API_KEY=sk-...             (optional — enables GPT-4o fallback)
+#
+# OpenBoxes (primary live data source — mock=true works out of the box):
+#   OPENBOXES_MOCK=true               (default — no server needed)
+#   OPENBOXES_MOCK=false              (connect to live OpenBoxes instance)
+#   OPENBOXES_URL=https://demo.openboxes.com/openboxes
+#   OPENBOXES_USERNAME=OPENBOXES_USERNAME
+#   OPENBOXES_PASSWORD=OPENBOXES_PASSWORD
 
 docker compose up --build -d
 
 # Wait ~60 s for all services to become healthy
 docker compose ps
 
-# Seed the database and download source data
+# Seed the database with initial supplier/constraint data
 docker exec supply-chain-api python scripts/seed_db.py
-docker exec supply-chain-api python scripts/download_supply_chain_data.py
+
+# Start the OpenBoxes connector (primary data stream into Kafka)
+docker exec supply-chain-producer python ingestion/openboxes_connector.py &
+
+# Optional: also load CSV-based historical dataset as supplementary data
+# docker exec supply-chain-api python scripts/download_supply_chain_data.py
 ```
 
 | Service | URL | Credentials |
@@ -131,7 +146,7 @@ docker exec supply-chain-api python scripts/download_supply_chain_data.py
 
 | Layer | Technology |
 |---|---|
-| Ingestion | Kafka, kafka-python, JSON Schema validation |
+| Ingestion | OpenBoxes connector (primary), Kafka, kafka-python, JSON Schema validation |
 | Lakehouse | Delta Lake, Parquet (partitioned by date), MinIO |
 | Transform | dbt (incremental models, dbt-expectations) |
 | Orchestration | Dagster 1.12+ (medallion assets, freshness policies, self-healing sensor) |
@@ -167,19 +182,28 @@ docker exec supply-chain-api python scripts/download_supply_chain_data.py
 | **Neo4j-style Network Graph** | Force-directed SVG simulation — Coulomb repulsion, spring edges, center gravity, alpha cooling. Dark background (#0f172a), glowing nodes (indigo/sky/emerald), arrow markers, hover highlighting. Pure JS (no D3). | `dashboard/components/SupplyChainGraph.tsx` |
 | **Supplier Scorecard — Dual Y-axis** | Fixed chart: `ComposedChart` with left axis (0–100%) for On-Time % `Area` and right axis for `Bar` (Deviations, red) + dashed `Area` (Avg Delay, amber). Custom tooltip with TypeScript types. | `dashboard/components/SupplierScorecard.tsx` |
 
-### OpenBoxes Connector (v8.0)
+### OpenBoxes — Primary Data Source
 
-`ingestion/openboxes_connector.py` bridges [OpenBoxes](https://openboxes.com) (free, open-source WMS/SCM) to the pipeline. No API key, no payment required.
+`ingestion/openboxes_connector.py` is the **main ingestion path**. It polls [OpenBoxes](https://openboxes.com) (free, open-source WMS/SCM), flattens nested PO JSON, normalises field names via the ontology layer, and streams `OrderEvent` objects into Kafka. No paid API key required.
 
-| Mode | How | Config |
+| Mode | How to use | When |
 |---|---|---|
-| **Mock** (default) | Generates realistic OpenBoxes-formatted POs locally — no server needed | `OPENBOXES_MOCK=true` |
-| **Live — Public Demo** | Polls `demo.openboxes.com` (free, always up, `admin/password`) | `OPENBOXES_MOCK=false` |
-| **Live — Self-hosted** | Polls your own OpenBoxes instance | `OPENBOXES_URL=http://your-host:8080/openboxes` |
+| **Mock** (default) | Generates realistic OpenBoxes-formatted POs locally — no server needed | Development, CI, demos |
+| **Live — Public Demo** | Polls `demo.openboxes.com` (free, always up, `admin/password`) | Integration testing, client demos |
+| **Live — Self-hosted** | Polls your own OpenBoxes instance | Production deployments |
 
-Flow: `OpenBoxes PO (nested JSON)` → `_flatten_po()` → `POST /ontology/normalize` → `canonical OrderEvent` → `Kafka`
+**Full data flow:**
+```
+OpenBoxes PO (nested JSON)
+  → _flatten_po()               # normalise nested structure
+  → POST /ontology/normalize    # map 60+ ERP aliases to canonical fields
+  → canonical OrderEvent        # order_id, supplier_id, product, region, ...
+  → Kafka: supply-chain-events  # JSON-schema validated before produce
+  → pg-writer consumer          # PostgreSQL upsert + DLQ on failure
+  → Dagster medallion pipeline  # Bronze → Silver → Gold → ML
+```
 
-OpenBoxes field aliases added to `_FIELD_MAP` (60+ total): `orderNumber→order_id`, `originName→supplier_id`, `productCode→product`, `destinationName→region`, `quantityOrdered→quantity`, `unitPrice→unit_price`, `totalPrice→order_value`, `estimatedDeliveryDate→expected_delivery`, `dateReceived→actual_delivery`, `daysLate→delay_days`, `currentStockLevel→inventory_level`, and more.
+**Field mappings** (`_FIELD_MAP`, 60+ aliases): `orderNumber→order_id`, `originName→supplier_id`, `productCode→product`, `destinationName→region`, `quantityOrdered→quantity`, `unitPrice→unit_price`, `totalPrice→order_value`, `estimatedDeliveryDate→expected_delivery`, `dateReceived→actual_delivery`, `daysLate→delay_days`, `currentStockLevel→inventory_level`, and more.
 
 ```bash
 # Run standalone (mock mode — no server needed)
@@ -195,6 +219,8 @@ OPENBOXES_MOCK=false OPENBOXES_URL=http://localhost:8080/openboxes \
   OPENBOXES_USERNAME=admin OPENBOXES_PASSWORD=yourpassword \
   python ingestion/openboxes_connector.py
 ```
+
+> **Secondary / fallback:** `ingestion/producer.py --count N` produces synthetic events. `scripts/download_supply_chain_data.py` loads a CSV dataset. Use these for bulk seeding or offline ML training — OpenBoxes is the preferred operational source.
 
 ### Infrastructure
 
@@ -315,7 +341,7 @@ Full interactive docs: http://localhost:8000/docs
 ## Medallion Lakehouse Assets (Dagster)
 
 ```
-Bronze: bronze_orders               (raw CSV/Kafka → Delta + partitioned Parquet)
+Bronze: bronze_orders               (OpenBoxes/Kafka → Delta + partitioned Parquet; CSV as fallback)
 Silver: silver_orders               (validated, deduped, typed)
 Gold:   gold_orders_ai_ready        (AI-ready features + freshness policy)
         gold_deviations             (delay/stockout anomalies)
@@ -445,26 +471,52 @@ docker compose ps   # all 17 services should show "healthy" or "running"
 
 ---
 
-### Step 2 — Seed the database and load data
+### Step 2 — Seed the database
 
 ```bash
 docker exec supply-chain-api python scripts/seed_db.py
-docker exec supply-chain-api python scripts/download_supply_chain_data.py
 ```
 
-This creates orders, suppliers, ontology constraints, and historical events in PostgreSQL.
+This creates initial suppliers, ontology constraints, and historical events in PostgreSQL.
+
+> **Optional CSV supplement:** If you also want to load the historical CSV dataset as supplementary data (e.g., for ML training with a larger dataset), run:
+> ```bash
+> docker exec supply-chain-api python scripts/download_supply_chain_data.py
+> ```
 
 ---
 
-### Step 3 — Start the Kafka event stream
+### Step 3 — Start the live data stream (OpenBoxes → Kafka)
+
+OpenBoxes is the **primary data source**. It polls for real purchase orders (POs), normalises field names via the ontology layer, and streams them into Kafka.
 
 ```bash
-# Produce ~500 synthetic supply chain events to Kafka
-docker exec supply-chain-producer python ingestion/producer.py --count 500
+# Option A — Mock mode (default, no server required)
+# Generates realistic OpenBoxes-formatted POs locally
+docker exec supply-chain-producer python ingestion/openboxes_connector.py
 
-# The pg-writer consumer is already running inside the container
-# It consumes from Kafka → PostgreSQL, with DLQ on parse failure
+# Option B — Live public demo (free, always up)
+docker exec -e OPENBOXES_MOCK=false \
+  -e OPENBOXES_URL=https://demo.openboxes.com/openboxes \
+  -e OPENBOXES_USERNAME=OPENBOXES_USERNAME \
+  -e OPENBOXES_PASSWORD=OPENBOXES_PASSWORD \
+  supply-chain-producer python ingestion/openboxes_connector.py
+
+# Option C — Self-hosted OpenBoxes instance
+docker exec -e OPENBOXES_MOCK=false \
+  -e OPENBOXES_URL=http://your-host:8080/openboxes \
+  -e OPENBOXES_USERNAME=OPENBOXES_USERNAME \
+  -e OPENBOXES_PASSWORD=OPENBOXES_PASSWORD \
+  supply-chain-producer python ingestion/openboxes_connector.py
 ```
+
+**Data flow:** `OpenBoxes PO (nested JSON)` → `_flatten_po()` → `POST /ontology/normalize` → `canonical OrderEvent` → `Kafka topic: supply-chain-events` → `pg-writer → PostgreSQL`
+
+> **Fallback / secondary source:** If you prefer to produce synthetic Kafka events without OpenBoxes:
+> ```bash
+> docker exec supply-chain-producer python ingestion/producer.py --count 500
+> ```
+> The pg-writer consumer is always running — it consumes from Kafka → PostgreSQL with DLQ on parse failure.
 
 ---
 
@@ -475,7 +527,7 @@ Open **Dagster UI** at http://localhost:3001
 1. Click **Assets** in the left sidebar
 2. Click **Materialize all** to run the full Bronze → Silver → Gold pipeline
 3. Assets in order:
-   - `bronze_orders` — raw CSV/Kafka → Delta + partitioned Parquet
+   - `bronze_orders` — raw OpenBoxes/Kafka → Delta + partitioned Parquet
    - `silver_orders` — validated, deduped, typed
    - `gold_orders_ai_ready` — AI-ready features
    - `gold_deviations` — delay/stockout anomalies
@@ -833,20 +885,106 @@ Migration files in `alembic/versions/`:
 
 ## Testing
 
+### Unit + Integration Tests
+
 ```bash
 # Run all tests (no Docker required)
-pytest tests/ -v -m "not docker_only"
-# 70 collected — 62 passed, 8 skipped (kafka/dagster/schema-registry tests skip without Docker)
+pytest tests/ -q
+# Result: 67 passed, 3 skipped
+# Skipped: Kafka broker tests, Dagster materialisation tests (require full Docker stack — pass there)
 
-# Run a specific test file
+# Run a specific file
 pytest tests/test_api_health.py -v
 pytest tests/test_ml_scoring.py -v
+pytest tests/test_openboxes_connector.py -v
 
 # Run with coverage
-pytest tests/ --cov=api --cov=ingestion --cov=reasoning -m "not docker_only"
+pytest tests/ --cov=api --cov=ingestion --cov=reasoning
 ```
 
+**Test coverage by area:**
+
+| Area | File | Notes |
+|---|---|---|
+| API health + endpoints | `test_api_health.py` | All routes, status codes, response shapes |
+| Orders API | `test_orders.py` | Pagination, filters, delay predictions, timeline |
+| Suppliers API | `test_suppliers.py` | Risk matrix, cost analytics, benchmarks, policy CRUD |
+| Alerts API | `test_alerts.py` | Severity filter, trend, financial impact enrichment |
+| ML scoring | `test_ml_scoring.py` | XGBoost predict, heuristic fallback |
+| AI reasoning | `test_ai_reasoning.py` | Claude analysis, quality scoring, multi-model fallback |
+| OpenBoxes connector | `test_openboxes_connector.py` | Mock mode, field flattening, ontology normalisation |
+| Ontology | `test_ontology.py` | Field mapping, constraint validation, negative value guard |
+| Action executor | `test_action_executor.py` | Confidence gate, policy gate, REROUTE/EXPEDITE/ESCALATE |
+| Event sourcing | `test_events.py` | Append-only log, point-in-time replay |
+| Kafka / Dagster | _(3 skipped locally)_ | Pass inside Docker stack |
+
 CI runs on every push to `main` and `ujjwal` branches via GitHub Actions (`.github/workflows/ci.yml`).
+
+---
+
+### End-to-End Test Checklist
+
+After `docker compose up --build -d`, run this sequence to verify the full stack:
+
+```bash
+# 1. Stack health
+curl http://localhost:8000/health
+
+# 2. Seed + ingest via OpenBoxes (primary source)
+docker exec supply-chain-api python scripts/seed_db.py
+docker exec supply-chain-producer python ingestion/openboxes_connector.py &
+# Wait 10s, then verify orders landed:
+curl "http://localhost:8000/orders?limit=5"
+
+# 3. Ontology normalisation
+curl -X POST http://localhost:8000/ontology/normalize \
+  -H "Content-Type: application/json" \
+  -d '{"po_number":"ORD-E2E","vendor":"SUP-001","sku":"WIDGET-A","qty":100,"eta":"2026-06-01"}'
+# Expect: normalized.order_id="ORD-E2E", normalized.supplier_id="SUP-001"
+
+# 4. AI deviation analysis (multi-model)
+curl -X POST http://localhost:8000/ai/analyze-scored \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"Supplier SUP-001 has a 40% delay rate this week. Recommend actions."}'
+# Expect: quality_score > 0.4, model_used="claude-sonnet-4-6"
+
+# 5. ML delay prediction
+curl -X POST http://localhost:8000/ml/predict \
+  -H "Content-Type: application/json" \
+  -d '{"supplier_id":"SUP-001","region":"APAC","quantity":500,"unit_price":45,"order_value":22500,"inventory_level":60}'
+# Expect: is_delayed (bool), probability (float), model_version
+
+# 6. Financial impact scoring
+curl "http://localhost:8000/alerts/enriched?limit=5"
+# Expect: cost_impact_usd, risk_tier on each alert
+
+# 7. Glass-box supplier policy
+curl http://localhost:8000/suppliers/SUP-001/policy
+curl -X PUT http://localhost:8000/suppliers/SUP-001/policy \
+  -H "Content-Type: application/json" \
+  -d '{"require_approval_at_severity":"HIGH","require_approval_above_value":25000}'
+
+# 8. Dagster medallion pipeline
+docker exec supply-chain-dagster-webserver \
+  dagster asset materialize --select "*" -m pipeline.definitions_medallion
+# Expect: all assets PASS
+
+# 9. dbt transforms (run inside dagster container)
+docker exec supply-chain-dagster-webserver \
+  dbt deps --profiles-dir /opt/dagster/app/transforms --project-dir /opt/dagster/app/transforms
+docker exec supply-chain-dagster-webserver \
+  dbt run --profiles-dir /opt/dagster/app/transforms --project-dir /opt/dagster/app/transforms
+# Expect: PASS=5 WARN=0 ERROR=0
+
+# 10. Dashboard pages
+open http://localhost:3000           # Control Tower
+open http://localhost:3000/alerts    # Alerts
+open http://localhost:3000/orders    # Orders
+open http://localhost:3000/analytics # Delay predictions + cost analytics
+open http://localhost:3000/network   # Network graph
+```
+
+**Expected result:** All 10 checks pass with no errors.
 
 ---
 
@@ -880,7 +1018,7 @@ supply-chain-os/
 ├── contracts/                     # Soda Core data quality contracts
 ├── dashboard/                     # Next.js 14 App Router (9 pages)
 ├── docker/                        # Dockerfiles + Grafana provisioning
-├── ingestion/                     # Kafka producer, pg-writer, batch_loader, openboxes_connector
+├── ingestion/                     # openboxes_connector (primary), Kafka producer, pg-writer, batch_loader
 ├── integrations/
 │   └── action_executor.py         # Autonomous action execution — confidence gate + per-supplier policy gate
 ├── pipeline/                      # Dagster: medallion assets, sensors, ML, Graph ML

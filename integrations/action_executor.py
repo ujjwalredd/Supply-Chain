@@ -87,7 +87,10 @@ class ActionExecutor:
                         )
                         return False
         except Exception as e:
-            logger.debug("Policy check skipped (non-blocking): %s", e)
+            logger.warning(
+                "Policy check failed for action id=%s — allowing execution (fail-open): %s",
+                action.id, e,
+            )
         return True
 
     def execute(self, action) -> bool:

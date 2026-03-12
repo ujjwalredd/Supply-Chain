@@ -227,6 +227,19 @@ async def create_constraint(
     if entity_type not in _VALID_TYPES:
         raise HTTPException(status_code=422, detail=f"entity_type must be one of {_VALID_TYPES}")
 
+    # Semantic validation: some constraint types require non-negative values
+    _NON_NEGATIVE_TYPES = {"MAX_DELAY_DAYS", "MAX_SPEND_USD", "MIN_TRUST_SCORE", "MIN_INVENTORY"}
+    if constraint_type.upper() in _NON_NEGATIVE_TYPES and value < 0:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{constraint_type.upper()} requires a non-negative value, got {value}",
+        )
+    if constraint_type.upper() == "MIN_TRUST_SCORE" and value > 1.0:
+        raise HTTPException(
+            status_code=422,
+            detail=f"MIN_TRUST_SCORE must be between 0.0 and 1.0, got {value}",
+        )
+
     constraint = OntologyConstraint(
         entity_id=entity_id,
         entity_type=entity_type,
