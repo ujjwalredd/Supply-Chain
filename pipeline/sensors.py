@@ -1,10 +1,14 @@
 """Dagster sensors that trigger on new Kafka messages."""
 
+import json
 import logging
 import os
+import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from dagster import (
+    RunRequest,
     SensorEvaluationContext,
     SensorResult,
     SkipReason,
@@ -22,8 +26,6 @@ KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9093")
 def new_kafka_messages_sensor(context: SensorEvaluationContext) -> Optional[SensorResult]:
     """Trigger stream processing when new messages appear in Kafka."""
     try:
-        from dagster import RunRequest
-
         from kafka import KafkaConsumer
 
         consumer = KafkaConsumer(
@@ -45,9 +47,7 @@ def new_kafka_messages_sensor(context: SensorEvaluationContext) -> Optional[Sens
 
 # ── Self-Healing Pipeline Sensor ──────────────────────────────────────────────
 
-from dagster import RunRequest
-import json
-from pathlib import Path as _Path
+from pathlib import Path
 
 _FAILURE_COUNTS: dict[str, int] = {}
 _MAX_FAILURES = 3
@@ -63,10 +63,7 @@ def self_healing_sensor(context: SensorEvaluationContext):
     - Falls back to last known gold snapshot if silver data is unavailable
     - Logs healing actions to a JSON audit file
     """
-    import os as _os
-    from dagster import DagsterEventType
-
-    audit_log_path = _Path(_os.getenv("GOLD_PATH", "data/gold")) / "_healing_audit.json"
+    audit_log_path = Path(os.getenv("GOLD_PATH", "data/gold")) / "_healing_audit.json"
 
     try:
         # Check recent run statuses
@@ -92,7 +89,7 @@ def self_healing_sensor(context: SensorEvaluationContext):
 
         if failure_assets:
             audit_entry = {
-                "healed_at": __import__("datetime").datetime.utcnow().isoformat(),
+                "healed_at": datetime.now(timezone.utc).isoformat(),
                 "triggered_for": list(failure_assets),
                 "action": "auto_rematerialize",
             }
@@ -114,7 +111,7 @@ def self_healing_sensor(context: SensorEvaluationContext):
             for a in failure_assets:
                 _FAILURE_COUNTS[a] = 0
 
-            return RunRequest(run_key=f"heal-{__import__('uuid').uuid4().hex[:8]}")
+            return RunRequest(run_key=f"heal-{uuid.uuid4().hex[:8]}")
 
         return SkipReason(f"No failures requiring healing. Monitored: {list(_FAILURE_COUNTS)}")
 

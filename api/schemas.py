@@ -75,6 +75,25 @@ class DeviationRead(DeviationBase):
     model_config = {"from_attributes": True}
 
 
+class SupplierPolicyRead(BaseModel):
+    supplier_id: str
+    require_approval_at_severity: str
+    require_approval_above_value: float
+    max_auto_actions_per_day: int
+    min_confidence: float
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SupplierPolicyUpsert(BaseModel):
+    require_approval_at_severity: str = "CRITICAL"   # CRITICAL|HIGH|MEDIUM|LOW
+    require_approval_above_value: float = 50000.0
+    max_auto_actions_per_day: int = 10
+    min_confidence: float = 0.70
+
+
 class OntologyConstraintBase(BaseModel):
     entity_id: str
     entity_type: str

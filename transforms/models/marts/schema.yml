@@ -5,7 +5,8 @@ models:
     description: "Fact table of all shipments with delay and risk metrics"
     tests:
       - dbt_expectations.expect_table_row_count_to_be_between:
-          min_value: 0
+          arguments:
+            min_value: 0
     columns:
       - name: order_id
         description: "Unique order identifier"
@@ -25,25 +26,29 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['PENDING', 'IN_TRANSIT', 'DELIVERED', 'DELAYED', 'CANCELLED']
+              arguments:
+                values: ['PENDING', 'IN_TRANSIT', 'DELIVERED', 'DELAYED', 'CANCELLED']
       - name: order_value
         description: "Order value in USD"
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
+              arguments:
+                min_value: 0
       - name: delay_days
         description: "Number of days delayed (0 if on time)"
         tests:
           - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 365
+              arguments:
+                min_value: 0
+                max_value: 365
       - name: calculated_delay_days
         description: "Computed delay days derived from actual vs expected delivery dates"
         tests:
           - dbt_expectations.expect_column_values_to_be_between:
-              min_value: -30
-              max_value: 365
+              arguments:
+                min_value: -30
+                max_value: 365
       - name: region
         description: "Geographic region of the order"
       - name: quantity
@@ -80,8 +85,9 @@ models:
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 1
+              arguments:
+                min_value: 0
+                max_value: 1
       - name: total_orders
         description: "Total order count from source supplier data"
         tests:
@@ -98,8 +104,9 @@ models:
         description: "Percentage of orders that were delayed (0-100)"
         tests:
           - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 100
+              arguments:
+                min_value: 0
+                max_value: 100
 
   - name: agg_control_tower
     description: "Aggregated control tower KPI metrics for the dashboard"

@@ -4,6 +4,7 @@ Data lineage endpoints — query the lineage_events table.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
@@ -85,7 +86,6 @@ async def get_lineage(
             job = e["job_name"]
             graph["nodes"][job] = {"type": "job"}
             try:
-                import json
                 inputs = json.loads(e.get("inputs") or "[]")
             except Exception:
                 inputs = []

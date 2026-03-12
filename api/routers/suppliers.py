@@ -9,8 +9,8 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_db
-from api.models import Deviation, Order, Supplier
-from api.schemas import SupplierRead, SupplierRisk
+from api.models import Deviation, Order, Supplier, SupplierPolicy
+from api.schemas import SupplierPolicyRead, SupplierPolicyUpsert, SupplierRead, SupplierRisk
 
 logger = logging.getLogger(__name__)
 
@@ -286,6 +286,54 @@ async def supplier_scorecard(
         },
         "weeks": weekly_data,
     }
+
+
+@router.get("/{supplier_id}/policy", response_model=SupplierPolicyRead)
+async def get_supplier_policy(supplier_id: str, db: AsyncSession = Depends(get_db)):
+    """Return the Glass-Box autonomy policy for a supplier. Returns defaults if no policy set."""
+    result = await db.execute(select(SupplierPolicy).where(SupplierPolicy.supplier_id == supplier_id))
+    policy = result.scalar_one_or_none()
+    if not policy:
+        # Auto-create default policy on first access
+        policy = SupplierPolicy(supplier_id=supplier_id)
+        db.add(policy)
+        await db.commit()
+        await db.refresh(policy)
+    return SupplierPolicyRead.model_validate(policy)
+
+
+@router.put("/{supplier_id}/policy", response_model=SupplierPolicyRead)
+async def upsert_supplier_policy(
+    supplier_id: str,
+    body: SupplierPolicyUpsert,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create or update the Glass-Box autonomy policy for a supplier."""
+    _SEV_ORDER = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
+    if body.require_approval_at_severity not in _SEV_ORDER:
+        raise HTTPException(status_code=422, detail="require_approval_at_severity must be CRITICAL|HIGH|MEDIUM|LOW")
+    if not (0.0 <= body.min_confidence <= 1.0):
+        raise HTTPException(status_code=422, detail="min_confidence must be between 0.0 and 1.0")
+
+    result = await db.execute(select(SupplierPolicy).where(SupplierPolicy.supplier_id == supplier_id))
+    policy = result.scalar_one_or_none()
+    if policy:
+        policy.require_approval_at_severity = body.require_approval_at_severity
+        policy.require_approval_above_value = body.require_approval_above_value
+        policy.max_auto_actions_per_day = body.max_auto_actions_per_day
+        policy.min_confidence = body.min_confidence
+    else:
+        policy = SupplierPolicy(
+            supplier_id=supplier_id,
+            require_approval_at_severity=body.require_approval_at_severity,
+            require_approval_above_value=body.require_approval_above_value,
+            max_auto_actions_per_day=body.max_auto_actions_per_day,
+            min_confidence=body.min_confidence,
+        )
+        db.add(policy)
+    await db.commit()
+    await db.refresh(policy)
+    return SupplierPolicyRead.model_validate(policy)
 
 
 @router.get("/{supplier_id}", response_model=SupplierRead)
