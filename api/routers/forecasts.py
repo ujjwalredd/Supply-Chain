@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 logger = logging.getLogger(__name__)
 
@@ -144,4 +144,4 @@ async def get_demand_forecast():
         }
     except Exception as exc:
         logger.error("Demand forecast generation failed: %s", exc)
-        return {"forecast": [], "periods": 0, "generated_at": generated_at, "error": str(exc)}
+        raise HTTPException(status_code=503, detail=f"Demand forecast unavailable: {exc}")

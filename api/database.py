@@ -13,10 +13,20 @@ from api.models import Base
 
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://supplychain:supplychain_secret@localhost:5432/supply_chain_db",
-)
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    # Build from individual env vars — no hardcoded fallback credentials
+    _pg_user = os.getenv("POSTGRES_USER", "supplychain")
+    _pg_pass = os.getenv("POSTGRES_PASSWORD", "")
+    _pg_host = os.getenv("POSTGRES_HOST", "localhost")
+    _pg_port = os.getenv("POSTGRES_PORT", "5432")
+    _pg_db   = os.getenv("POSTGRES_DB", "supply_chain_db")
+    if not _pg_pass:
+        raise RuntimeError(
+            "Database credentials not configured. "
+            "Set DATABASE_URL or POSTGRES_PASSWORD in your environment / .env file."
+        )
+    DATABASE_URL = f"postgresql://{_pg_user}:{_pg_pass}@{_pg_host}:{_pg_port}/{_pg_db}"
 ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 # Connection pool settings from environment (with safe defaults)

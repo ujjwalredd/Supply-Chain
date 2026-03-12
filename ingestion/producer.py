@@ -133,7 +133,14 @@ def _cleanup_supplier_state() -> None:
     for k in normal_keys:
         _supplier_state.pop(k, None)
         _supplier_anomaly_count.pop(k, None)
-    # If still over limit, remove oldest by insertion order
+    # If still over limit, evict oldest DEGRADING entries (lower risk than CRITICAL)
+    if len(_supplier_state) > _MAX_SUPPLIER_STATE_ENTRIES:
+        degrading_keys = [k for k, v in _supplier_state.items() if v == "DEGRADING"]
+        overflow = len(_supplier_state) - _MAX_SUPPLIER_STATE_ENTRIES
+        for k in degrading_keys[:overflow]:
+            _supplier_state.pop(k, None)
+            _supplier_anomaly_count.pop(k, None)
+    # Last resort: evict oldest CRITICAL entries by insertion order
     overflow = len(_supplier_state) - _MAX_SUPPLIER_STATE_ENTRIES
     if overflow > 0:
         for k in list(_supplier_state.keys())[:overflow]:

@@ -143,12 +143,15 @@ async def delay_predictions(
     """
     now = datetime.now(timezone.utc)
 
+    # Fetch up to 5× the requested limit so scoring has enough candidates
+    # after min_probability filtering; capped at 500 to prevent full-table scans.
+    fetch_limit = min(limit * 5, 500)
     result = await db.execute(
         select(Order, Supplier)
         .join(Supplier, Order.supplier_id == Supplier.supplier_id, isouter=True)
         .where(Order.status.not_in(["DELIVERED", "CANCELLED"]))
         .where(Order.expected_delivery.isnot(None))
-        .limit(200)
+        .limit(fetch_limit)
     )
     rows = result.all()
 
