@@ -1,73 +1,59 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Grafana Alloy — Supply Chain AI OS
-// Ships container logs → Loki  |  Scrapes metrics → Prometheus/Grafana
-//
-// Supports two backends (select via env):
-//   LOCAL  — Loki running in docker-compose (default, free, zero config)
-//   CLOUD  — Grafana Cloud free tier (set GRAFANA_CLOUD_LOKI_URL + credentials)
+// Grafana Alloy v1.x — Supply Chain AI OS
+// Collects container logs → Loki  |  Scrapes metrics → Prometheus
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── 1. Discover Docker container logs via the Docker socket ──────────────────
-discovery.docker "supply_chain_containers" {
+// ── 1. Discover Docker containers by label ────────────────────────────────────
+discovery.docker "containers" {
   host = "unix:///var/run/docker.sock"
-
-  filter {
-    name   = "name"
-    values = ["supply-chain-*"]
-  }
 }
 
-// Relabel: keep container name, strip noisy labels, add service tag
-discovery.relabel "supply_chain_containers" {
-  targets = discovery.docker.supply_chain_containers.targets
+// Keep only supply-chain-* containers; relabel useful metadata
+discovery.relabel "supply_chain" {
+  targets = discovery.docker.containers.targets
 
+  // Drop containers that don't match our project prefix
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/supply-chain-.+"
+    action        = "keep"
+  }
+
+  // Expose container name as a label (strip leading slash)
   rule {
     source_labels = ["__meta_docker_container_name"]
     regex         = "/(.*)"
     target_label  = "container"
   }
 
+  // Expose the compose service name
   rule {
     source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
     target_label  = "service"
   }
-
-  rule {
-    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
-    target_label  = "project"
-  }
-
-  rule {
-    target_label = "env"
-    replacement  = coalesce(env("APP_ENV"), "local")
-  }
 }
 
-// ── 2. Scrape container logs ─────────────────────────────────────────────────
-loki.source.docker "supply_chain_logs" {
-  host          = "unix:///var/run/docker.sock"
-  targets       = discovery.relabel.supply_chain_containers.output
-  forward_to    = [loki.process.supply_chain_logs.receiver]
-
-  // Re-read logs from the last 1h on startup (avoids replaying entire history)
-  refresh_interval = "5s"
+// ── 2. Collect container stdout/stderr via Docker socket ──────────────────────
+loki.source.docker "supply_chain" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.supply_chain.output
+  forward_to = [loki.process.supply_chain.receiver]
 }
 
-// ── 3. Process / enrich log lines ────────────────────────────────────────────
-loki.process "supply_chain_logs" {
-  forward_to = [loki.write.default.receiver]
+// ── 3. Parse and enrich log lines ─────────────────────────────────────────────
+loki.process "supply_chain" {
+  forward_to = [loki.write.local.receiver]
 
-  // Parse JSON log lines emitted by FastAPI/uvicorn
+  // Try to parse JSON log lines (FastAPI/uvicorn structured logs)
   stage.json {
     expressions = {
-      level      = "levelname",
-      logger     = "name",
-      message    = "message",
-      request_id = "request_id",
+      level   = "levelname",
+      logger  = "name",
+      message = "message",
     }
   }
 
-  // If level is present, promote it to a Loki label for fast filtering
+  // Promote level and service to Loki labels for fast filtering
   stage.labels {
     values = {
       level  = "",
@@ -75,83 +61,34 @@ loki.process "supply_chain_logs" {
     }
   }
 
-  // Drop DEBUG lines in production to reduce log volume
-  stage.drop {
-    source    = "level"
-    value     = "DEBUG"
-    drop_counter_reason = "debug_dropped"
-  }
-
-  // Add static label: project
+  // Tag every log line with the project name
   stage.static_labels {
     values = {
       project = "supply-chain-os",
     }
   }
-
-  // Timestamp from log record (fall back to ingest time if missing)
-  stage.timestamp {
-    source = "time"
-    format = "RFC3339Nano"
-    fallback_formats = ["RFC3339", "2006-01-02T15:04:05.000Z"]
-  }
 }
 
-// ── 4. Loki write endpoint ────────────────────────────────────────────────────
-// LOCAL mode: writes to the Loki container in docker-compose
-// CLOUD mode: override LOKI_URL + add basic_auth block below
-loki.write "default" {
+// ── 4. Write logs to local Loki ───────────────────────────────────────────────
+loki.write "local" {
   endpoint {
-    url = coalesce(env("LOKI_URL"), "http://loki:3100/loki/api/v1/push")
-
-    // Uncomment for Grafana Cloud free tier:
-    // basic_auth {
-    //   username = env("GRAFANA_CLOUD_LOKI_USER")
-    //   password = env("GRAFANA_CLOUD_LOKI_API_KEY")
-    // }
-  }
-
-  // Batch settings — keeps memory low on Oracle free VM
-  batch_size  = 102400   // 100 KiB
-  batch_wait  = "5s"
-
-  external_labels = {
-    host = env("HOSTNAME"),
-    env  = coalesce(env("APP_ENV"), "local"),
+    url = env("LOKI_URL")
   }
 }
 
-// ── 5. Prometheus metrics scrape — FastAPI /metrics ──────────────────────────
-prometheus.scrape "fastapi_metrics" {
+// ── 5. Scrape FastAPI Prometheus metrics ──────────────────────────────────────
+prometheus.scrape "fastapi" {
   targets = [
     {"__address__" = "fastapi:8000", "job" = "fastapi"},
   ]
   metrics_path    = "/metrics"
   scrape_interval = "15s"
-  forward_to      = [prometheus.remote_write.grafana.receiver]
+  forward_to      = [prometheus.remote_write.local.receiver]
 }
 
-// Prometheus metrics scrape — Kafka JMX exporter (if enabled)
-prometheus.scrape "kafka_metrics" {
-  targets = [
-    {"__address__" = "kafka:9404", "job" = "kafka"},
-  ]
-  metrics_path    = "/metrics"
-  scrape_interval = "30s"
-  forward_to      = [prometheus.remote_write.grafana.receiver]
-}
-
-// ── 6. Prometheus remote write ────────────────────────────────────────────────
-// LOCAL: writes to Prometheus in docker-compose (port 9090)
-// CLOUD: set PROMETHEUS_REMOTE_WRITE_URL + credentials for Grafana Cloud Mimir
-prometheus.remote_write "grafana" {
+// ── 6. Write metrics to local Prometheus ─────────────────────────────────────
+prometheus.remote_write "local" {
   endpoint {
-    url = coalesce(env("PROMETHEUS_REMOTE_WRITE_URL"), "http://prometheus:9090/api/v1/write")
-
-    // Uncomment for Grafana Cloud Mimir:
-    // basic_auth {
-    //   username = env("GRAFANA_CLOUD_METRICS_USER")
-    //   password = env("GRAFANA_CLOUD_METRICS_API_KEY")
-    // }
+    url = env("PROMETHEUS_REMOTE_WRITE_URL")
   }
 }

@@ -168,3 +168,33 @@ services:
         limits:
           memory: 512m
     restart: always
+
+  # ── Loki — loopback only in production ────────────────────────────
+  loki:
+    ports:
+      - "127.0.0.1:3100:3100"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    restart: always
+
+  # ── Prometheus — loopback only in production ───────────────────────
+  prometheus:
+    ports:
+      - "127.0.0.1:9090:9090"
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    restart: always
+
+  # ── Alloy — loopback only in production ───────────────────────────
+  alloy:
+    ports:
+      - "127.0.0.1:12345:12345"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    restart: always
