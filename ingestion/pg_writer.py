@@ -582,9 +582,15 @@ def _trigger_ai_background(deviation: dict, engine_factory) -> None:
         logger.warning("Background AI analysis failed for %s: %s", deviation.get("deviation_id"), e)
         # Guarantee an ESCALATE action is always created even when AI is unavailable,
         # so operators are notified and no CRITICAL deviation falls through silently.
+        # Open a FRESH session — `session` may be undefined (import/engine failure) or
+        # already closed/rolled-back (exception inside the with-block above).
         try:
-            with session.begin_nested():
-                fallback = PendingAction(
+            from api.models import PendingAction as _PendingAction
+            from sqlalchemy.orm import sessionmaker as _sessionmaker
+            _engine = engine_factory()
+            _FallbackSession = _sessionmaker(bind=_engine)
+            with _FallbackSession() as fallback_session:
+                fallback = _PendingAction(
                     deviation_id=deviation["deviation_id"],
                     action_type="ESCALATE",
                     description=(
@@ -600,8 +606,8 @@ def _trigger_ai_background(deviation: dict, engine_factory) -> None:
                     },
                     status="PENDING",
                 )
-                session.add(fallback)
-            session.commit()
+                fallback_session.add(fallback)
+                fallback_session.commit()
             logger.info("Fallback ESCALATE action created for deviation %s", deviation.get("deviation_id"))
         except Exception as fallback_err:
             logger.error("Failed to create fallback action for deviation %s: %s", deviation.get("deviation_id"), fallback_err)
