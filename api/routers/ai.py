@@ -5,9 +5,14 @@ import json
 import logging
 import os
 import time
+from collections import defaultdict
 from typing import Any, Optional
 
+<<<<<<< HEAD
 from fastapi import APIRouter, Depends, HTTPException, Query
+=======
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+>>>>>>> e36d8295c1fccc313f876dd3ce97f061b3650fb9
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, or_, select
@@ -28,6 +33,28 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+<<<<<<< HEAD
+=======
+# ── In-process rate limiter for AI endpoints ──────────────────────────────────
+# Configurable via AI_RATE_LIMIT_PER_MIN env var (default: 30 req/min/IP).
+# For multi-worker deployments, swap this for Redis-backed fastapi-limiter.
+_AI_RATE_LIMIT_STORE: dict[str, list[float]] = defaultdict(list)
+_AI_RATE_WINDOW = 60.0
+_AI_RATE_MAX = int(os.getenv("AI_RATE_LIMIT_PER_MIN", "30"))
+
+
+def _check_ai_rate_limit(client_ip: str) -> bool:
+    """Return True if within rate limit, False if exceeded."""
+    now = time.monotonic()
+    cutoff = now - _AI_RATE_WINDOW
+    calls = _AI_RATE_LIMIT_STORE[client_ip]
+    calls[:] = [t for t in calls if t > cutoff]
+    if len(calls) >= _AI_RATE_MAX:
+        return False
+    calls.append(now)
+    return True
+
+>>>>>>> e36d8295c1fccc313f876dd3ce97f061b3650fb9
 _SSE_HEADERS = {
     "Cache-Control": "no-cache",
     "Connection": "keep-alive",
@@ -291,6 +318,7 @@ async def whatif_stream(
                 OntologyConstraint.entity_id == (body.target_supplier_id or ""),
             )
         ).limit(20)
+<<<<<<< HEAD
     )
     constraints = [_dict_from_row(c) for c in result3.scalars().all()]
 
@@ -306,6 +334,23 @@ async def whatif_stream(
         .order_by(func.count().desc())
         .limit(5)
     )
+=======
+    )
+    constraints = [_dict_from_row(c) for c in result3.scalars().all()]
+
+    # Compute current order volume for this supplier
+    vol_result = await db.execute(
+        select(
+            Order.product,
+            func.count().label("order_count"),
+            func.sum(Order.order_value).label("total_value"),
+        )
+        .where(Order.supplier_id == body.supplier_id)
+        .group_by(Order.product)
+        .order_by(func.count().desc())
+        .limit(5)
+    )
+>>>>>>> e36d8295c1fccc313f876dd3ce97f061b3650fb9
     product_breakdown = [
         {"product": r.product, "orders": r.order_count, "total_value": float(r.total_value or 0)}
         for r in vol_result.all()
@@ -347,9 +392,17 @@ async def whatif_stream(
 @router.post("/analyze", response_model=dict)
 async def analyze_structured_endpoint(
     body: AnalyzeBody,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Structured AI analysis with network context + computed financial impact. Cached 1h."""
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_ai_rate_limit(client_ip):
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded: max {_AI_RATE_MAX} requests/minute per IP",
+        )
+
     cache_key = f"ai:analysis:{body.deviation_id}:{body.deviation_type}:{body.severity}"
 
     redis = await _get_redis_cache()
@@ -391,7 +444,14 @@ async def analyze_structured_endpoint(
         return result_dict
     finally:
         if redis:
+<<<<<<< HEAD
             await redis.aclose()
+=======
+            try:
+                await asyncio.wait_for(redis.aclose(), timeout=1.0)
+            except Exception:
+                pass
+>>>>>>> e36d8295c1fccc313f876dd3ce97f061b3650fb9
 
 
 class ScoredAnalyzeBody(BaseModel):
@@ -427,7 +487,14 @@ async def analyze_scored_endpoint(body: ScoredAnalyzeBody):
         "clear, actionable recommendations. Write in plain prose with no markdown headers or emojis."
     )
 
+<<<<<<< HEAD
     result = analyze_with_quality_scoring(
+=======
+    # analyze_with_quality_scoring is a blocking sync call (Claude + optional GPT-4o).
+    # Run in thread pool to avoid blocking the async event loop.
+    result = await asyncio.to_thread(
+        analyze_with_quality_scoring,
+>>>>>>> e36d8295c1fccc313f876dd3ce97f061b3650fb9
         prompt=body.prompt,
         system=system,
         deviation_id=body.deviation_id,

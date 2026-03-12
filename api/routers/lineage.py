@@ -19,6 +19,10 @@ router = APIRouter(prefix="/lineage", tags=["lineage"])
 async def get_lineage(
     job_name: str | None = Query(None, description="Filter by asset/job name"),
     limit: int = Query(100, le=500),
+<<<<<<< HEAD
+=======
+    offset: int = Query(0, ge=0),
+>>>>>>> e36d8295c1fccc313f876dd3ce97f061b3650fb9
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Return recent lineage events from the lineage_events table."""
@@ -36,18 +40,31 @@ async def get_lineage(
                 text(
                     "SELECT run_id, job_name, event_type, inputs, output, namespace, "
                     "started_at, ended_at, metadata, created_at "
+<<<<<<< HEAD
                     "FROM lineage_events WHERE job_name = :job ORDER BY created_at DESC LIMIT :limit"
                 ),
                 {"job": job_name, "limit": limit},
+=======
+                    "FROM lineage_events WHERE job_name = :job ORDER BY created_at DESC "
+                    "LIMIT :limit OFFSET :offset"
+                ),
+                {"job": job_name, "limit": limit, "offset": offset},
+>>>>>>> e36d8295c1fccc313f876dd3ce97f061b3650fb9
             )
         else:
             result = await db.execute(
                 text(
                     "SELECT run_id, job_name, event_type, inputs, output, namespace, "
                     "started_at, ended_at, metadata, created_at "
+<<<<<<< HEAD
                     "FROM lineage_events ORDER BY created_at DESC LIMIT :limit"
                 ),
                 {"limit": limit},
+=======
+                    "FROM lineage_events ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
+                ),
+                {"limit": limit, "offset": offset},
+>>>>>>> e36d8295c1fccc313f876dd3ce97f061b3650fb9
             )
 
         rows = result.mappings().all()
