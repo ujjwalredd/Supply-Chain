@@ -555,6 +555,31 @@ def _trigger_ai_background(deviation: dict, engine_factory) -> None:
             )
     except Exception as e:
         logger.warning("Background AI analysis failed for %s: %s", deviation.get("deviation_id"), e)
+        # Guarantee an ESCALATE action is always created even when AI is unavailable,
+        # so operators are notified and no CRITICAL deviation falls through silently.
+        try:
+            with session.begin_nested():
+                fallback = PendingAction(
+                    deviation_id=deviation["deviation_id"],
+                    action_type="ESCALATE",
+                    description=(
+                        f"[AI unavailable — human review required] "
+                        f"CRITICAL deviation detected: {deviation.get('type', 'UNKNOWN')} "
+                        f"severity={deviation.get('severity', 'CRITICAL')}"
+                    ),
+                    payload={
+                        "trigger": "auto_fallback",
+                        "severity": deviation.get("severity"),
+                        "deviation_type": deviation.get("type"),
+                        "ai_error": str(e),
+                    },
+                    status="PENDING",
+                )
+                session.add(fallback)
+            session.commit()
+            logger.info("Fallback ESCALATE action created for deviation %s", deviation.get("deviation_id"))
+        except Exception as fallback_err:
+            logger.error("Failed to create fallback action for deviation %s: %s", deviation.get("deviation_id"), fallback_err)
 
 
 def process_batch(

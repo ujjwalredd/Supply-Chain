@@ -44,12 +44,16 @@ async def list_supplier_risk(
     )
     suppliers = result.scalars().all()
 
+    supplier_ids = [s.supplier_id for s in suppliers]
     dep_result = await db.execute(
         select(
             Order.supplier_id,
             Order.product,
             func.count().label("cnt"),
-        ).group_by(Order.supplier_id, Order.product)
+        )
+        .where(Order.supplier_id.in_(supplier_ids))
+        .group_by(Order.supplier_id, Order.product)
+        .limit(supplier_ids.__len__() * 50)  # cap: 50 products per supplier max
     )
     dep_map: dict[str, dict[str, int]] = {}
     for row in dep_result.all():
