@@ -51,7 +51,7 @@ def load_orderlist_csv(path: Path) -> Iterator[dict[str, Any]]:
                     "actual_delivery": None,
                     "delay_days": max(0, ship_late),
                     "status": "DELAYED" if ship_late > 0 else "DELIVERED",
-                    "inventory_level": min(100, max(0, 80 - ship_late * 5)),
+                    "inventory_level": 80.0,  # CSV has no real inventory data; neutral default avoids label leakage
                     "created_at": datetime.utcnow().isoformat() + "Z",
                     "_source_file": path.name,
                     "_source_ingested_at": datetime.utcnow().isoformat(),

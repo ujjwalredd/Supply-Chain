@@ -22,6 +22,10 @@ from pipeline.assets_medallion import (
     quality_gate_silver_orders,
     # Feature 5: forecasting
     gold_forecasted_risks,
+    # Feature 6: ML model training
+    gold_delay_model,
+    # Feature 6: demand forecast
+    gold_demand_forecast,
 )
 from pipeline.jobs_medallion import medallion_full_job, medallion_incremental_job
 
@@ -40,6 +44,8 @@ all_assets = [
     quality_gate_silver_orders,
     dbt_transforms,
     gold_forecasted_risks,
+    gold_delay_model,
+    gold_demand_forecast,
 ]
 
 defs = Definitions(

@@ -120,6 +120,29 @@ class PendingAction(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class SupplierPolicy(Base):
+    """
+    Glass-box autonomy policy per supplier.
+    Controls which actions auto-execute vs require human approval.
+    """
+    __tablename__ = "supplier_policies"
+
+    supplier_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    # Severity ceiling for autonomous execution: actions AT or ABOVE this level require human approval
+    # Values: CRITICAL | HIGH | MEDIUM | LOW (LOW = auto-execute everything except CRITICAL)
+    require_approval_at_severity: Mapped[str] = mapped_column(String(16), default="CRITICAL")
+    # Order value threshold: auto-execution blocked if linked order_value exceeds this
+    require_approval_above_value: Mapped[float] = mapped_column(Float, default=50000.0)
+    # Daily cap on autonomous executions for this supplier
+    max_auto_actions_per_day: Mapped[int] = mapped_column(Integer, default=10)
+    # Minimum AI confidence score required to auto-execute (0.0–1.0)
+    min_confidence: Mapped[float] = mapped_column(Float, default=0.70)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+
 class OrderEvent(Base):
     """
     Event sourcing table — append-only log of all order state transitions.
@@ -128,17 +151,17 @@ class OrderEvent(Base):
     """
     __tablename__ = "order_events"
 
-    id = Column(Integer, primary_key=True, index=True)
-    event_id = Column(String, unique=True, nullable=False, index=True, default=lambda: str(uuid.uuid4()))
-    order_id = Column(String, nullable=False, index=True)
-    event_type = Column(String, nullable=False)  # CREATED | STATUS_CHANGED | DELAYED | DELIVERED | CANCELLED
-    old_status = Column(String, nullable=True)
-    new_status = Column(String, nullable=True)
-    old_delay_days = Column(Integer, nullable=True)
-    new_delay_days = Column(Integer, nullable=True)
-    supplier_id = Column(String, nullable=True)
-    region = Column(String, nullable=True)
-    event_metadata = Column("metadata", JSON, nullable=True)
-    actor = Column(String, nullable=True, default="system")  # who triggered: system | kafka | api | dagster
-    aggregate_version = Column(Integer, nullable=False, default=1)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    event_id: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True, default=lambda: str(uuid.uuid4()))
+    order_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String, nullable=False)  # CREATED | STATUS_CHANGED | DELAYED | DELIVERED | CANCELLED
+    old_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    new_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    old_delay_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    new_delay_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    supplier_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    region: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    event_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSON, nullable=True)
+    actor: Mapped[Optional[str]] = mapped_column(String, nullable=True, default="system")  # who triggered: system | kafka | api | dagster
+    aggregate_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)

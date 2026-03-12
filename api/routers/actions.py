@@ -178,7 +178,6 @@ async def resolve_action(
     action = result.scalar_one_or_none()
     if not action:
         raise HTTPException(status_code=404, detail="Action not found")
-    from datetime import datetime, timezone
     action.resolved = True
     action.outcome_note = outcome_note
     action.resolved_at = datetime.now(timezone.utc)

@@ -374,3 +374,45 @@ export async function querySupplyChainStream(
     throw err;
   }
 }
+
+export async function fetchAlertsEnriched(limit = 100, severity?: string) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (severity) params.set("severity", severity);
+  const res = await fetch(`${API_BASE}/alerts/enriched?${params}`);
+  if (!res.ok) throw new Error("Failed to fetch enriched alerts");
+  return res.json();
+}
+
+export async function fetchSupplierPolicy(supplierId: string) {
+  const res = await fetch(`${API_BASE}/suppliers/${supplierId}/policy`);
+  if (!res.ok) throw new Error("Failed to fetch supplier policy");
+  return res.json();
+}
+
+export async function updateSupplierPolicy(
+  supplierId: string,
+  policy: {
+    require_approval_at_severity: string;
+    require_approval_above_value: number;
+    max_auto_actions_per_day: number;
+    min_confidence: number;
+  }
+) {
+  const res = await fetch(`${API_BASE}/suppliers/${supplierId}/policy`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(policy),
+  });
+  if (!res.ok) throw new Error("Failed to update supplier policy");
+  return res.json();
+}
+
+export async function normalizeFields(fields: Record<string, unknown>) {
+  const res = await fetch(`${API_BASE}/ontology/normalize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error("Failed to normalize fields");
+  return res.json();
+}

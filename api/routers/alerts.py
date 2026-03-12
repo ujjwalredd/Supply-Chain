@@ -113,6 +113,81 @@ async def deviation_clusters(
     return {"days": days, "clusters": clusters}
 
 
+@router.get("/enriched")
+async def list_alerts_enriched(
+    limit: int = Query(100, ge=1, le=500),
+    severity: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Financial Impact Scoring: deviations enriched with cost_impact_usd.
+    Formula: delay_days × order_value × 0.02 (2% daily carrying/opportunity cost).
+    Also returns risk_tier: CRITICAL_COST (>$10k), HIGH_COST (>$2k), MODERATE.
+    """
+    q = (
+        select(
+            Deviation.deviation_id,
+            Deviation.order_id,
+            Deviation.type,
+            Deviation.severity,
+            Deviation.detected_at,
+            Deviation.recommended_action,
+            Deviation.executed,
+            Deviation.created_at,
+            Order.supplier_id,
+            Order.product,
+            Order.order_value,
+            Order.delay_days,
+            Order.region,
+        )
+        .join(Order, Deviation.order_id == Order.order_id, isouter=True)
+        .order_by(Deviation.detected_at.desc())
+        .limit(limit)
+    )
+    if severity:
+        q = q.where(Deviation.severity == severity)
+
+    result = await db.execute(q)
+    rows = result.all()
+
+    enriched = []
+    for r in rows:
+        order_value = float(r.order_value or 0)
+        delay_days = int(r.delay_days or 0)
+        cost_impact = round(delay_days * order_value * 0.02, 2)
+        risk_tier = (
+            "CRITICAL_COST" if cost_impact >= 10_000
+            else "HIGH_COST" if cost_impact >= 2_000
+            else "MODERATE"
+        )
+        enriched.append({
+            "deviation_id": r.deviation_id,
+            "order_id": r.order_id,
+            "type": r.type,
+            "severity": r.severity,
+            "detected_at": r.detected_at.isoformat() if r.detected_at else None,
+            "recommended_action": r.recommended_action,
+            "executed": r.executed,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "supplier_id": r.supplier_id,
+            "product": r.product,
+            "order_value": round(order_value, 2),
+            "delay_days": delay_days,
+            "region": r.region,
+            "cost_impact_usd": cost_impact,
+            "risk_tier": risk_tier,
+        })
+
+    total_cost = round(sum(e["cost_impact_usd"] for e in enriched), 2)
+    critical_count = sum(1 for e in enriched if e["risk_tier"] == "CRITICAL_COST")
+    return {
+        "alerts": enriched,
+        "total": len(enriched),
+        "total_cost_impact_usd": total_cost,
+        "critical_cost_count": critical_count,
+    }
+
+
 @router.get("/{deviation_id}", response_model=DeviationRead)
 async def get_alert(deviation_id: str, db: AsyncSession = Depends(get_db)):
     """Get deviation by ID."""

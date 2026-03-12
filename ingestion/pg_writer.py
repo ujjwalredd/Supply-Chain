@@ -192,7 +192,7 @@ def _detect_deviations(event: OrderEvent) -> list[dict[str, Any]]:
 
 
 def _upsert_orders(session, events: list[OrderEvent]) -> int:
-    """Upsert order events into the orders table. Returns rows inserted."""
+    """Upsert order events into the orders table. Returns count of records processed (inserted or updated)."""
     from api.models import Order
 
     records = []

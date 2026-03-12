@@ -106,6 +106,9 @@ class _RequestIDMiddleware(BaseHTTPMiddleware):
 
 setup_tracing(app)
 
+# Middleware is applied in reverse order (last-added = outermost).
+# Desired request order: TrustedHost → CORS → RequestID → handler
+app.add_middleware(_RequestIDMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -113,8 +116,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Request-ID", "Accept"],
 )
-app.add_middleware(_RequestIDMiddleware)
-
 # Only enforce trusted host checking when ALLOWED_HOSTS is explicitly configured
 if ALLOWED_HOSTS:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
