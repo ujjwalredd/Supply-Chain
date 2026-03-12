@@ -81,7 +81,7 @@
       "datasource": { "uid": "supply_chain_pg" },
       "targets": [
         {
-          "rawSql": "SELECT ROUND(AVG(EXTRACT(EPOCH FROM (pa.created_at - d.detected_at)) / 60.0)::numeric, 1) AS value FROM pending_actions pa JOIN deviations d ON pa.deviation_id = d.deviation_id WHERE pa.status = 'COMPLETED'",
+          "rawSql": "SELECT COALESCE(ROUND(AVG(EXTRACT(EPOCH FROM (pa.created_at - d.detected_at)) / 60.0)::numeric, 1), 0) AS value FROM pending_actions pa JOIN deviations d ON pa.deviation_id = d.deviation_id WHERE pa.status = 'COMPLETED'",
           "format": "table",
           "refId": "A"
         }
@@ -97,7 +97,7 @@
       "datasource": { "uid": "supply_chain_pg" },
       "targets": [
         {
-          "rawSql": "SELECT DATE(detected_at) AS time, severity, COUNT(*) AS count FROM deviations WHERE detected_at >= NOW() - INTERVAL '7 days' GROUP BY DATE(detected_at), severity ORDER BY time",
+          "rawSql": "SELECT DATE(detected_at) AS time, COUNT(*) FILTER (WHERE severity = 'CRITICAL') AS \"CRITICAL\", COUNT(*) FILTER (WHERE severity = 'HIGH') AS \"HIGH\", COUNT(*) FILTER (WHERE severity = 'MEDIUM') AS \"MEDIUM\", COUNT(*) FILTER (WHERE severity = 'LOW') AS \"LOW\" FROM deviations WHERE detected_at >= NOW() - INTERVAL '7 days' GROUP BY DATE(detected_at) ORDER BY time",
           "format": "table",
           "refId": "A"
         }

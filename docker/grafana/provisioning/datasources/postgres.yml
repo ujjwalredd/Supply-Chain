@@ -5,11 +5,11 @@ datasources:
     type: postgres
     uid: supply_chain_pg
     url: postgres:5432
-    user: supplychain
+    user: ${POSTGRES_USER}
     secureJsonData:
-      password: supplychain_secret
+      password: ${POSTGRES_PASSWORD}
     jsonData:
-      database: supply_chain_db
+      database: ${POSTGRES_DB}
       sslmode: disable
       maxOpenConns: 5
       maxIdleConns: 2
@@ -17,4 +17,4 @@ datasources:
       postgresVersion: 1500
       timescaledb: false
     isDefault: true
-    editable: false
+    editable: true
