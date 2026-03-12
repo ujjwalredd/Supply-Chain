@@ -107,10 +107,7 @@ async def cost_analytics(db: AsyncSession = Depends(get_db)):
         .join(Supplier, Order.supplier_id == Supplier.supplier_id, isouter=True)
         .group_by(Order.supplier_id, Supplier.name, Supplier.region)
         .order_by(func.sum(Order.order_value).desc())
-<<<<<<< HEAD
-=======
         .limit(500)
->>>>>>> e36d8295c1fccc313f876dd3ce97f061b3650fb9
     )
     rows = result.all()
     analytics = []
@@ -154,10 +151,7 @@ async def supplier_benchmarks(
         .join(Supplier, Order.supplier_id == Supplier.supplier_id, isouter=True)
         .group_by(Order.supplier_id, Supplier.name, Supplier.region, Supplier.trust_score, Order.product)
         .order_by(func.count().desc())
-<<<<<<< HEAD
-=======
         .limit(1000)
->>>>>>> e36d8295c1fccc313f876dd3ce97f061b3650fb9
     )
     if product:
         q = q.where(Order.product.ilike(f"%{product}%"))

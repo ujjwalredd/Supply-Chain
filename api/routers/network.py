@@ -128,11 +128,7 @@ async def get_network_risk():
     """
     global _NETWORK_CACHE, _NETWORK_CACHE_AT
     if not (_NETWORK_CACHE and (time.monotonic() - _NETWORK_CACHE_AT) < _NETWORK_CACHE_TTL):
-<<<<<<< HEAD
-        _NETWORK_CACHE = _build_graph()
-=======
         _NETWORK_CACHE = await asyncio.to_thread(_build_graph)
->>>>>>> e36d8295c1fccc313f876dd3ce97f061b3650fb9
         _NETWORK_CACHE_AT = time.monotonic()
 
     graph_data = _NETWORK_CACHE
@@ -160,23 +156,6 @@ async def get_network_risk():
     # Build node lookup for label/type
     node_lookup: dict[str, dict] = {n["id"]: n for n in nodes}
 
-<<<<<<< HEAD
-    # Compute graph density using networkx if available
-    graph_density = 0.0
-    try:
-        import networkx as nx
-        G = nx.DiGraph()
-        for node in nodes:
-            G.add_node(node["id"])
-        for edge in edges:
-            G.add_edge(edge["source"], edge["target"])
-        graph_density = round(nx.density(G), 6)
-    except ImportError:
-        n_nodes = len(nodes)
-        n_edges = len(edges)
-        if n_nodes > 1:
-            graph_density = round(n_edges / (n_nodes * (n_nodes - 1)), 6)
-=======
     # Compute graph density — cache result in _NETWORK_CACHE to avoid rebuilding DiGraph on every call
     if "graph_density" in graph_data:
         graph_density = graph_data["graph_density"]
@@ -196,7 +175,6 @@ async def get_network_risk():
             if n_nodes > 1:
                 graph_density = round(n_edges / (n_nodes * (n_nodes - 1)), 6)
         graph_data["graph_density"] = graph_density  # cache for subsequent calls
->>>>>>> e36d8295c1fccc313f876dd3ce97f061b3650fb9
 
     # Sort nodes by cascade_risk_score descending, take top 20
     sorted_nodes = sorted(
