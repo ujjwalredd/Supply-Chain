@@ -1,4 +1,4 @@
-# Supply Chain AI OS — v8.0
+# Supply Chain AI OS — v9.0
 
 [![CI](https://github.com/ujjwalredd/Supply-Chain/actions/workflows/ci.yml/badge.svg)](https://github.com/ujjwalredd/Supply-Chain/actions/workflows/ci.yml)
 [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://supply-chain-silk.vercel.app)
@@ -9,7 +9,7 @@
 
 An **end-to-end AI-native supply chain control tower** built for real-world client deployments.
 
-Ingests live purchase-order data from **OpenBoxes** (open-source WMS/SCM), streams it through Kafka, and runs a full medallion lakehouse with AI reasoning, ML delay prediction, and autonomous action execution — on a production-grade 17-service Docker stack.
+Ingests live purchase-order data from **OpenBoxes** (open-source WMS/SCM), streams it through Kafka, and runs a full medallion lakehouse with AI reasoning, ML delay prediction, and autonomous action execution — on a production-grade 20-service Docker stack.
 
 > **Primary data source:** OpenBoxes (live WMS) · **Secondary / offline fallback:** CSV seed data
 
@@ -134,7 +134,9 @@ docker exec supply-chain-producer python ingestion/openboxes_connector.py &
 | Dashboard | http://localhost:3000 | — |
 | API Docs (Swagger) | http://localhost:8000/docs | — |
 | Dagster UI | http://localhost:3001 | — |
-| Grafana | http://localhost:3002 | admin / admin |
+| Grafana | http://localhost:3002 | admin / admin (Explore → Loki for logs) |
+| Loki | http://localhost:3100/ready | API backend only — use Grafana Explore to query logs |
+| Prometheus | http://localhost:9090 | — |
 | MLflow | http://localhost:5001 | — |
 | Jaeger (traces) | http://localhost:16686 | — |
 | ksqlDB REST | http://localhost:8088 | — |
@@ -155,13 +157,32 @@ docker exec supply-chain-producer python ingestion/openboxes_connector.py &
 | Graph ML | NetworkX (betweenness centrality, cascade risk) |
 | Streaming | ksqlDB (5-min rolling delay rate, region demand) |
 | API | FastAPI, SQLAlchemy async, PostgreSQL |
+| Auth | Bearer token + X-API-Key middleware, env-configurable key rotation |
 | Tracing | OpenTelemetry → Jaeger |
 | AI Reasoning | Claude sonnet-4-6 + GPT-4o fallback + quality scoring |
 | Data Quality | Soda Core contracts, Great Expectations |
 | Event Sourcing | append-only `order_events` table (point-in-time recovery) |
-| CI/CD | GitHub Actions (pytest + dbt validate + docker-compose + auto-tag) |
+| CI/CD | GitHub Actions 6-job pipeline (pytest + secret scan + dbt + docker + auto-tag + deploy) |
 | Frontend | Next.js 14 App Router, Tailwind CSS |
-| Observability | Prometheus, Grafana, OpenTelemetry |
+| Observability | Grafana Alloy → Loki (logs) + Prometheus (metrics) + Grafana dashboards |
+
+---
+
+## What's New in v9.0
+
+### Production Hardening + Full Observability Stack
+
+| Change | Detail | Files |
+|---|---|---|
+| **API Key Auth** | `Authorization: Bearer <key>` or `X-API-Key: <key>` on all non-public routes. Set `API_KEYS=key1,key2` in `.env`. Empty = dev mode (auth disabled). | `api/auth.py`, `api/main.py` |
+| **docker-compose.prod.yml** | Production override: removes source-code volume mounts, Redis AUTH, Grafana anonymous disabled, all sensitive ports bound to loopback, resource limits for 24 GB Oracle VM. | `docker-compose.prod.yml` |
+| **Grafana Alloy log shipping** | Alloy agent discovers all `supply-chain-*` containers via Docker socket, parses JSON logs, labels by service/level, strips DEBUG, ships to Loki. Supports both local Loki and Grafana Cloud free tier. | `docker/alloy/config.alloy` |
+| **Loki + Prometheus in compose** | Two new observability services added. Grafana pre-provisioned with Loki and Prometheus datasources. Alloy scrapes FastAPI `/metrics` into Prometheus. | `docker-compose.yml`, `docker/grafana/provisioning/datasources/loki.yml`, `docker/prometheus/prometheus.yml` |
+| **GitHub Actions 6-job CI/CD** | Tests → Secret scan → dbt validate → Docker compose validate (both files) → Auto-tag → Deploy to Oracle VM via SSH. | `.github/workflows/ci.yml` |
+| **Kafka at-least-once delivery** | `enable_auto_commit=False`; `consumer.commit()` called after every successful DB write path. | `ingestion/pg_writer.py` |
+| **Rate limiter memory safety** | IP key store bounded to 10,000 entries with stale eviction. | `api/routers/ai.py` |
+| **8 bugs fixed by QA sweep** | Auth bypass via `/` prefix, lineage resource DB credential leak, psycopg2 connection leak, dead `confidence` branch, non-deterministic column order in forecasts, timezone-naive datetime subtraction, `datetime.utcnow()` deprecation, `IndexError` on non-text Claude response blocks. | Various |
+| **133 tests, 0 failures** | +62 new critical-path tests added covering all 404, 422, and edge-case paths. | `tests/test_critical_paths.py` |
 
 ---
 
@@ -391,7 +412,7 @@ docker exec supply-chain-dagster-webserver \
 
 ---
 
-## Docker Services (17 total)
+## Docker Services (20 total)
 
 | Service | Port | Purpose |
 |---|---|---|
@@ -410,8 +431,11 @@ docker exec supply-chain-dagster-webserver \
 | mlflow | 5001 | ML experiment tracking + model registry |
 | fastapi | 8000 | REST API + WebSocket |
 | nextjs | 3000 | Dashboard |
-| grafana | 3002 | Metrics dashboards |
+| grafana | 3002 | Metrics + log dashboards |
 | jaeger | 16686 | Distributed traces (OTLP gRPC) |
+| loki | 3100 | Log aggregation backend |
+| prometheus | 9090 | Metrics collection |
+| alloy | 12345 | Log + metric collection agent (Docker socket) |
 
 ---
 
@@ -424,6 +448,11 @@ Copy `.env.example` to `.env`. Key variables:
 ANTHROPIC_API_KEY=sk-ant-...           # Claude AI reasoning
 SECRET_KEY=<32-char random string>     # generate: python -c "import secrets; print(secrets.token_hex(32))"
 
+# API Authentication (production — leave empty for local dev)
+# generate: python -c "import secrets; print('sc-' + secrets.token_hex(24))"
+API_KEYS=sc-key1,sc-key2              # Authorization: Bearer <key>  OR  X-API-Key: <key>
+AI_RATE_LIMIT_PER_MIN=30              # per-IP rate limit on /ai/* endpoints
+
 # Database
 POSTGRES_PASSWORD=change_me_in_production
 DATABASE_URL=postgresql://supplychain:...@localhost:5433/supply_chain_db
@@ -432,14 +461,24 @@ DATABASE_URL=postgresql://supplychain:...@localhost:5433/supply_chain_db
 MINIO_ROOT_PASSWORD=change_me_in_production
 AWS_SECRET_ACCESS_KEY=change_me_in_production
 
+# Redis (AUTH required in production)
+REDIS_PASSWORD=change_me_redis
+
 # Optional — AI fallback
 OPENAI_API_KEY=sk-...                  # enables GPT-4o fallback when Claude quality < 0.4
 
-# Optional — Observability
+# Optional — Observability (Loki/Prometheus default to local docker-compose services)
+LOKI_URL=http://loki:3100/loki/api/v1/push
+PROMETHEUS_REMOTE_WRITE_URL=http://prometheus:9090/api/v1/write
 OTEL_ENABLED=true
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 MLFLOW_TRACKING_URI=http://localhost:5001
 KSQLDB_URL=http://localhost:8088
+
+# Optional — Grafana Cloud free tier (50GB logs/month, 10k metrics/day)
+# GRAFANA_CLOUD_LOKI_URL=https://logs-prod-<region>.grafana.net/loki/api/v1/push
+# GRAFANA_CLOUD_LOKI_USER=<user-id>
+# GRAFANA_CLOUD_LOKI_API_KEY=<api-key>
 
 # Optional — Alerting
 SLACK_WEBHOOK_URL=https://hooks.slack.com/...   # CRITICAL deviation notifications
@@ -448,7 +487,7 @@ SLACK_WEBHOOK_URL=https://hooks.slack.com/...   # CRITICAL deviation notificatio
 MARQUEZ_URL=                           # leave empty to write lineage to Postgres only
 ```
 
-See `.env.example` for the complete list (~50 variables) with inline documentation.
+See `.env.example` for the complete list (~60 variables) with inline documentation.
 
 ---
 
@@ -466,7 +505,7 @@ docker compose up --build -d
 Wait ~60 seconds for all services to become healthy:
 
 ```bash
-docker compose ps   # all 17 services should show "healthy" or "running"
+docker compose ps   # all 20 services should show "healthy" or "running"
 ```
 
 ---
@@ -752,15 +791,40 @@ curl -X PUT http://localhost:8000/suppliers/SUP-001/policy \
 
 ---
 
-### Step 9 — Grafana dashboards
+### Step 9 — Grafana dashboards + logs
 
 Open **Grafana** at http://localhost:3002 (admin/admin)
 
-Grafana queries **PostgreSQL directly** — no Prometheus required. Make sure the database has been seeded before opening.
+Grafana queries **PostgreSQL** for metrics and **Loki** for logs — both datasources are auto-provisioned. Make sure the database has been seeded before opening.
 
 ```bash
 # If this is a fresh stack or you changed POSTGRES_PASSWORD, force re-provisioning:
 docker compose restart grafana
+```
+
+**Logs (Loki — via Grafana Explore):**
+
+Alloy ships all `supply-chain-*` container logs to Loki automatically. Query them in Grafana → Explore → Loki datasource:
+
+```logql
+# All ERROR logs across the stack
+{project="supply-chain-os"} |= "ERROR"
+
+# FastAPI errors only
+{service="fastapi", level="ERROR"}
+
+# Kafka consumer events
+{service="pg-writer"} |= "committed"
+```
+
+**Metrics (Prometheus — via Grafana Explore):**
+
+```promql
+# FastAPI request rate (req/s)
+rate(http_requests_total{job="fastapi"}[1m])
+
+# P95 response time
+histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="fastapi"}[5m]))
 ```
 
 **Supply Chain OS dashboard** (auto-loaded on startup):
@@ -820,6 +884,54 @@ docker exec supply-chain-api python scripts/sync_gold_to_postgres.py
 
 ---
 
+### Production Deployment (Oracle Cloud Always Free)
+
+Use the production compose override which removes source-code mounts, enforces Redis AUTH, disables Grafana anonymous access, and binds all sensitive ports to loopback:
+
+```bash
+# On the Oracle VM — first-time setup
+git clone https://github.com/ujjwalredd/Supply-Chain.git supply-chain-os
+cd supply-chain-os
+cp .env.example .env
+
+# Edit .env — set all required secrets:
+#   ANTHROPIC_API_KEY, POSTGRES_PASSWORD, API_KEYS, REDIS_PASSWORD,
+#   GRAFANA_PASSWORD, MINIO_ROOT_PASSWORD, SECRET_KEY
+
+# Start with production overrides
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+# Run migrations
+docker exec supply-chain-api alembic upgrade head
+
+# Health check
+curl -H "X-API-Key: <your-api-key>" http://localhost:8000/health
+```
+
+**Required GitHub Secrets** for the auto-deploy CI job:
+
+| Secret | Value |
+|--------|-------|
+| `VM_HOST` | Oracle VM public IP |
+| `VM_USER` | `ubuntu` (or your user) |
+| `VM_SSH_KEY` | Private SSH key (PEM) for the VM |
+| `HEALTH_CHECK_KEY` | One of your `API_KEYS` values |
+
+**Free infrastructure options:**
+
+| Need | Free option |
+|------|-------------|
+| VM / compute | Oracle Cloud Always Free (4 OCPUs, 24 GB ARM) |
+| PostgreSQL | Neon serverless (0.5 GB free) or Oracle VM Postgres |
+| Redis | Upstash free tier (10k requests/day) |
+| Kafka | Upstash Kafka free tier (10 GB/month) |
+| Object storage | Cloudflare R2 (10 GB free) |
+| Secrets | Doppler free tier |
+| Log monitoring | Grafana Cloud free (50 GB logs, 14-day retention) |
+| Metrics | Grafana Cloud free (10k metrics/day) |
+
+---
+
 ### Troubleshooting
 
 | Issue | Fix |
@@ -835,7 +947,10 @@ docker exec supply-chain-api python scripts/sync_gold_to_postgres.py
 | `soda` command not found | Use `python -m soda scan ...` instead |
 | `/orders?limit=10` — zsh glob error | Quote the URL: `curl "http://localhost:8000/orders?limit=10"` |
 | `DATABASE_URL` connection refused | Confirm `POSTGRES_PORT=5433` in `.env`; host is `localhost` outside Docker |
-| Grafana shows no data | Grafana queries PostgreSQL directly. Run `scripts/seed_db.py` first, then start the OpenBoxes connector. If datasource shows "Connection refused", restart Grafana after confirming `POSTGRES_PASSWORD` in `.env` matches the DB: `docker compose restart grafana` |
+| Grafana shows no data | Run `scripts/seed_db.py` first. If datasource shows "Connection refused", restart Grafana: `docker compose restart grafana` |
+| Loki datasource — no logs | Wait ~30s for Alloy to discover containers. Verify with: `curl http://localhost:3100/ready` |
+| API returns 401 Unauthorized | Set `API_KEYS=` in `.env` (empty = dev mode, auth disabled), or pass `Authorization: Bearer <key>` |
+| CI docker-validate fails on prod file | Ensure your workflow runs `docker compose -f docker-compose.yml -f docker-compose.prod.yml config` (not the prod file alone — it's an override) |
 
 ---
 
@@ -907,7 +1022,7 @@ Migration files in `alembic/versions/`:
 ```bash
 # Run all tests (no Docker required)
 pytest tests/ -q
-# Result: 67 passed, 3 skipped
+# Result: 133 passed, 3 skipped
 # Skipped: Kafka broker tests, Dagster materialisation tests (require full Docker stack — pass there)
 
 # Run a specific file
@@ -933,6 +1048,7 @@ pytest tests/ --cov=api --cov=ingestion --cov=reasoning
 | Ontology | `test_ontology.py` | Field mapping, constraint validation, negative value guard |
 | Action executor | `test_action_executor.py` | Confidence gate, policy gate, REROUTE/EXPEDITE/ESCALATE |
 | Event sourcing | `test_events.py` | Append-only log, point-in-time replay |
+| Critical paths (v9.0) | `test_critical_paths.py` | 62 tests: 404s, 422s, edge cases, rate limit, auth, lineage |
 | Kafka / Dagster | _(3 skipped locally)_ | Pass inside Docker stack |
 
 CI runs on every push to `main` and `ujjwal` branches via GitHub Actions (`.github/workflows/ci.yml`).
@@ -1022,10 +1138,11 @@ Contracts defined in `contracts/`:
 
 ```
 supply-chain-os/
-├── .github/workflows/ci.yml      # CI/CD: pytest + dbt validate + docker check + auto-tag
+├── .github/workflows/ci.yml      # 6-job CI/CD: test + secret-scan + dbt + docker + auto-tag + deploy
 ├── alembic/                       # Database migrations (6 revisions)
 │   └── versions/
 ├── api/                           # FastAPI application
+│   ├── auth.py                    # API key middleware (Bearer + X-API-Key; disabled if API_KEYS unset)
 │   ├── routers/                   # 15 routers: orders, suppliers, alerts, ontology, ml, ai, events...
 │   ├── database.py                # SQLAlchemy async engine
 │   ├── event_store.py             # Append-only order_events store
@@ -1034,7 +1151,14 @@ supply-chain-os/
 ├── assets/                        # README screenshots + GIFs
 ├── contracts/                     # Soda Core data quality contracts
 ├── dashboard/                     # Next.js 14 App Router (9 pages)
-├── docker/                        # Dockerfiles + Grafana provisioning
+├── docker/
+│   ├── alloy/config.alloy         # Grafana Alloy: Docker log discovery → Loki; FastAPI metrics → Prometheus
+│   ├── grafana/provisioning/
+│   │   └── datasources/
+│   │       ├── postgres.yml        # PostgreSQL datasource
+│   │       └── loki.yml            # Loki + Prometheus datasources (auto-provisioned)
+│   ├── prometheus/prometheus.yml   # Prometheus scrape config (FastAPI + Alloy)
+│   └── ...                        # Dockerfiles, dagster.yaml, etc.
 ├── ingestion/                     # openboxes_connector (primary), Kafka producer, pg-writer, batch_loader
 ├── integrations/
 │   └── action_executor.py         # Autonomous action execution — confidence gate + per-supplier policy gate
@@ -1050,9 +1174,12 @@ supply-chain-os/
 │   └── engine.py                  # Multi-model AI: Claude + GPT-4o fallback + quality score
 ├── scripts/                       # Seed, sync, and data download scripts
 ├── streaming/                     # ksqlDB SQL + Python client
-├── tests/                         # 70 pytest tests (62 pass, 8 skip without Docker)
+├── tests/                         # 133 pytest tests (130 pass, 3 skip without Docker)
+│   └── test_critical_paths.py     # 62 critical-path tests added in v9.0
 ├── transforms/                    # dbt project (staging + marts + dbt-expectations)
-├── docker-compose.yml             # 17-service production stack
+├── docker-compose.yml             # 20-service stack (dev)
+├── docker-compose.prod.yml        # Production overlay: loopback ports, Redis AUTH, no source mounts
+├── .env.example                   # ~60 documented env vars
 ├── requirements-api.txt           # FastAPI + ML dependencies
 ├── requirements-dagster.txt       # Dagster + dbt + PySpark dependencies
 └── requirements-ingestion.txt     # Kafka + ingestion dependencies
