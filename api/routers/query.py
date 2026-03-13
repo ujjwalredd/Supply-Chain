@@ -163,8 +163,8 @@ async def query_stream(
                         "input_tokens": final.usage.input_tokens,
                         "output_tokens": final.usage.output_tokens,
                     }
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Could not extract final usage tokens: %s", e)
         except (APIConnectionError, APIStatusError) as e:
             yield f"data: {json.dumps({'token': f'Error: {e}'})}\n\n"
         elapsed_ms = int((time.monotonic() - start_ms) * 1000)

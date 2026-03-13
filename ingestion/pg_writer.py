@@ -674,6 +674,10 @@ def process_demand_event(session, redis_client, event: DemandEvent) -> int:
                 .limit(1)
             ).scalar_one_or_none()
             if not anchor:
+                logger.debug(
+                    "Demand spike: no active order found for product=%s region=%s, deviation skipped",
+                    event.product, event.region,
+                )
                 savepoint.rollback()
                 continue
             dev = Deviation(

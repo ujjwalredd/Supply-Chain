@@ -107,7 +107,38 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """Create tables if they do not exist (use Alembic for migrations in prod)."""
-    async with async_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database tables initialized")
+    """Run Alembic migrations to head, then verify the DB connection is live."""
+    import subprocess
+    import sys
+
+    # Run 'alembic upgrade head' so all migration files are applied in order.
+    # Falls back to create_all in CI / fresh envs where alembic.ini isn't present.
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            logger.warning("Alembic upgrade non-zero exit: %s", result.stderr.strip())
+            async with async_engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("Database tables created via create_all (Alembic fallback)")
+        else:
+            logger.info("Alembic migrations applied: %s", result.stdout.strip() or "already at head")
+    except Exception as e:
+        logger.warning("Alembic runner failed (%s), falling back to create_all", e)
+        async with async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables created via create_all (Alembic fallback)")
+
+    # Validate the connection is live before the app starts accepting traffic.
+    from sqlalchemy import text as _text
+    try:
+        async with async_engine.connect() as conn:
+            await conn.execute(_text("SELECT 1"))
+        logger.info("Database connection verified OK")
+    except Exception as e:
+        logger.error("Database connection failed at startup: %s", e)
+        raise RuntimeError(f"Cannot connect to database at startup: {e}") from e

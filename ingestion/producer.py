@@ -403,8 +403,9 @@ def run_producer() -> NoReturn:
             if sent % 50 == 0:
                 logger.info("Sent %d events", sent)
         except (ValidationError, KafkaError) as e:
-            logger.exception("Failed to send event: %s", e)
-            raise
+            logger.exception("Failed to send event (skipping, pipeline continues): %s", e)
+            # Do not re-raise — a single bad event must not crash the producer loop.
+            # The event is logged above; downstream DLQ will handle persistent failures.
 
         time.sleep(interval_seconds)
 

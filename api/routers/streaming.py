@@ -3,11 +3,12 @@ ksqlDB streaming aggregations API router.
 Exposes real-time 5-minute rolling metrics computed by ksqlDB persistent queries.
 """
 from __future__ import annotations
-
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Query
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/streaming", tags=["streaming"])
 
 
@@ -29,6 +30,7 @@ async def get_streaming_aggregations() -> dict[str, Any]:
             "source": "ksqldb",
         }
     except Exception as exc:
+        logger.warning("get_streaming_aggregations: ksqlDB unavailable: %s", exc)
         return {
             "supplier_delay_rates": [],
             "region_demand": [],
