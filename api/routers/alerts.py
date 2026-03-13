@@ -36,6 +36,7 @@ async def list_alerts(
         q = q.where(Deviation.executed == executed)
     result = await db.execute(q)
     deviations = result.scalars().all()
+    logger.debug("list_alerts: returned %d deviations (type=%s severity=%s)", len(deviations), type, severity)
     return [DeviationRead.model_validate(d) for d in deviations]
 
 
@@ -194,6 +195,7 @@ async def get_alert(deviation_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Deviation).where(Deviation.deviation_id == deviation_id))
     deviation = result.scalar_one_or_none()
     if not deviation:
+        logger.warning("get_alert: deviation_id=%s not found", deviation_id)
         raise HTTPException(status_code=404, detail="Deviation not found")
     return DeviationRead.model_validate(deviation)
 
@@ -207,7 +209,9 @@ async def dismiss_alert(
     result = await db.execute(select(Deviation).where(Deviation.deviation_id == deviation_id))
     deviation = result.scalar_one_or_none()
     if not deviation:
+        logger.warning("dismiss_alert: deviation_id=%s not found", deviation_id)
         raise HTTPException(status_code=404, detail="Deviation not found")
+    logger.info("dismiss_alert: deviation_id=%s severity=%s dismissed", deviation_id, deviation.severity)
     deviation.executed = True
     now = datetime.now(timezone.utc)
 

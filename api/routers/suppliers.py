@@ -222,6 +222,7 @@ async def supplier_scorecard(
     result = await db.execute(select(Supplier).where(Supplier.supplier_id == supplier_id))
     supplier = result.scalar_one_or_none()
     if not supplier:
+        logger.warning("supplier_performance: supplier_id=%s not found", supplier_id)
         raise HTTPException(status_code=404, detail="Supplier not found")
 
     orders_result = await db.execute(
@@ -340,5 +341,6 @@ async def get_supplier(supplier_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Supplier).where(Supplier.supplier_id == supplier_id))
     supplier = result.scalar_one_or_none()
     if not supplier:
+        logger.warning("get_supplier: supplier_id=%s not found", supplier_id)
         raise HTTPException(status_code=404, detail="Supplier not found")
     return SupplierRead.model_validate(supplier)

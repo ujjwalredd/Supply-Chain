@@ -1,5 +1,6 @@
 """Order event sourcing endpoints."""
 from __future__ import annotations
+import logging
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +8,7 @@ from sqlalchemy import text
 from api.database import get_db
 from api.event_store import get_order_history, replay_state_at
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/events", tags=["events"])
 
 
@@ -17,6 +19,7 @@ async def get_event_history(order_id: str, db: AsyncSession = Depends(get_db)) -
         history = await get_order_history(db, order_id)
         return {"order_id": order_id, "events": history, "total": len(history)}
     except Exception as e:
+        logger.warning("get_event_history: order_id=%s error: %s", order_id, e)
         return {"order_id": order_id, "events": [], "error": str(e)}
 
 
@@ -31,6 +34,7 @@ async def replay_order_state(
         state = await replay_state_at(db, order_id, version)
         return {"order_id": order_id, "state_at_version": version, "state": state}
     except Exception as e:
+        logger.warning("replay_order_state: order_id=%s version=%s error: %s", order_id, version, e)
         raise HTTPException(status_code=500, detail=str(e))
 
 

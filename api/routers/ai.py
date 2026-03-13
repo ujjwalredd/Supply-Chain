@@ -29,24 +29,22 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# ── In-process rate limiter for AI endpoints ──────────────────────────────────
+# ── Rate limiter for AI endpoints ─────────────────────────────────────────────
+# Uses Redis INCR/EXPIRE when Redis is available (works across multiple workers).
+# Falls back to in-process dict when Redis is unavailable (single-worker safe).
 # Configurable via AI_RATE_LIMIT_PER_MIN env var (default: 30 req/min/IP).
-# For multi-worker deployments, swap this for Redis-backed fastapi-limiter.
 _AI_RATE_LIMIT_STORE: dict[str, list[float]] = defaultdict(list)
 _AI_RATE_WINDOW = 60.0
 _AI_RATE_MAX = int(os.getenv("AI_RATE_LIMIT_PER_MIN", "30"))
+_AI_RATE_STORE_MAX_IPS = 10_000
 
 
-_AI_RATE_STORE_MAX_IPS = 10_000  # cap unique IPs to prevent unbounded memory growth
-
-
-def _check_ai_rate_limit(client_ip: str) -> bool:
-    """Return True if within rate limit, False if exceeded."""
+def _check_ai_rate_limit_inprocess(client_ip: str) -> bool:
+    """In-process fallback rate limiter (single-worker only)."""
     now = time.monotonic()
     cutoff = now - _AI_RATE_WINDOW
     calls = _AI_RATE_LIMIT_STORE[client_ip]
     calls[:] = [t for t in calls if t > cutoff]
-    # Evict stale entries when store exceeds max IPs (remove IPs with no recent calls)
     if len(_AI_RATE_LIMIT_STORE) > _AI_RATE_STORE_MAX_IPS:
         stale = [ip for ip, ts in _AI_RATE_LIMIT_STORE.items() if not ts]
         for ip in stale:
@@ -55,6 +53,22 @@ def _check_ai_rate_limit(client_ip: str) -> bool:
         return False
     calls.append(now)
     return True
+
+
+async def _check_ai_rate_limit(client_ip: str) -> bool:
+    """Return True if within rate limit. Uses Redis when available."""
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(redis_url, decode_responses=True)
+        key = f"rate_limit:ai:{client_ip}"
+        count = await r.incr(key)
+        if count == 1:
+            await r.expire(key, 60)
+        await r.aclose()
+        return count <= _AI_RATE_MAX
+    except Exception:
+        return _check_ai_rate_limit_inprocess(client_ip)
 
 
 _SSE_HEADERS = {
@@ -381,7 +395,7 @@ async def analyze_structured_endpoint(
 ):
     """Structured AI analysis with network context + computed financial impact. Cached 1h."""
     client_ip = request.client.host if request.client else "unknown"
-    if not _check_ai_rate_limit(client_ip):
+    if not await _check_ai_rate_limit(client_ip):
         raise HTTPException(
             status_code=429,
             detail=f"Rate limit exceeded: max {_AI_RATE_MAX} requests/minute per IP",
@@ -430,8 +444,8 @@ async def analyze_structured_endpoint(
         if redis:
             try:
                 await asyncio.wait_for(redis.aclose(), timeout=1.0)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Redis client close error: %s", e)
 
 
 class ScoredAnalyzeBody(BaseModel):

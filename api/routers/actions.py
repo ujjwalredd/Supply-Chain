@@ -136,6 +136,7 @@ async def create_action(
     db.add(action)
     await db.commit()
     await db.refresh(action)
+    logger.info("create_action: id=%s type=%s deviation=%s", action.id, action.action_type, action.deviation_id)
     return PendingActionRead.model_validate(action)
 
 
@@ -145,11 +146,13 @@ async def complete_action(action_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(PendingAction).where(PendingAction.id == action_id))
     action = result.scalar_one_or_none()
     if not action:
+        logger.warning("complete_action: action_id=%s not found", action_id)
         raise HTTPException(status_code=404, detail="Action not found")
     action.status = "COMPLETED"
     action.completed_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(action)
+    logger.info("complete_action: action_id=%s type=%s marked COMPLETED", action_id, action.action_type)
     return PendingActionRead.model_validate(action)
 
 
@@ -159,10 +162,12 @@ async def cancel_action(action_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(PendingAction).where(PendingAction.id == action_id))
     action = result.scalar_one_or_none()
     if not action:
+        logger.warning("cancel_action: action_id=%s not found", action_id)
         raise HTTPException(status_code=404, detail="Action not found")
     action.status = "CANCELLED"
     await db.commit()
     await db.refresh(action)
+    logger.info("cancel_action: action_id=%s type=%s marked CANCELLED", action_id, action.action_type)
     return PendingActionRead.model_validate(action)
 
 
@@ -177,6 +182,7 @@ async def resolve_action(
     result = await db.execute(select(PendingAction).where(PendingAction.id == action_id))
     action = result.scalar_one_or_none()
     if not action:
+        logger.warning("resolve_action: action_id=%s not found", action_id)
         raise HTTPException(status_code=404, detail="Action not found")
     action.resolved = True
     action.outcome_note = outcome_note
@@ -185,6 +191,7 @@ async def resolve_action(
     if not success:
         action.status = "FAILED"
     await db.commit()
+    logger.info("resolve_action: action_id=%s success=%s note=%r", action_id, success, outcome_note[:80])
     return {"ok": True, "action_id": action_id, "resolved": True}
 
 

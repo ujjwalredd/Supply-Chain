@@ -64,7 +64,7 @@ services:
     env_file: .env
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-supplychain}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-supplychain_secret}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_only_change_in_prod}
       POSTGRES_DB: ${POSTGRES_DB:-supply_chain_db}
     ports:
       - "${POSTGRES_PORT:-5433}:5432"
@@ -147,14 +147,14 @@ services:
       DAGSTER_POSTGRES_HOST: postgres
       DAGSTER_POSTGRES_PORT: 5432
       DAGSTER_POSTGRES_USER: ${POSTGRES_USER:-supplychain}
-      DAGSTER_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-supplychain_secret}
+      DAGSTER_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_only_change_in_prod}
       DAGSTER_POSTGRES_DB: dagster
       DAGSTER_WEBSERVER_HOST: 0.0.0.0
       DAGSTER_CURRENT_IMAGE: supply-chain-dagster
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_USER: ${POSTGRES_USER:-supplychain}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-supplychain_secret}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_only_change_in_prod}
       POSTGRES_DB: ${POSTGRES_DB:-supply_chain_db}
       S3_STORAGE_BUCKET: supply-chain-lakehouse
       MINIO_ENDPOINT_URL: http://minio:9000
@@ -189,13 +189,13 @@ services:
       DAGSTER_POSTGRES_HOST: postgres
       DAGSTER_POSTGRES_PORT: 5432
       DAGSTER_POSTGRES_USER: ${POSTGRES_USER:-supplychain}
-      DAGSTER_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-supplychain_secret}
+      DAGSTER_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_only_change_in_prod}
       DAGSTER_POSTGRES_DB: dagster
       DAGSTER_CURRENT_IMAGE: supply-chain-dagster
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_USER: ${POSTGRES_USER:-supplychain}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-supplychain_secret}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_only_change_in_prod}
       POSTGRES_DB: ${POSTGRES_DB:-supply_chain_db}
       S3_STORAGE_BUCKET: supply-chain-lakehouse
       MINIO_ENDPOINT_URL: http://minio:9000
@@ -232,7 +232,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-supplychain}:${POSTGRES_PASSWORD:-supplychain_secret}@postgres:5432/${POSTGRES_DB:-supply_chain_db}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-supplychain}:${POSTGRES_PASSWORD:-dev_only_change_in_prod}@postgres:5432/${POSTGRES_DB:-supply_chain_db}
       REDIS_URL: redis://redis:6379/0
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
@@ -318,7 +318,7 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_TOPIC: supply-chain-events
-      DATABASE_URL: postgresql://${POSTGRES_USER:-supplychain}:${POSTGRES_PASSWORD:-supplychain_secret}@postgres:5432/${POSTGRES_DB:-supply_chain_db}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-supplychain}:${POSTGRES_PASSWORD:-dev_only_change_in_prod}@postgres:5432/${POSTGRES_DB:-supply_chain_db}
       REDIS_URL: redis://redis:6379/0
       PG_WRITER_BATCH_SIZE: "10"
     command: ["python", "ingestion/pg_writer.py"]
@@ -346,7 +346,7 @@ services:
       OPENBOXES_MOCK: ${OPENBOXES_MOCK:-true}
       OPENBOXES_URL: ${OPENBOXES_URL:-https://demo.openboxes.com/openboxes}
       OPENBOXES_USERNAME: ${OPENBOXES_USERNAME:-admin}
-      OPENBOXES_PASSWORD: ${OPENBOXES_PASSWORD:-password}
+      OPENBOXES_PASSWORD: ${OPENBOXES_PASSWORD:-dev_only_change_in_prod}
       OPENBOXES_POLL_INTERVAL: ${OPENBOXES_POLL_INTERVAL:-30}
       OPENBOXES_BATCH_SIZE: ${OPENBOXES_BATCH_SIZE:-25}
     command: ["python", "ingestion/openboxes_connector.py"]
@@ -425,7 +425,7 @@ services:
     ports:
       - "5001:5000"
     environment:
-      MLFLOW_BACKEND_STORE_URI: postgresql://${POSTGRES_USER:-supplychain}:${POSTGRES_PASSWORD:-supplychain_secret}@postgres:5432/mlflow_db
+      MLFLOW_BACKEND_STORE_URI: postgresql://${POSTGRES_USER:-supplychain}:${POSTGRES_PASSWORD:-dev_only_change_in_prod}@postgres:5432/mlflow_db
       MLFLOW_DEFAULT_ARTIFACT_ROOT: s3://supply-chain-lakehouse/mlflow
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
@@ -433,7 +433,7 @@ services:
     entrypoint:
       - /bin/sh
       - -c
-      - "pip install psycopg2-binary boto3 --quiet && mlflow server --backend-store-uri postgresql://${POSTGRES_USER:-supplychain}:${POSTGRES_PASSWORD:-supplychain_secret}@postgres:5432/mlflow_db --default-artifact-root s3://supply-chain-lakehouse/mlflow --host 0.0.0.0 --port 5000"
+      - "pip install psycopg2-binary boto3 --quiet && mlflow server --backend-store-uri postgresql://${POSTGRES_USER:-supplychain}:${POSTGRES_PASSWORD:-dev_only_change_in_prod}@postgres:5432/mlflow_db --default-artifact-root s3://supply-chain-lakehouse/mlflow --host 0.0.0.0 --port 5000"
     depends_on:
       postgres:
         condition: service_healthy

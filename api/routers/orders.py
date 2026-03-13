@@ -33,6 +33,7 @@ async def list_orders(
         q = q.where(Order.supplier_id == supplier_id)
     result = await db.execute(q)
     orders = result.scalars().all()
+    logger.debug("list_orders: returned %d rows (status=%s supplier=%s)", len(orders), status, supplier_id)
     return [OrderRead.model_validate(o) for o in orders]
 
 
@@ -42,6 +43,7 @@ async def order_timeline(order_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Order).where(Order.order_id == order_id))
     order = result.scalar_one_or_none()
     if not order:
+        logger.warning("order_timeline: order_id=%s not found", order_id)
         raise HTTPException(status_code=404, detail="Order not found")
 
     events: list[dict] = []
@@ -228,5 +230,6 @@ async def get_order(order_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Order).where(Order.order_id == order_id))
     order = result.scalar_one_or_none()
     if not order:
+        logger.warning("get_order: order_id=%s not found", order_id)
         raise HTTPException(status_code=404, detail="Order not found")
     return OrderRead.model_validate(order)
