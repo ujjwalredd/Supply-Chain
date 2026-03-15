@@ -8,6 +8,7 @@ import { AIFeature } from './components/AIFeature';
 import { Architecture } from './components/Architecture';
 import { Footer } from './components/Footer';
 import { Capabilities } from './components/Capabilities';
+import { GlassBox } from './components/GlassBox';
 import { CommandPalette } from './components/CommandPalette';
 
 export default function App() {
@@ -21,6 +22,7 @@ export default function App() {
         <DashboardPreview />
         <AIFeature />
         <Capabilities />
+        <GlassBox />
         <OpenSourceFeature />
         <Architecture />
       </main>

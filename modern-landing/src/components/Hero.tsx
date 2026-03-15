@@ -6,7 +6,7 @@ const smoothTransition = { duration: 1, ease: [0.16, 1, 0.3, 1] as any };
 
 export function Hero() {
   return (
-    <section className="relative pt-32 pb-20 md:pt-48 md:pb-32 overflow-hidden">
+    <section className="relative pt-32 pb-20 md:pt-48 md:pb-32 overflow-hidden noise-texture">
       {/* Soft Ambient Glow */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-hero-glow pointer-events-none" />
 
@@ -18,7 +18,7 @@ export function Hero() {
           initial={{ opacity: 0, y: 15, scale: 0.95 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ ...smoothTransition, delay: 0 }}
-          className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-black/5 bg-white shadow-sm mb-8"
+          className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-white/40 bg-white/60 backdrop-blur-lg shadow-sm mb-8"
         >
           <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
           <span className="text-[10px] font-mono tracking-widest text-steel uppercase text-ink">System online · v7.0 Active</span>

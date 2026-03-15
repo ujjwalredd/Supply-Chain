@@ -9,11 +9,13 @@ interface MagneticButtonProps {
   href?: string;
   target?: string;
   rel?: string;
+  strength?: number;
 }
 
-export function MagneticButton({ children, className = '', onClick, href, target, rel }: MagneticButtonProps) {
+export function MagneticButton({ children, className = '', onClick, href, target, rel, strength = 0.3 }: MagneticButtonProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isHovered, setIsHovered] = useState(false);
 
   const handleMouse = (e: MouseEvent<HTMLDivElement>) => {
     const { clientX, clientY } = e;
@@ -21,20 +23,36 @@ export function MagneticButton({ children, className = '', onClick, href, target
     const middleX = clientX - (left + width / 2);
     const middleY = clientY - (top + height / 2);
 
-    // Magnetic pull strength (higher is more pull, max is 0.5 usually)
-    setPosition({ x: middleX * 0.2, y: middleY * 0.2 });
+    setPosition({ x: middleX * strength, y: middleY * strength });
+    setIsHovered(true);
   };
 
   const reset = () => {
     setPosition({ x: 0, y: 0 });
+    setIsHovered(false);
   };
 
   const content = (
     <motion.div
-      className={className}
-      animate={{ x: position.x, y: position.y }}
-      transition={{ type: 'spring', stiffness: 150, damping: 15, mass: 0.1 }}
+      className={`${className} relative overflow-hidden`}
+      animate={{ 
+        x: position.x, 
+        y: position.y,
+        scale: isHovered ? 1.02 : 1,
+      }}
+      transition={{ type: 'spring', stiffness: 200, damping: 15, mass: 0.1 }}
     >
+      {/* Shine sweep on hover */}
+      <motion.div 
+        className="absolute inset-0 pointer-events-none"
+        initial={{ x: '-100%', opacity: 0 }}
+        animate={isHovered ? { x: '200%', opacity: 0.15 } : { x: '-100%', opacity: 0 }}
+        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+        style={{
+          background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)',
+          width: '50%',
+        }}
+      />
       {children}
     </motion.div>
   );
@@ -44,7 +62,7 @@ export function MagneticButton({ children, className = '', onClick, href, target
       ref={ref} 
       onMouseMove={handleMouse} 
       onMouseLeave={reset} 
-      className="inline-block p-4" // padding acts as the "magnetic field" radius
+      className="inline-block p-4" // padding = magnetic field radius
     >
       {href ? (
         <a href={href} target={target} rel={rel} onClick={onClick} className="inline-block">

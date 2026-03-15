@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Database, Activity, Cpu, LineChart, History, Network } from 'lucide-react';
+import { Database, Activity, Cpu, LineChart, History, Network, Box, ShieldCheck } from 'lucide-react';
 
 export function Capabilities() {
   const capabilities = [
@@ -32,12 +32,22 @@ export function Capabilities() {
       title: 'OpenTelemetry + Jaeger',
       desc: 'Auto-instrumented FastAPI and SQLAlchemy passing OTLP gRPC traces to Jaeger, providing deep observability into database queries and AI latency.',
       icon: Network,
+    },
+    {
+      title: 'OpenBoxes ERP Integration',
+      desc: 'Native ingestion of Purchase Orders and Stock Movements from OpenBoxes, auto-normalized via ontology to canonical supply chain events.',
+      icon: Box,
+    },
+    {
+      title: 'Glass-Box Execution Gates',
+      desc: 'Strict policy and confidence thresholding engine. Autonomous resolution when safe, structured human escalation when uncertainty or cost is high.',
+      icon: ShieldCheck,
     }
   ];
 
   return (
-    <section className="py-24 bg-paper relative z-10 border-b border-black/5">
-      <div className="max-w-7xl mx-auto px-6">
+    <section className="py-24 bg-paper relative z-10 border-b border-black/5 noise-texture overflow-hidden">
+      <div className="max-w-7xl mx-auto px-6 relative z-10">
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -69,8 +79,8 @@ export function Capabilities() {
                 className="flex flex-col group"
               >
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-subtle border border-black/5 group-hover:bg-white group-hover:shadow-sm group-hover:border-black/10 transition-all">
-                    <Icon size={18} className="text-ink" />
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-white/60 backdrop-blur-sm border border-white/40 shadow-sm group-hover:shadow-md group-hover:border-accent/20 group-hover:scale-110 transition-all duration-500">
+                    <Icon size={18} className="text-ink group-hover:text-accent transition-colors duration-300" />
                   </div>
                   <h4 className="text-ink font-semibold">{cap.title}</h4>
                 </div>

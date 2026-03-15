@@ -23,26 +23,185 @@
   }
 }
 
+/* ─── INFINITE SCROLL ──────────────────────────── */
 @keyframes infinite-scroll {
   0% { transform: translateX(0); }
   100% { transform: translateX(-50%); }
 }
-
 .animate-infinite-scroll {
   animation: infinite-scroll 40s linear infinite;
 }
 
-/* Custom Scrollbar */
+/* ─── AMBIENT GLOW SYSTEM (Dashboard Health) ──── */
+@keyframes ambient-pulse-stable {
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50%      { opacity: 0.55; transform: scale(1.02); }
+}
+@keyframes ambient-pulse-crisis {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50%      { opacity: 0.85; transform: scale(1.06); }
+}
+.ambient-glow {
+  position: absolute;
+  inset: -80px;
+  border-radius: 50%;
+  filter: blur(120px);
+  pointer-events: none;
+  z-index: 0;
+  transition: background 1.2s ease, filter 1.2s ease;
+}
+.ambient-glow--stable {
+  background: radial-gradient(ellipse at center, rgba(0,112,243,0.08) 0%, rgba(16,185,129,0.04) 40%, transparent 70%);
+  animation: ambient-pulse-stable 6s ease-in-out infinite;
+}
+.ambient-glow--crisis {
+  background: radial-gradient(ellipse at center, rgba(239,68,68,0.18) 0%, rgba(239,68,68,0.08) 40%, transparent 70%);
+  animation: ambient-pulse-crisis 1.8s ease-in-out infinite;
+}
+
+/* ─── FILM GRAIN / PHYSICAL TEXTURE ────────────── */
+@keyframes grain-drift {
+  0%, 100% { transform: translate(0, 0); }
+  25%      { transform: translate(-2%, 3%); }
+  50%      { transform: translate(3%, -1%); }
+  75%      { transform: translate(-1%, -2%); }
+}
+.noise-texture::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  width: 200%;
+  height: 200%;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.025'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 1;
+  animation: grain-drift 8s ease-in-out infinite;
+}
+
+/* ─── SCANNING LASER (AI Terminal) ─────────────── */
+@keyframes laser-scan {
+  0%   { top: 0%; opacity: 0; }
+  5%   { opacity: 1; }
+  95%  { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+.scanning-laser {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0%, rgba(0,112,243,0.6) 20%, rgba(0,112,243,0.9) 50%, rgba(0,112,243,0.6) 80%, transparent 100%);
+  box-shadow: 0 0 12px 2px rgba(0,112,243,0.3), 0 0 30px 4px rgba(0,112,243,0.1);
+  z-index: 30;
+  pointer-events: none;
+  animation: laser-scan 3s ease-in-out infinite;
+}
+.scanning-laser--crisis {
+  background: linear-gradient(90deg, transparent 0%, rgba(239,68,68,0.6) 20%, rgba(239,68,68,0.9) 50%, rgba(239,68,68,0.6) 80%, transparent 100%);
+  box-shadow: 0 0 12px 2px rgba(239,68,68,0.3), 0 0 30px 4px rgba(239,68,68,0.1);
+  animation: laser-scan 1.5s ease-in-out infinite;
+}
+
+/* ─── GLITCH EFFECT (AI Fallback Transition) ──── */
+@keyframes glitch-1 {
+  0%   { clip-path: inset(0 0 90% 0); transform: translate(-3px, 1px); }
+  20%  { clip-path: inset(40% 0 20% 0); transform: translate(2px, -1px); }
+  40%  { clip-path: inset(60% 0 10% 0); transform: translate(-1px, 2px); }
+  60%  { clip-path: inset(10% 0 70% 0); transform: translate(3px, 0px); }
+  80%  { clip-path: inset(80% 0 5% 0); transform: translate(-2px, -1px); }
+  100% { clip-path: inset(0 0 90% 0); transform: translate(1px, 1px); }
+}
+@keyframes glitch-2 {
+  0%   { clip-path: inset(10% 0 80% 0); transform: translate(2px, -1px); }
+  20%  { clip-path: inset(70% 0 5% 0); transform: translate(-3px, 2px); }
+  40%  { clip-path: inset(20% 0 50% 0); transform: translate(1px, -2px); }
+  60%  { clip-path: inset(80% 0 0% 0); transform: translate(-1px, 1px); }
+  80%  { clip-path: inset(5% 0 60% 0); transform: translate(3px, -1px); }
+  100% { clip-path: inset(10% 0 80% 0); transform: translate(-2px, 2px); }
+}
+.glitch-active {
+  position: relative;
+}
+.glitch-active::before,
+.glitch-active::after {
+  content: attr(data-text);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.glitch-active::before {
+  color: #ff0040;
+  animation: glitch-1 0.25s ease-in-out 3;
+  z-index: 2;
+}
+.glitch-active::after {
+  color: #0070F3;
+  animation: glitch-2 0.25s ease-in-out 3;
+  z-index: 3;
+}
+
+/* ─── LIQUID GLASS CARD STYLE ──────────────────── */
+.liquid-glass {
+  background: rgba(255,255,255, 0.6);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255,255,255,0.4);
+  box-shadow:
+    0 8px 32px rgba(0,0,0,0.06),
+    0 1px 0 rgba(255,255,255,0.6) inset,
+    0 -1px 0 rgba(0,0,0,0.04) inset;
+  transition: all 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.liquid-glass:hover {
+  background: rgba(255,255,255, 0.75);
+  box-shadow:
+    0 12px 40px rgba(0,0,0,0.08),
+    0 1px 0 rgba(255,255,255,0.8) inset,
+    0 -1px 0 rgba(0,0,0,0.03) inset;
+  border-color: rgba(255,255,255,0.6);
+}
+
+/* ─── SLOT-MACHINE NUMBER TICKER ───────────────── */
+@keyframes digit-roll-up {
+  0%   { transform: translateY(100%); opacity: 0; }
+  30%  { opacity: 1; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.digit-roll {
+  display: inline-block;
+  animation: digit-roll-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ─── PIPELINE PARTICLE ────────────────────────── */
+@keyframes particle-flow {
+  0%   { transform: translateX(0) scale(1); opacity: 0.8; }
+  50%  { transform: translateX(50%) scale(1.2); opacity: 1; }
+  100% { transform: translateX(100%) scale(1); opacity: 0.8; }
+}
+
+/* ─── CUSTOM SCROLLBAR ─────────────────────────── */
 ::-webkit-scrollbar {
   width: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #FAFAFA; 
+  background: #FAFAFA;
 }
 ::-webkit-scrollbar-thumb {
-  background: #E4E4E7; 
+  background: #E4E4E7;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #D4D4D8; 
+  background: #D4D4D8;
+}
+
+/* ─── SCROLLBAR HIDE ───────────────────────────── */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }

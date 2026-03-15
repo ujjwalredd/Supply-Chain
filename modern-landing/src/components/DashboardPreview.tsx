@@ -1,6 +1,6 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, useScroll, useTransform } from 'framer-motion';
-import { ChevronRight, Cpu, CheckCircle2 } from 'lucide-react';
+import { ChevronRight, Cpu, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { AnimatedNumber, AnimatedDecimal } from './AnimatedNumber';
 import { TiltCard } from './TiltCard';
 import { CobeGlobe } from './CobeGlobe';
@@ -14,6 +14,18 @@ const staggerItem = {
 export function DashboardPreview() {
   const [activeTab, setActiveTab] = useState('Overview');
   const [isMapExpanded, setIsMapExpanded] = useState(false);
+  const [isCrisis, setIsCrisis] = useState(false);
+
+  useEffect(() => {
+    const handleCrisis = (e: any) => {
+      if (e.detail === 'factory-fire') {
+        setIsCrisis(true);
+        setActiveTab('Overview');
+      }
+    };
+    window.addEventListener('simulate-deviation', handleCrisis);
+    return () => window.removeEventListener('simulate-deviation', handleCrisis);
+  }, []);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
@@ -27,8 +39,11 @@ export function DashboardPreview() {
   const y = useTransform(scrollYProgress, [0, 1], [120, 0]);
 
   return (
-    <section id="dashboard" className="py-24 relative z-10 bg-surface border-y border-black/5" style={{ perspective: "2000px" }}>
-      <div className="max-w-[1400px] mx-auto px-6">
+    <section id="dashboard" className="py-24 relative z-10 bg-surface border-y border-black/5 noise-texture overflow-hidden" style={{ perspective: "2000px" }}>
+      {/* Dynamic Ambient Backlight — health-reactive */}
+      <div className={`ambient-glow ${isCrisis ? 'ambient-glow--crisis' : 'ambient-glow--stable'}`} />
+
+      <div className="max-w-[1400px] mx-auto px-6 relative z-10">
         
         <motion.div 
           initial="hidden" whileInView="visible" viewport={{ once: true, margin: '-100px' }}
@@ -40,8 +55,14 @@ export function DashboardPreview() {
             <h3 className="text-3xl font-semibold tracking-tight text-ink">Real-Time Operations Terminal</h3>
           </motion.div>
           <motion.div variants={staggerItem} className="hidden md:flex text-xs font-mono text-steel items-center gap-4">
-            <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-success"/> Kafka Pipeline: Synced</span>
-            <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-success"/> Dagster Medallion: Fresh</span>
+            <span className={`flex items-center gap-1.5 transition-colors duration-700 ${isCrisis ? 'text-danger' : ''}`}>
+              <div className={`w-2 h-2 rounded-full transition-colors duration-700 ${isCrisis ? 'bg-danger animate-pulse' : 'bg-success'}`}/>
+              {isCrisis ? 'Kafka Pipeline: OVERFLOW' : 'Kafka Pipeline: Synced'}
+            </span>
+            <span className={`flex items-center gap-1.5 transition-colors duration-700 ${isCrisis ? 'text-danger' : ''}`}>
+              <div className={`w-2 h-2 rounded-full transition-colors duration-700 ${isCrisis ? 'bg-danger animate-pulse' : 'bg-success'}`}/>
+              {isCrisis ? 'Dagster Medallion: STALE' : 'Dagster Medallion: Fresh'}
+            </span>
           </motion.div>
         </motion.div>
 
@@ -55,9 +76,11 @@ export function DashboardPreview() {
             y,
             transformOrigin: "bottom center",
             transformPerspective: 2000,
-            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)"
+            boxShadow: isCrisis 
+              ? "0 25px 60px -12px rgba(239, 68, 68, 0.35), 0 0 80px -20px rgba(239, 68, 68, 0.15)"
+              : "0 25px 50px -12px rgba(0, 0, 0, 0.25)"
           }}
-          className="glass-card overflow-hidden bg-white flex flex-col relative"
+          className={`glass-card overflow-hidden bg-white flex flex-col relative transition-shadow duration-1000 ${isCrisis ? 'border-danger/30' : ''}`}
         >
           
           {/* Dashboard Header Menu */}
@@ -118,10 +141,14 @@ export function DashboardPreview() {
                     <motion.div 
                       initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3, duration: 0.5, ease: [0.16,1,0.3,1] }}
                     >
-                      <TiltCard className="p-5 rounded-xl border bg-white shadow-sm border-danger/30 h-full">
+                      <TiltCard className={`p-5 rounded-xl border bg-white shadow-sm h-full transition-colors duration-500 ${isCrisis ? 'border-danger bg-danger/5' : 'border-danger/30'}`}>
                         <div className="text-xs text-steel font-medium mb-1">Critical Deviations</div>
-                        <div className="text-2xl font-semibold tracking-tight text-danger"><AnimatedNumber value={3} /></div>
-                        <div className="text-[10px] mt-2 font-medium text-danger/80">Requires Review</div>
+                        <div className="text-2xl font-semibold tracking-tight text-danger">
+                          <AnimatedNumber value={isCrisis ? 124 : 3} />
+                        </div>
+                        <div className={`text-[10px] mt-2 font-medium ${isCrisis ? 'text-danger font-bold animate-pulse' : 'text-danger/80'}`}>
+                          {isCrisis ? 'SYSTEM OVERLOAD: MASS CASCADING FAILURE' : 'Requires Review'}
+                        </div>
                       </TiltCard>
                     </motion.div>
                   </div>
@@ -157,19 +184,26 @@ export function DashboardPreview() {
                       initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3, duration: 0.6 }}
                       className="bg-white p-5 rounded-xl border border-black/5 shadow-sm flex flex-col h-full"
                     >
-                      <div className="text-xs font-semibold text-ink mb-4">Deviation Log</div>
+                      <div className="text-xs font-semibold text-ink mb-4 flex justify-between">
+                        <span>Deviation Log</span>
+                        {isCrisis && <span className="text-danger flex items-center gap-1 animate-pulse"><AlertTriangle size={12}/> CRISIS</span>}
+                      </div>
                       <div className="space-y-3">
-                        {[
+                        {(isCrisis ? [
+                          { type: 'FACTORY_FIRE', entity: 'Shenzhen Hub', risk: 'CRITICAL', riskColor: 'bg-danger animate-pulse', time: 'Just now' },
+                          { type: 'DISRUPTED', entity: 'Ocean Line 4', risk: 'CRITICAL', riskColor: 'bg-danger', time: '1m ago' },
+                          { type: 'REROUTE', entity: 'Air Fght 22', risk: 'HIGH', riskColor: 'bg-warning', time: '1m ago' },
+                        ] : [
                           { type: 'DELAY', entity: 'Ocean Line 4', risk: 'HIGH', riskColor: 'bg-danger', time: '1m ago' },
                           { type: 'STOCKOUT', entity: 'WH-East', risk: 'MED', riskColor: 'bg-warning', time: '12m ago' },
                           { type: 'ANOMALY', entity: 'Supplier Z', risk: 'LOW', riskColor: 'bg-steel', time: '1h ago' },
-                        ].map((alert, i) => (
-                          <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-subtle border border-black/5 text-xs hover:bg-black/5 transition-colors cursor-pointer">
+                        ]).map((alert, i) => (
+                          <div key={i} className={`flex items-center justify-between p-3 rounded-lg border text-xs transition-colors cursor-pointer ${isCrisis && i === 0 ? 'bg-danger/10 border-danger/20 hover:bg-danger/20' : 'bg-subtle border-black/5 hover:bg-black/5'}`}>
                             <div className="flex items-center gap-2.5">
-                              <div className={`w-2 h-2 rounded-full ${alert.riskColor} shadow-sm`} />
-                              <span className="font-mono font-medium text-ink">{alert.type}</span>
+                              <div className={`w-2 h-2 rounded-full shadow-sm ${alert.riskColor}`} />
+                              <span className={`font-mono font-medium ${isCrisis && i === 0 ? 'text-danger' : 'text-ink'}`}>{alert.type}</span>
                             </div>
-                            <span className="text-steel">{alert.entity}</span>
+                            <span className={isCrisis && i === 0 ? 'text-danger-dark font-semibold' : 'text-steel'}>{alert.entity}</span>
                             <span className="text-[10px] text-steel font-medium">{alert.time}</span>
                           </div>
                         ))}
@@ -194,14 +228,25 @@ export function DashboardPreview() {
                   </div>
 
                   <div className="flex-1 flex flex-col gap-4 text-sm text-steel mb-4 relative z-10">
-                    <p>Analyzing deviation: <span className="text-ink font-mono font-medium">DEV-4922</span>.</p>
-                    <div className="flex items-start gap-2 bg-subtle p-4 rounded-lg border border-black/5 text-xs font-mono shadow-inner">
-                      <span className="text-accent font-bold">{'>'}</span>
-                      <span className="leading-relaxed text-ink/80">
-                        Port congestion detected at Shanghai.<br/>
-                        Delay: <span className="font-semibold text-ink">14 Days</span>.<br/>
-                        Carrying Cost Impact: <span className="text-warning font-semibold">$240,000</span>.<br/>
-                        Stockout Penalty: <span className="text-danger font-semibold">$2.4M</span>.
+                    <p>Analyzing deviation: <span className="text-ink font-mono font-medium">{isCrisis ? 'DEV-991A' : 'DEV-4922'}</span>.</p>
+                    <div className={`flex items-start gap-2 p-4 rounded-lg border font-mono shadow-inner ${isCrisis ? 'bg-danger/5 border-danger/20 text-xs' : 'bg-subtle border-black/5 text-xs'}`}>
+                      <span className={isCrisis ? 'text-danger font-bold' : 'text-accent font-bold'}>{'>'}</span>
+                      <span className={isCrisis ? 'leading-relaxed text-danger-dark font-medium' : 'leading-relaxed text-ink/80'}>
+                        {isCrisis ? (
+                          <>
+                            [CRITICAL] Factory fire detected at Tier-1 Assembly in Shenzhen. Immediate capacity loss of 40,000 units/day.<br /><br />
+                            Spiking alternative node "Vietnam-Hub-2" capacity...<br />
+                            Activating emergency air freight ($450k overhead).<br />
+                            Awaiting operator confirmation for 14 downstream reroutes.
+                          </>
+                        ) : (
+                          <>
+                            Port congestion detected at Shanghai.<br/>
+                            Delay: <span className="font-semibold text-ink">14 Days</span>.<br/>
+                            Carrying Cost Impact: <span className="text-warning font-semibold">$240,000</span>.<br/>
+                            Stockout Penalty: <span className="text-danger font-semibold">$2.4M</span>.
+                          </>
+                        )}
                       </span>
                     </div>
                     
