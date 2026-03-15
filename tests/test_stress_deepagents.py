@@ -1026,12 +1026,12 @@ class TestProjectFiles:
         """LICENSE file must exist."""
         assert os.path.exists(os.path.join(ROOT, "LICENSE"))
 
-    def test_mit_license_content(self):
-        """LICENSE must contain MIT License text."""
+    def test_agpl_license_content(self):
+        """LICENSE must contain AGPL v3 text."""
         with open(os.path.join(ROOT, "LICENSE"), "r") as f:
             content = f.read()
-        assert "MIT License" in content
-        assert "Permission is hereby granted" in content
+        assert "GNU AFFERO GENERAL PUBLIC LICENSE" in content
+        assert "Version 3" in content
 
     def test_readme_has_correct_title(self):
         """README must say 'Adopt Supply Chain AI OS'."""
