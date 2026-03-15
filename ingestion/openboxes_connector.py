@@ -393,15 +393,29 @@ def _build_order_event(po: dict[str, Any], raw_status: str) -> Optional[dict[str
 
 # ── Kafka publish ─────────────────────────────────────────────────────────────
 
-def _get_producer():
+def _get_producer(max_attempts: int = 10, backoff: float = 5.0):
     from kafka import KafkaProducer
-    return KafkaProducer(
-        bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS.split(","),
-        value_serializer=lambda v: json.dumps(v).encode("utf-8"),
-        key_serializer=lambda k: k.encode("utf-8") if k else None,
-        acks="all",
-        retries=3,
-    )
+    import time
+    last_err = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            producer = KafkaProducer(
+                bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS.split(","),
+                value_serializer=lambda v: json.dumps(v).encode("utf-8"),
+                key_serializer=lambda k: k.encode("utf-8") if k else None,
+                acks="all",
+                retries=3,
+            )
+            logger.info("Kafka producer connected on attempt %d", attempt)
+            return producer
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "Kafka not ready (attempt %d/%d): %s — retrying in %.0fs",
+                attempt, max_attempts, e, backoff,
+            )
+            time.sleep(backoff)
+    raise RuntimeError(f"Kafka unavailable after {max_attempts} attempts: {last_err}")
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
