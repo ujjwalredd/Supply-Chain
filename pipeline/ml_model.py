@@ -72,12 +72,15 @@ def _load_encoders() -> dict | None:
         return pickle.load(f)
 
 
-def train_delay_model(df: pd.DataFrame) -> dict:
+def train_delay_model(df: pd.DataFrame, extra_feature_cols: list | None = None) -> dict:
     """
     Train XGBoost delay prediction model on the provided DataFrame.
 
     Expected columns: supplier_id, region, quantity, unit_price, order_value,
     inventory_level, delay_days (used to derive is_delayed).
+
+    extra_feature_cols: additional numeric feature columns (e.g. from feature_engineer)
+    to include in training alongside the base _FEATURES.
 
     Returns:
         {"accuracy": float, "roc_auc": float, "model_path": str}
@@ -110,7 +113,16 @@ def train_delay_model(df: pd.DataFrame) -> dict:
     df, encoders = _encode_features(df)
     _save_encoders(encoders)
 
-    X = df[_FEATURES]
+    # Build final feature list: base + validated extra columns from feature_engineer
+    active_features = list(_FEATURES)
+    if extra_feature_cols:
+        for col in extra_feature_cols:
+            if col in df.columns and col not in active_features:
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+                active_features.append(col)
+                logger.info("Including computed feature in training: %s", col)
+
+    X = df[active_features]
     y = df[_TARGET]
 
     if len(df) < 20:

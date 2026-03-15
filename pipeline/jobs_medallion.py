@@ -10,6 +10,6 @@ medallion_full_job = define_asset_job(
 
 medallion_incremental_job = define_asset_job(
     name="medallion_incremental",
-    selection=["bronze_orders", "silver_orders", "gold_orders_ai_ready"],
-    description="Incremental: bronze + silver + gold orders only",
+    selection=["bronze_orders", "silver_orders", "gold_orders_ai_ready", "gold_delay_model"],
+    description="Incremental: bronze + silver + gold orders + ML retraining",
 )

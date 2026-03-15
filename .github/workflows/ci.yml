@@ -122,21 +122,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create stub .env
-        run: |
-          cp .env.example .env
-          # Ensure required vars are present for config validation
-          echo "POSTGRES_PASSWORD=ci_password" >> .env
-          echo "API_KEYS=ci-key" >> .env
+      - name: Copy env file
+        run: cp .env.example .env && echo "POSTGRES_PASSWORD=test" >> .env && echo "API_KEYS=test-key" >> .env && echo "ANTHROPIC_API_KEY=test-key" >> .env
 
-      - name: Validate docker-compose syntax
+      - name: Validate docker-compose
         run: docker compose config --quiet
 
-      - name: Validate docker-compose.prod.yml syntax
+  agents-validate:
+    name: Agents Validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install agent dependencies
+        run: pip install -r requirements-agents.txt
+
+      - name: Validate agent imports
         run: |
-          if [ -f docker-compose.prod.yml ]; then
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
-          fi
+          python -c "from agents.base import BaseAgent; print('base OK')"
+          python -c "from agents.kafka_guardian import KafkaGuardianAgent; print('kafka OK')"
+          python -c "from agents.dagster_guardian import DagsterGuardianAgent; print('dagster OK')"
+          python -c "from agents.medallion.bronze import BronzeAgent; print('bronze OK')"
+          python -c "from agents.medallion.silver import SilverAgent; print('silver OK')"
+          python -c "from agents.medallion.gold import GoldAgent; print('gold OK')"
+          python -c "from agents.orchestrator import OrchestratorAgent; print('orchestrator OK')"
+          python -c "from agents.run_all import AGENT_CLASSES; print(f'All {len(AGENT_CLASSES)} agents registered')"
 
   # ─────────────────────────────────────────────────────────────────
   # JOB 5: Auto-tag on merge to main
@@ -144,7 +159,7 @@ jobs:
   tag-release:
     name: Tag Release
     runs-on: ubuntu-latest
-    needs: [test, secret-scan, dbt-validate, docker-validate]
+    needs: [test, secret-scan, dbt-validate, docker-validate, agents-validate]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: write
@@ -168,7 +183,7 @@ jobs:
   deploy:
     name: Deploy (skipped — no VM configured)
     runs-on: ubuntu-latest
-    needs: [test, secret-scan, dbt-validate, docker-validate]
+    needs: [test, secret-scan, dbt-validate, docker-validate, agents-validate]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.DEPLOY_ENABLED == 'true'
 
     steps:

@@ -728,7 +728,23 @@ def gold_delay_model(context: AssetExecutionContext) -> MaterializeResult:
     row_count = len(df)
     context.log.info("Training XGBoost delay model on %d rows from %s", row_count, parquet_file)
 
-    result = train_delay_model(df)
+    # Merge computed features from feature_engineer if available
+    extra_feature_cols = []
+    computed_features_file = os.path.join(GOLD_PATH, "computed_features", "features.parquet")
+    if Path(computed_features_file).exists():
+        try:
+            cf_df = pd.read_parquet(computed_features_file)
+            extra_cols = [c for c in cf_df.columns if c != "order_id"]
+            if "order_id" in df.columns and "order_id" in cf_df.columns:
+                df = df.merge(cf_df, on="order_id", how="left")
+                extra_feature_cols = [c for c in extra_cols if c in df.columns]
+                context.log.info("Merged %d computed features: %s", len(extra_feature_cols), extra_feature_cols)
+            else:
+                context.log.warning("Cannot merge computed features: order_id key missing")
+        except Exception as e:
+            context.log.warning("Could not merge computed features: %s", e)
+
+    result = train_delay_model(df, extra_feature_cols=extra_feature_cols or None)
 
     context.log.info(
         "XGBoost training complete — accuracy=%.4f roc_auc=%.4f model_path=%s",

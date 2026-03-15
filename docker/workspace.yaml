@@ -1,4 +1,5 @@
 load_from:
-  - python_module:
-      module_name: pipeline.definitions
-      attribute: defs
+  - grpc_server:
+      host: dagster-code-server
+      port: 4266
+      location_name: "pipeline.definitions:defs"

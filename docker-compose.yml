@@ -141,6 +141,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      dagster-code-server:
+        condition: service_healthy
     ports:
       - "3001:3000"
     environment:
@@ -172,6 +174,53 @@ services:
       - ./transforms:/opt/dagster/app/transforms
       - ./quality:/opt/dagster/app/quality
       - ./data:/opt/dagster/app/data
+      - ./docker/workspace.yaml:/opt/dagster/app/workspace.yaml:ro
+
+  # Persistent gRPC code server — webserver + daemon both connect to this
+  # instead of each spawning their own subprocess (which dies every 60s)
+  dagster-code-server:
+    build:
+      context: .
+      dockerfile: docker/Dagster.Dockerfile
+    env_file: .env
+    container_name: supply-chain-dagster-code-server
+    command: ["dagster", "api", "grpc", "-h", "0.0.0.0", "-p", "4266", "-m", "pipeline.definitions", "-a", "defs"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DAGSTER_POSTGRES_HOST: postgres
+      DAGSTER_POSTGRES_PORT: 5432
+      DAGSTER_POSTGRES_USER: ${POSTGRES_USER:-supplychain}
+      DAGSTER_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_only_change_in_prod}
+      DAGSTER_POSTGRES_DB: dagster
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-supplychain}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_only_change_in_prod}
+      POSTGRES_DB: ${POSTGRES_DB:-supply_chain_db}
+      DATA_DIR: /opt/dagster/app/data/source
+      BRONZE_PATH: /opt/dagster/app/data/bronze
+      SILVER_PATH: /opt/dagster/app/data/silver
+      GOLD_PATH: /opt/dagster/app/data/gold
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      S3_STORAGE_BUCKET: supply-chain-lakehouse
+      MINIO_ENDPOINT_URL: http://minio:9000
+    volumes:
+      - ./pipeline:/opt/dagster/app/pipeline
+      - ./ingestion:/opt/dagster/app/ingestion
+      - ./transforms:/opt/dagster/app/transforms
+      - ./quality:/opt/dagster/app/quality
+      - ./data:/opt/dagster/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c 'import socket; s=socket.socket(); s.connect((\"localhost\",4266)); s.close()' 2>/dev/null && echo ok || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   dagster-daemon:
     build:
@@ -182,6 +231,8 @@ services:
     command: ["dagster-daemon", "run"]
     depends_on:
       postgres:
+        condition: service_healthy
+      dagster-code-server:
         condition: service_healthy
       dagster-webserver:
         condition: service_started
@@ -213,6 +264,7 @@ services:
       - ./transforms:/opt/dagster/app/transforms
       - ./quality:/opt/dagster/app/quality
       - ./data:/opt/dagster/app/data
+      - ./docker/workspace.yaml:/opt/dagster/app/workspace.yaml:ro
 
   # --- API & SERVICES ---
   fastapi:
@@ -322,6 +374,59 @@ services:
       REDIS_URL: redis://redis:6379/0
       PG_WRITER_BATCH_SIZE: "10"
     command: ["python", "ingestion/pg_writer.py"]
+
+  # --- AUTONOMOUS AGENT SYSTEM ---
+  agents:
+    build:
+      context: .
+      dockerfile: docker/Agents.Dockerfile
+    container_name: supply-chain-agents
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      dagster-webserver:
+        condition: service_started
+      fastapi:
+        condition: service_started
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-supplychain}:${POSTGRES_PASSWORD:-dev_only_change_in_prod}@postgres:5432/${POSTGRES_DB:-supply_chain_db}
+      - REDIS_URL=redis://redis:6379/0
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - DAGSTER_WEBSERVER_URL=http://dagster-webserver:3000
+      - FASTAPI_URL=http://fastapi:8000
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - AGENT_MODEL_HAIKU=${AGENT_MODEL_HAIKU:-claude-haiku-4-5-20251001}
+      - AGENT_MODEL_SONNET=${AGENT_MODEL_SONNET:-claude-sonnet-4-6}
+      - BRONZE_PATH=/data/bronze
+      - SILVER_PATH=/data/silver
+      - GOLD_PATH=/data/gold
+      - DATA_SOURCE_DIR=/data/source
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - GRAFANA_URL=http://grafana:3000
+      - GRAFANA_USER=${GRAFANA_USER:-admin}
+      - GRAFANA_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - AGENT_STARTUP_DELAY=45
+      - KAFKA_LAG_WARN=500
+      - KAFKA_LAG_CRITICAL=2000
+      - PRODUCER_SILENCE_SECONDS=120
+      - AI_MIN_CONFIDENCE=0.4
+      - BRONZE_STALE_THRESHOLD_MIN=30
+      - GOLD_FRESHNESS_THRESHOLD_MIN=360
+    volumes:
+      - ./data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,psycopg2; conn=psycopg2.connect(os.environ['DATABASE_URL']); cur=conn.cursor(); cur.execute('SELECT 1'); conn.close()"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 90s
 
   # OpenBoxes connector — polls OpenBoxes Purchase Orders + Stock Movements,
   # normalizes via ontology layer, publishes canonical OrderEvents to Kafka.
