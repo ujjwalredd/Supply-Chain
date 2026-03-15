@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/ujjwalredd/Supply-Chain/actions/workflows/ci.yml/badge.svg)](https://github.com/ujjwalredd/Supply-Chain/actions/workflows/ci.yml)
 [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://supply-chain-silk.vercel.app)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 [Live Demo](https://supply-chain-silk.vercel.app)
 
@@ -25,8 +26,8 @@ Most supply chain platforms require humans to write ETL, tune models, and monito
 
 ```
                           NEW CUSTOMER DATA FLOW
-  CSV Upload (API) ──────────────────────────────────────────────────┐
-  S3 / MinIO Drop ────────────────────────────────────────────────── │
+  CSV Upload (API) ─────────────────────────────────────────────────┐
+  S3 / MinIO Drop ──────────────────────────────────────────────────│
   Kafka Stream ──────────────────────────────────────────────────── ▼
                                                           /data/source/ (watched)
                                                                 │
@@ -35,8 +36,8 @@ Most supply chain platforms require humans to write ETL, tune models, and monito
                                              → saves loader → triggers pipeline
                                                                 │
                               INGESTION LAYER                   │
-  OpenBoxes WMS ────────────────────────────────────────────────│
-  Kafka (supply-chain-events) ───────────────────────────────── │
+  OpenBoxes WMS ──────────────────────────────────────────────-─│
+  Kafka (supply-chain-events) ──────────────────────────────-───│
          │                                                      │
          v                                                      v
     pg-writer                                         Dagster Full Pipeline
@@ -660,6 +661,14 @@ supply-chain-os/
 5. Validate Docker: `docker compose config --quiet`
 6. Validate agents: `python -c "from agents.run_all import AGENT_CLASSES; print(len(AGENT_CLASSES))"`
 7. Open a PR against `main`
+
+---
+
+## License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+
+---
 
 ### Agent Contribution Guidelines
 
