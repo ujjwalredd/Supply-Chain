@@ -31,7 +31,7 @@ Most supply chain platforms require humans to write ETL, tune models, and monito
                           NEW CUSTOMER DATA FLOW
   CSV Upload (API) ─────────────────────────────────────────────────┐
   S3 / MinIO Drop ──────────────────────────────────────────────────│
-  Kafka Stream ───────────────────────────────────────────────────── ▼
+  Kafka Stream ──────────────────────────────────────────────────── ▼
                                                           /data/source/ (watched)
                                                                 │
                                                    DataIngestionAgent (60s)

@@ -20,6 +20,12 @@ export default {
         danger: '#EF4444',
         warning: '#F59E0B',
         success: '#10B981',
+        // Dark mode tokens
+        night: '#0A0A0F',
+        void: '#06060A',
+        abyss: '#020204',
+        frost: 'rgba(255,255,255,0.06)',
+        wire: 'rgba(255,255,255,0.08)',
       },
       backgroundImage: {
         'hero-glow': 'radial-gradient(circle at 50% 0%, rgba(0, 112, 243, 0.06), transparent 50%)',

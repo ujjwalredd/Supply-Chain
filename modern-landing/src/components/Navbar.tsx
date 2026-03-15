@@ -1,58 +1,58 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Activity, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    const handleScroll = () => {
-      setScrolled(window.scrollY > 20);
-    };
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
+    const onScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
   return (
     <motion.header
-      initial={{ y: -100, opacity: 0 }}
+      initial={{ y: -80, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] border-b ${
-        scrolled ? 'bg-white/80 backdrop-blur-xl border-black/5 shadow-sm' : 'bg-transparent border-transparent'
+      transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 border-b ${
+        scrolled
+          ? 'bg-white/90 backdrop-blur-xl border-black/5 shadow-sm'
+          : 'bg-transparent border-transparent'
       }`}
     >
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-        <button 
+        <button
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="flex items-center gap-2 cursor-pointer transition-transform hover:-translate-y-0.5"
+          className="transition-opacity hover:opacity-70"
         >
-          <Activity className="text-accent" size={18} />
-          <span className="font-semibold tracking-wide text-sm text-ink">Supply Chain AI OS</span>
+          <span className="font-semibold tracking-wide text-sm text-ink">ForeverAutonomous</span>
         </button>
+
         <nav className="hidden md:flex items-center gap-8 text-xs font-medium text-steel">
-          <a href="#platform" className="hover:text-ink transition-colors">Agents</a>
-          <a href="#dashboard" className="hover:text-ink transition-colors">Control Tower</a>
-          <a href="#architecture" className="hover:text-ink transition-colors">Architecture</a>
+          <a href="#platform"       className="hover:text-ink transition-colors">Agents</a>
+          <a href="#dashboard"      className="hover:text-ink transition-colors">Control Tower</a>
+          <a href="#architecture"   className="hover:text-ink transition-colors">Architecture</a>
           <a href="#design-partner" className="hover:text-ink transition-colors">Design Partner</a>
         </nav>
-        <div className="flex items-center gap-4 text-xs font-medium">
+
+        <div className="flex items-center gap-3">
           <button
             onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))}
-            className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-md border border-black/5 hover:bg-subtle/50 transition-colors text-steel h-[32px]"
+            className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg border border-black/6 hover:bg-subtle/60 transition-colors text-steel text-xs h-8"
           >
-            <Search size={14} />
-            <span className="opacity-80">Search...</span>
-            <kbd className="hidden lg:inline-flex items-center gap-1 font-mono text-[10px] bg-black/5 px-1.5 py-0.5 rounded ml-2">
-              <span className="text-sm leading-none">⌘</span> K
+            <Search size={13} />
+            <span className="opacity-70">Search</span>
+            <kbd className="hidden lg:inline-flex items-center font-mono text-[10px] bg-black/5 px-1.5 py-0.5 rounded ml-1">
+              ⌘K
             </kbd>
           </button>
-
           <a
             href="https://github.com/ujjwalredd/Supply-Chain"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 bg-ink text-paper px-4 py-1.5 rounded-md hover:bg-black transition-colors font-semibold shadow-sm h-[32px]"
+            className="flex items-center gap-2 bg-ink text-paper px-4 py-1.5 rounded-lg hover:bg-black transition-colors font-semibold text-xs shadow-sm h-8"
           >
             View on GitHub
           </a>

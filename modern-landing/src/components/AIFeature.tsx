@@ -138,8 +138,6 @@ export function AIFeature() {
               transform: `translateZ(30px)`,
             }}
           >
-            {/* Scanning laser line */}
-            <div className={`scanning-laser ${isSimulatingFallback ? 'scanning-laser--crisis' : ''}`} />
 
             {/* Mac OS style window header */}
             <div className="flex items-center gap-2 px-4 py-3 border-b border-black/5 bg-surface/80 backdrop-blur-sm">
@@ -155,7 +153,7 @@ export function AIFeature() {
                   animate={{ opacity: 1, scale: 1 }}
                   className="ml-auto text-[9px] font-mono font-bold text-warning bg-warning/10 px-2 py-0.5 rounded-full"
                 >
-                  ⚡ ESCALATED TO HUMAN
+                  ESCALATED TO HUMAN
                 </motion.div>
               )}
             </div>
