@@ -1034,10 +1034,10 @@ class TestProjectFiles:
         assert "Version 3" in content
 
     def test_readme_has_correct_title(self):
-        """README must say 'Adopt Supply Chain AI OS'."""
+        """README must say 'ForeverAutonomous'."""
         with open(os.path.join(ROOT, "README.md"), "r") as f:
             content = f.read()
-        assert "Adopt Supply Chain AI OS" in content
+        assert "ForeverAutonomous" in content
 
     def test_readme_mentions_13_agents(self):
         """README must mention all 13 agents."""
