@@ -51,7 +51,14 @@ class BaseAgent(ABC):
         self.model = model
         self.interval = interval_seconds
         self.description = description
-        self.client = Anthropic()
+        # Bug 5: check for API key before creating client to surface a clear error early
+        _api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not _api_key:
+            raise EnvironmentError(
+                f"[{agent_id}] ANTHROPIC_API_KEY environment variable is not set. "
+                "Set it before starting agents."
+            )
+        self.client = Anthropic(api_key=_api_key)
         self.error_count = 0
         self.consecutive_failures = 0
         self.start_time = time.time()

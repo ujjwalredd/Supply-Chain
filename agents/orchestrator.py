@@ -386,14 +386,15 @@ Correction patterns (use exactly):
 {incident_memory}
 """
 
-    # create_deep_agent API: `model` (str or BaseChatModel), not `llm`
-    # `memory` takes a list of file paths loaded into system prompt at startup
+    # Bug 20: memory expects file content string, not a file path list.
+    # Read the file and pass its content via system_prompt (already included above).
+    # Pass None for memory to avoid incorrect path-string passing.
     graph = create_deep_agent(
         model=SONNET_MODEL,
         tools=tools,
         subagents=subagents if subagents else None,
         response_format=OrchestrationResult,
-        memory=[_INCIDENT_MEMORY_FILE] if os.path.exists(_INCIDENT_MEMORY_FILE) else None,
+        memory=None,
         system_prompt=system_prompt,
     )
     return graph, OrchestrationResult
@@ -437,6 +438,7 @@ class OrchestratorAgent(BaseAgent):
                         if msg["type"] == "message":
                             try:
                                 data = json.loads(msg["data"])
+                                # Bug 10: listener must also hold the lock when appending
                                 with self._alert_lock:
                                     self._alert_queue.append(data)
                                     if data.get("severity") == "CRITICAL":
@@ -477,13 +479,24 @@ class OrchestratorAgent(BaseAgent):
             last_seen_str = str(hb.get("last_seen", ""))
             if last_seen_str:
                 try:
-                    from datetime import datetime
-                    if last_seen_str.endswith("+00:00"):
-                        last_seen_str = last_seen_str[:-6]
-                    last_seen = datetime.fromisoformat(
-                        last_seen_str.replace("T", " ").split(".")[0]
-                    )
-                    age_sec = (datetime.utcnow() - last_seen).total_seconds()
+                    # Bug 2: use dateutil.parser or datetime.fromisoformat with proper tz handling
+                    from datetime import datetime, timezone
+                    try:
+                        from dateutil import parser as _dtparser
+                        last_seen = _dtparser.parse(last_seen_str)
+                        if last_seen.tzinfo is None:
+                            last_seen = last_seen.replace(tzinfo=timezone.utc)
+                        now_utc = datetime.now(timezone.utc)
+                    except ImportError:
+                        # fallback: strip tz suffix and use utcnow
+                        _s = last_seen_str
+                        for suffix in ("+00:00", "Z", "+0000"):
+                            _s = _s.replace(suffix, "")
+                        _s = _s.replace("T", " ").split(".")[0].strip()
+                        last_seen = datetime.fromisoformat(_s)
+                        now_utc = datetime.utcnow()
+                    age_sec = (now_utc - last_seen.replace(tzinfo=None) if last_seen.tzinfo is None
+                               else (now_utc - last_seen)).total_seconds()
                     if age_sec > 300 and hb.get("status") not in ("OFFLINE",):
                         offline_agents.append({"agent": agent_id, "age_sec": age_sec})
                 except Exception:
@@ -528,7 +541,8 @@ class OrchestratorAgent(BaseAgent):
             hb_summary = {h["agent_id"]: {
                 "status": h.get("status"),
                 "error_count": h.get("error_count", 0),
-                "last_error": str(h.get("last_error", ""))[:120],
+                # Bug 29: increase heartbeat context truncation from 120 to 500 chars
+                "last_error": str(h.get("last_error", ""))[:500],
                 "current_task": str(h.get("current_task", ""))[:80],
             } for h in heartbeats}
 

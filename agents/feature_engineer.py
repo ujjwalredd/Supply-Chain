@@ -36,10 +36,12 @@ from agents.tools.code_executor import CodeExecutor, CodeExecutionError
 logger = logging.getLogger(__name__)
 
 GOLD_PATH = os.getenv("GOLD_PATH", "/data/gold")
-DAGSTER_URL = os.getenv("DAGSTER_WEBSERVER_URL", "http://dagster-webserver:3001")
+# Bug 21: standardise default port to 3000 to match data_ingestion_agent
+DAGSTER_URL = os.getenv("DAGSTER_WEBSERVER_URL", "http://dagster-webserver:3000")
 FEATURES_DIR = os.path.join(GOLD_PATH, "computed_features")
 MAX_FEATURES_PER_CYCLE = 5
-MAX_NAN_RATIO = 0.50
+# Bug 12: reduce MAX_NAN_RATIO from 50% to 5% to properly gate high-null features
+MAX_NAN_RATIO = 0.05
 
 # ── tool schema for feature suggestions ──────────────────────────────────────
 FEATURE_SUGGESTION_TOOL = {
@@ -145,6 +147,13 @@ class FeatureEngineerAgent(BaseAgent):
 
         metrics["suggestions_received"] = len(suggestions)
         logger.info(f"[feature_engineer] Got {len(suggestions)} feature suggestions")
+
+        # Bug 27: warn when suggestions are truncated to MAX_FEATURES_PER_CYCLE
+        if len(suggestions) > MAX_FEATURES_PER_CYCLE:
+            logger.warning(
+                f"[feature_engineer] Received {len(suggestions)} suggestions but only processing "
+                f"{MAX_FEATURES_PER_CYCLE} (MAX_FEATURES_PER_CYCLE limit). Excess suggestions dropped."
+            )
 
         # 3. Validate each suggestion
         valid_features = []
@@ -389,6 +398,7 @@ except Exception as e:
 
     def apply_correction(self, correction: str):
         """Act on orchestrator corrections."""
+        # Bug 18: use .lower() for case-insensitive matching so "FORCE_REGENERATE" etc. work
         c = correction.lower()
         if "regenerate" in c or "rerun" in c or "re-run" in c or "force" in c:
             logger.info("[feature_engineer] Orchestrator correction → forcing feature regeneration")

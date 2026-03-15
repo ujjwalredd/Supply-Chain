@@ -292,9 +292,11 @@ class DataIngestionAgent(BaseAgent):
         for csv_file in csv_files:
             try:
                 logger.info(f"[data_ingestion] New file detected: {csv_file.name}")
+                # Bug 3: do NOT pre-mark as known before validation — only mark after success
                 ok = self._process_new_file(csv_file)
                 if ok:
                     metrics["successfully_processed"] += 1
+                    # Mark known ONLY after successful validation and processing
                     self._mark_known(csv_file.name.lower())
                 else:
                     metrics["failed"] += 1
@@ -336,10 +338,13 @@ class DataIngestionAgent(BaseAgent):
         columns = schema.get("columns", [])
 
         # Normalize columns: could be list of dicts or list of Pydantic models
+        # Bug 13: guard against empty columns list before accessing columns[0]
         if columns and hasattr(columns[0], "name"):
             expected_keys = [c.name for c in columns]
-        else:
+        elif columns:
             expected_keys = [c["name"] for c in columns if isinstance(c, dict)]
+        else:
+            expected_keys = []
 
         # If deepagents already validated, skip re-validation
         already_validated = schema.get("validation_passed", False)
@@ -596,6 +601,7 @@ from typing import Iterator
     @staticmethod
     def _read_sample(path: Path, n: int = 10):
         try:
+            # Bug 9: TOCTOU race — wrap open in try/except FileNotFoundError
             with open(path, encoding="utf-8", errors="replace") as f:
                 reader = csv.reader(f)
                 rows = [r for _, r in zip(range(n + 1), reader)]
@@ -603,6 +609,9 @@ from typing import Iterator
                 return [], []
             header = rows[0]
             return rows[1:], header
+        except FileNotFoundError:
+            logger.warning(f"[data_ingestion] File disappeared before read: {path}")
+            return [], []
         except Exception as e:
             logger.error(f"[data_ingestion] CSV read failed: {e}")
             return [], []

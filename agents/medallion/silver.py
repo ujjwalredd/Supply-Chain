@@ -23,7 +23,8 @@ logger = logging.getLogger(__name__)
 
 BRONZE_PATH = os.getenv("BRONZE_PATH", "/data/bronze")
 SILVER_PATH = os.getenv("SILVER_PATH", "/data/silver")
-DAGSTER_URL = os.getenv("DAGSTER_WEBSERVER_URL", "http://dagster-webserver:3001")
+# Bug 21: standardise default port to 3000 to match data_ingestion_agent
+DAGSTER_URL = os.getenv("DAGSTER_WEBSERVER_URL", "http://dagster-webserver:3000")
 
 VALID_STATUSES = {"PENDING", "IN_TRANSIT", "DELIVERED", "DELAYED", "CANCELLED"}
 
@@ -96,8 +97,10 @@ class SilverAgent(BaseAgent):
                     issues.append(f"{col}: {null_count} nulls")
 
         # 2. Status enum validation
+        # Bug 8: NaN values pass isin() check silently — also flag null status rows
         if "status" in df.columns:
-            invalid_status = df[~df["status"].isin(VALID_STATUSES)]
+            invalid_mask = df["status"].isna() | ~df["status"].isin(VALID_STATUSES)
+            invalid_status = df[invalid_mask]
             metrics["invalid_status_count"] = len(invalid_status)
             if len(invalid_status) > 0:
                 bad_vals = invalid_status["status"].unique().tolist()[:5]

@@ -71,7 +71,8 @@ class MedallionSupervisor(BaseAgent):
             agent_id = f"{layer}_agent"
             if not last_seen:
                 issues.append(f"{layer} agent has never reported — may not be running")
-                self.alert("HIGH", f"{agent_id} has no heartbeat", {"layer": layer})
+                # Bug 28: include agent_id in the alert payload (it was built but unused)
+                self.alert("HIGH", f"{agent_id} has no heartbeat", {"layer": layer, "agent_id": agent_id})
 
         if issues:
             logger.warning(f"Medallion supervisor issues: {issues}")

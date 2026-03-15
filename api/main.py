@@ -36,6 +36,19 @@ REDIS_CHANNEL = "deviations"
 _CORS_ORIGINS_RAW = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")
 CORS_ORIGINS = [o.strip() for o in _CORS_ORIGINS_RAW.split(",") if o.strip()]
 
+# Bug 23: validate CORS_ORIGINS — warn on wildcard, reject in production
+_ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+if "*" in CORS_ORIGINS:
+    if _ENVIRONMENT == "production":
+        raise RuntimeError(
+            "CORS wildcard '*' is not allowed in production. "
+            "Set CORS_ORIGINS to explicit origins."
+        )
+    else:
+        logger.warning(
+            "CORS_ORIGINS contains wildcard '*' — this is insecure and must not be used in production."
+        )
+
 # Trusted hosts — comma-separated list from env (e.g. "example.com,api.example.com")
 _ALLOWED_HOSTS_RAW = os.getenv("ALLOWED_HOSTS", "")
 ALLOWED_HOSTS = [h.strip() for h in _ALLOWED_HOSTS_RAW.split(",") if h.strip()]
@@ -148,6 +161,7 @@ async def _redis_subscriber_loop() -> None:
         return
     backoff = 1.0
     while True:
+        pubsub = None
         try:
             pubsub = _redis_client.pubsub()
             await pubsub.subscribe(REDIS_CHANNEL)
@@ -156,9 +170,23 @@ async def _redis_subscriber_loop() -> None:
                 if message["type"] == "message":
                     await _broadcast_raw(message["data"])
         except asyncio.CancelledError:
+            # Bug 11: always unsubscribe and close pubsub on exit
+            if pubsub:
+                try:
+                    await pubsub.unsubscribe()
+                    await pubsub.aclose()
+                except Exception:
+                    pass
             return
         except Exception as e:
             logger.warning("Redis subscriber loop error (retrying in %.0fs): %s", backoff, e)
+            # Bug 11: release pubsub on error path too
+            if pubsub:
+                try:
+                    await pubsub.unsubscribe()
+                    await pubsub.aclose()
+                except Exception:
+                    pass
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30.0)
 
@@ -204,7 +232,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_text(json.dumps({"type": "pong"}))
     except WebSocketDisconnect:
         pass
+    except Exception:
+        # Bug 4: catch all disconnect-related errors so cleanup always runs
+        pass
     finally:
+        # Bug 4: always remove from subscriber set to prevent accumulation of dead sockets
         _deviation_subscribers.discard(websocket)
         logger.info("WebSocket client disconnected")
 
@@ -233,8 +265,9 @@ async def health():
         try:
             await session.execute(text("SELECT 1"))
             checks["db"] = "ok"
-        except Exception as e:
-            checks["db"] = f"error: {e}"
+        except Exception:
+            # Bug 22: do not expose raw exception which may contain DB URL with credentials
+            checks["db"] = "error: connection failed"
 
     if _redis_client:
         try:

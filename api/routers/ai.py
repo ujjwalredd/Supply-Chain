@@ -58,6 +58,8 @@ def _check_ai_rate_limit_inprocess(client_ip: str) -> bool:
 async def _check_ai_rate_limit(client_ip: str) -> bool:
     """Return True if within rate limit. Uses Redis when available."""
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    # Bug 17: ensure Redis client is always closed even on exception
+    r = None
     try:
         import redis.asyncio as aioredis
         r = aioredis.from_url(redis_url, decode_responses=True)
@@ -65,10 +67,15 @@ async def _check_ai_rate_limit(client_ip: str) -> bool:
         count = await r.incr(key)
         if count == 1:
             await r.expire(key, 60)
-        await r.aclose()
         return count <= _AI_RATE_MAX
     except Exception:
         return _check_ai_rate_limit_inprocess(client_ip)
+    finally:
+        if r is not None:
+            try:
+                await r.aclose()
+            except Exception:
+                pass
 
 
 _SSE_HEADERS = {

@@ -70,15 +70,20 @@ class GoldAgent(BaseAgent):
         if ai_files:
             try:
                 import shutil, tempfile, pyarrow.parquet as pq
-                with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
-                    tmp_path = tmp.name
-                shutil.copy2(str(ai_files[0]), tmp_path)
-                table = pq.read_table(tmp_path, use_threads=False)
-                df = table.to_pandas()
+                # Bug 14: keep all temp-file operations inside a single try/finally block
+                # so the file is always cleaned up; copy2 must happen after context exits
+                # (on Windows the file must be closed before copy2 can write to it).
+                tmp_fd, tmp_path = tempfile.mkstemp(suffix=".parquet")
+                os.close(tmp_fd)
                 try:
-                    import os as _os; _os.unlink(tmp_path)
-                except Exception:
-                    pass
+                    shutil.copy2(str(ai_files[0]), tmp_path)
+                    table = pq.read_table(tmp_path, use_threads=False)
+                    df = table.to_pandas()
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except Exception:
+                        pass
                 metrics["gold_orders_rows"] = len(df)
                 formula_issues = self._validate_formulas(df)
                 metrics["formula_issues"] = len(formula_issues)
@@ -123,15 +128,18 @@ class GoldAgent(BaseAgent):
         if forecast_files:
             try:
                 import shutil, tempfile, pyarrow.parquet as pq2
-                with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp2:
-                    tmp2_path = tmp2.name
-                shutil.copy2(str(forecast_files[0]), tmp2_path)
-                ftable = pq2.read_table(tmp2_path, use_threads=False)
-                fdf = ftable.to_pandas()
+                # Bug 14: use mkstemp + explicit finally for guaranteed cleanup
+                tmp2_fd, tmp2_path = tempfile.mkstemp(suffix=".parquet")
+                os.close(tmp2_fd)
                 try:
-                    import os as _os2; _os2.unlink(tmp2_path)
-                except Exception:
-                    pass
+                    shutil.copy2(str(forecast_files[0]), tmp2_path)
+                    ftable = pq2.read_table(tmp2_path, use_threads=False)
+                    fdf = ftable.to_pandas()
+                finally:
+                    try:
+                        os.unlink(tmp2_path)
+                    except Exception:
+                        pass
                 if all(c in fdf.columns for c in ["yhat", "yhat_lower", "yhat_upper"]):
                     bad_bounds = fdf[fdf["yhat"] < fdf["yhat_lower"]]
                     bad_bounds2 = fdf[fdf["yhat"] > fdf["yhat_upper"]]

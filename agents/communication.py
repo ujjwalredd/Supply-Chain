@@ -9,6 +9,7 @@ import os
 import json
 import logging
 import time
+import threading
 from typing import Optional, Callable
 import redis
 
@@ -17,29 +18,34 @@ logger = logging.getLogger(__name__)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 _client: Optional[redis.Redis] = None
+_client_lock = threading.Lock()  # Bug 16: guard lazy init against race condition
 
 def get_client() -> redis.Redis:
     global _client
-    if _client is None:
-        retries = 0
-        while retries < 10:
-            try:
-                _client = redis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=5)
-                _client.ping()
-                logger.info("Redis client connected")
-                return _client
-            except Exception as e:
-                retries += 1
-                wait = min(2 ** retries, 30)
-                logger.warning(f"Redis connect attempt {retries} failed: {e}. Retrying in {wait}s")
-                time.sleep(wait)
-        raise RuntimeError("Could not connect to Redis after 10 retries")
-    try:
-        _client.ping()
-    except:
-        _client = None
-        return get_client()
-    return _client
+    # Bug 16: use lock to prevent multiple threads creating concurrent clients
+    with _client_lock:
+        if _client is None:
+            retries = 0
+            while retries < 10:
+                try:
+                    _client = redis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=5)
+                    _client.ping()
+                    logger.info("Redis client connected")
+                    break
+                except Exception as e:
+                    retries += 1
+                    wait = min(2 ** retries, 30)
+                    logger.warning(f"Redis connect attempt {retries} failed: {e}. Retrying in {wait}s")
+                    time.sleep(wait)
+            else:
+                raise RuntimeError("Could not connect to Redis after 10 retries")
+        try:
+            _client.ping()
+        except Exception:
+            _client = None
+            # Recursive call outside lock would deadlock; reset and let next call reconnect
+            raise RuntimeError("Redis client ping failed — will reconnect on next call")
+        return _client
 
 def publish_alert(agent_id: str, severity: str, message: str, details: dict = None):
     try:

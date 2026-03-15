@@ -24,7 +24,8 @@ from agents.base import BaseAgent, HAIKU_MODEL
 
 logger = logging.getLogger(__name__)
 
-DAGSTER_URL = os.getenv("DAGSTER_WEBSERVER_URL", "http://dagster-webserver:3001")
+# Bug 21: standardise default port to 3000 (internal container port) to match data_ingestion_agent
+DAGSTER_URL = os.getenv("DAGSTER_WEBSERVER_URL", "http://dagster-webserver:3000")
 FRESHNESS_THRESHOLD_MINUTES = int(os.getenv("ASSET_FRESHNESS_THRESHOLD_MIN", "420"))  # 7h
 MAX_CONSECUTIVE_FAILURES = 3
 

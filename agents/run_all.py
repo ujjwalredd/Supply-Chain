@@ -77,9 +77,10 @@ def run_agent(agent_id: str, agent_class: Type[BaseAgent]):
                 logger.info(f"[run_all] Restarting {agent_id} in 15s")
                 # Write RESTARTING heartbeat
                 try:
+                    # Bug 24: increase error truncation from 200 to 1000 chars
                     state.write_heartbeat(agent_id, "RESTARTING",
                                           current_task="crashed — auto-restarting in 15s",
-                                          last_error=str(e)[:200])
+                                          last_error=str(e)[:1000])
                 except Exception:
                     pass
                 _global_shutdown.wait(timeout=15)  # Interruptible sleep

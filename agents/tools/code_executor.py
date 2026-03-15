@@ -64,6 +64,8 @@ class CodeExecutor:
                 text=True,
                 timeout=timeout,
                 env=env,
+                # Bug 30: restrict working directory to /tmp for security
+                cwd="/tmp",
             )
             duration = int((time.time() - t0) * 1000)
             ok = result.returncode == 0
@@ -72,13 +74,16 @@ class CodeExecutor:
             return {
                 "ok": ok,
                 "stdout": result.stdout,
-                "stderr": result.stderr[:1000],
+                # Bug 26: increase stderr truncation from 1000 to 4000 chars
+                "stderr": result.stderr[:4000],
                 "exit_code": result.returncode,
                 "duration_ms": duration,
             }
         except subprocess.TimeoutExpired:
+            # Bug 6: temp file must be cleaned up even on timeout
             raise CodeExecutionError(f"Execution timed out after {timeout}s")
         finally:
+            # Bug 6: always attempt to clean up the temp file
             try:
                 os.unlink(tmp)
             except Exception:

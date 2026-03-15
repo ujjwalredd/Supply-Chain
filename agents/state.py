@@ -6,6 +6,7 @@ import os
 import time
 import json
 import logging
+import threading
 from datetime import datetime
 from typing import Optional, Dict, Any
 import psycopg2
@@ -17,23 +18,26 @@ logger = logging.getLogger(__name__)
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/supplychain")
 
 _pool: Optional[pg_pool.SimpleConnectionPool] = None
+_pool_lock = threading.Lock()  # Bug 15: guard pool init against race condition
 
 def _get_pool() -> pg_pool.SimpleConnectionPool:
     global _pool
-    if _pool is None or _pool.closed:
-        retries = 0
-        while retries < 10:
-            try:
-                _pool = pg_pool.SimpleConnectionPool(1, 5, DATABASE_URL)
-                logger.info("Agent state DB pool created")
-                return _pool
-            except Exception as e:
-                retries += 1
-                wait = min(2 ** retries, 30)
-                logger.warning(f"DB pool creation failed (attempt {retries}): {e}. Retrying in {wait}s")
-                time.sleep(wait)
-        raise RuntimeError("Could not connect to PostgreSQL after 10 retries")
-    return _pool
+    # Bug 15: use lock to guard pool initialization against race condition
+    with _pool_lock:
+        if _pool is None or _pool.closed:
+            retries = 0
+            while retries < 10:
+                try:
+                    _pool = pg_pool.SimpleConnectionPool(1, 5, DATABASE_URL)
+                    logger.info("Agent state DB pool created")
+                    return _pool
+                except Exception as e:
+                    retries += 1
+                    wait = min(2 ** retries, 30)
+                    logger.warning(f"DB pool creation failed (attempt {retries}): {e}. Retrying in {wait}s")
+                    time.sleep(wait)
+            raise RuntimeError("Could not connect to PostgreSQL after 10 retries")
+        return _pool
 
 def execute(query: str, params=None, fetch=False):
     """Execute a query with automatic connection retry."""
@@ -152,5 +156,6 @@ def get_pending_corrections(agent_id: str):
     """, (agent_id,), fetch=True)
     if rows:
         ids = [r['id'] for r in rows]
-        execute(f"UPDATE agent_corrections SET applied = TRUE WHERE id = ANY(%s)", (ids,))
+        # Bug 1: ANY(%s) is not valid psycopg2 parameterized SQL; use UNNEST instead
+        execute("UPDATE agent_corrections SET applied = TRUE WHERE id = ANY(SELECT UNNEST(%s::int[]))", (ids,))
     return [r['message'] for r in (rows or [])]

@@ -34,11 +34,18 @@ _PUBLIC_PREFIXES = (
 _PUBLIC_EXACT = {"/"}
 
 
-
 def _load_api_keys() -> set[str]:
     raw = os.getenv("API_KEYS", "")
     keys = {k.strip() for k in raw.split(",") if k.strip()}
     if not keys:
+        # Bug 25: log warning only once at module load time (not on every request)
+        # Bug 31: in production, missing API_KEYS is a hard error
+        _environment = os.getenv("ENVIRONMENT", "development")
+        if _environment == "production":
+            raise RuntimeError(
+                "API_KEYS must be set in production (ENVIRONMENT=production). "
+                "Authentication cannot be disabled in production."
+            )
         logger.warning(
             "API_KEYS not set — authentication is DISABLED. "
             "Set API_KEYS=<key1>,<key2> in environment to enable."
@@ -46,6 +53,7 @@ def _load_api_keys() -> set[str]:
     return keys
 
 
+# Bug 25: _load_api_keys() is called once at module load time — warning fires only once
 _API_KEYS: set[str] = _load_api_keys()
 
 

@@ -31,7 +31,8 @@ from agents.base import BaseAgent, HAIKU_MODEL
 logger = logging.getLogger(__name__)
 
 MLFLOW_URL = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
-DAGSTER_URL = os.getenv("DAGSTER_WEBSERVER_URL", "http://dagster-webserver:3001")
+# Bug 21: standardise default port to 3000 to match data_ingestion_agent
+DAGSTER_URL = os.getenv("DAGSTER_WEBSERVER_URL", "http://dagster-webserver:3000")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 EXPERIMENT_NAME = "supply_chain_delay_prediction"
@@ -120,7 +121,8 @@ class MLflowGuardianAgent(BaseAgent):
         metrics["train_rows"] = int(train_rows)
 
         # 2. Staleness check
-        age_hours = (time.time() - run_end / 1000) / 3600 if run_end else 999
+        # Bug 7: fix operator precedence — inner subtraction must be parenthesised
+        age_hours = ((time.time() - run_end / 1000.0) / 3600) if run_end else 999
         metrics["model_age_hours"] = round(age_hours, 1)
 
         if age_hours > STALE_HOURS:
@@ -333,12 +335,21 @@ class MLflowGuardianAgent(BaseAgent):
         runs = self._get_recent_runs(exp_id, limit=1)
         return runs[0] if runs else None
 
+    @staticmethod
+    def _sanitize_filter_input(value: str) -> str:
+        """Bug 32: strip characters that could break MLflow filter string syntax."""
+        import re
+        # Allow only alphanumerics, spaces, underscores, hyphens, dots, equals, quotes
+        return re.sub(r"[^\w\s\-\.=\'\"]", "", str(value))
+
     def _get_recent_runs(self, exp_id: str, limit: int = 3) -> list:
         try:
+            # Bug 32: sanitize exp_id before using it in the request
+            safe_exp_id = self._sanitize_filter_input(exp_id)
             resp = requests.post(
                 f"{MLFLOW_URL}/api/2.0/mlflow/runs/search",
                 json={
-                    "experiment_ids": [exp_id],
+                    "experiment_ids": [safe_exp_id],
                     "filter": "status = 'FINISHED'",
                     "order_by": ["start_time DESC"],
                     "max_results": limit,
