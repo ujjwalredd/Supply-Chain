@@ -35,7 +35,7 @@ Most supply chain platforms require humans to write ETL, tune models, and monito
                                              → saves loader → triggers pipeline
                                                                 │
                               INGESTION LAYER                   │
-  OpenBoxes WMS ──────────────────────────────────────────────── │
+  OpenBoxes WMS ────────────────────────────────────────────────│
   Kafka (supply-chain-events) ───────────────────────────────── │
          │                                                      │
          v                                                      v
@@ -71,11 +71,11 @@ Most supply chain platforms require humans to write ETL, tune models, and monito
                         ┌──────────────────────────────────────────────────────────┐
                         │               AUTONOMOUS AGENT SYSTEM (13 agents)        │
                         │                                                          │
-                        │  Orchestrator (Sonnet)  ←── Redis pub/sub alerts        │
+                        │  Orchestrator (Sonnet)  ←── Redis pub/sub alerts         │
                         │       │                                                  │
                         │  Kafka Guardian    DagsterGuardian  DataIngestion        │
                         │  Bronze Agent      Silver Agent     Gold Agent           │
-                        │  Medallion Supervisor               AI Quality Monitor  │
+                        │  Medallion Supervisor               AI Quality Monitor   │
                         │  Database Health   MLflow Guardian  Feature Engineer     │
                         │  Dashboard Agent                                         │
                         └──────────────────────────────────────────────────────────┘
