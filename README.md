@@ -1,4 +1,4 @@
-# Adopt Supply Chain AI OS
+# ForeverAutonomous
 
 [![CI](https://github.com/ujjwalredd/Supply-Chain/actions/workflows/ci.yml/badge.svg)](https://github.com/ujjwalredd/Supply-Chain/actions/workflows/ci.yml)
 [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://supply-chain-silk.vercel.app)
@@ -14,7 +14,7 @@ An end-to-end AI-native supply chain control tower with a **fully autonomous 13-
 
 ## What Makes This Different
 
-Most supply chain platforms require humans to write ETL, tune models, and monitor pipelines. Adopt Supply Chain AI OS does all of that autonomously:
+Most supply chain platforms require humans to write ETL, tune models, and monitor pipelines. ForeverAutonomous does all of that autonomously:
 
 - **New data file dropped** → DataIngestionAgent uses a deepagents iterative loop to infer schema, validate the loader (up to 3 auto-fix attempts), and trigger the full pipeline
 - **Model accuracy drops** → MLflowGuardian detects drift, triggers retraining, promotes better model via Claude tool_use decision with hard floors (`roc_auc >= 0.60`)
