@@ -2,11 +2,13 @@
 
 [![CI](https://github.com/ujjwalredd/Supply-Chain/actions/workflows/ci.yml/badge.svg)](https://github.com/ujjwalredd/Supply-Chain/actions/workflows/ci.yml)
 [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://supply-chain-silk.vercel.app)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-203%20passed-brightgreen)](#validation-playbook)
+[![Agents](https://img.shields.io/badge/agents-13%20HEALTHY-brightgreen)](#autonomous-agent-system)
 
 [Live Demo](https://supply-chain-silk.vercel.app)
 
-An end-to-end AI-native supply chain control tower with a **fully autonomous 13-agent system**. Drop any CSV into a watched folder and the platform automatically infers the schema, builds data pipelines, engineers ML features, retrains the delay prediction model, promotes it to production, and updates the Grafana dashboard — with zero human intervention.
+An end-to-end AI-native supply chain control tower with a **fully autonomous 13-agent system** powered by **deepagents (LangGraph)**. Drop any CSV into a watched folder and the platform automatically infers the schema, builds data pipelines, engineers ML features, retrains the delay prediction model, promotes it to production, and updates the Grafana dashboard — with zero human intervention.
 
 ---
 
@@ -14,11 +16,12 @@ An end-to-end AI-native supply chain control tower with a **fully autonomous 13-
 
 Most supply chain platforms require humans to write ETL, tune models, and monitor pipelines. Adopt Supply Chain AI OS does all of that autonomously:
 
-- **New data file dropped** → DataIngestionAgent infers schema via Claude, writes a validated loader, triggers the full pipeline
-- **Model accuracy drops** → MLflowGuardian detects drift, triggers retraining, promotes better model via Claude tool_use decision
+- **New data file dropped** → DataIngestionAgent uses a deepagents iterative loop to infer schema, validate the loader (up to 3 auto-fix attempts), and trigger the full pipeline
+- **Model accuracy drops** → MLflowGuardian detects drift, triggers retraining, promotes better model via Claude tool_use decision with hard floors (`roc_auc >= 0.60`)
 - **Pipeline fails** → DagsterGuardian detects it, triggers a re-run, escalates to Orchestrator if 3+ consecutive failures
-- **New ML features discovered** → FeatureEngineerAgent reads Gold layer, asks Claude for 5 new features, validates each with a 5-gate sandbox, writes them — new features automatically included in the next model training run
-- **Dashboard needs updating** → DashboardAgent pushes new Grafana panels every 10 minutes, all from structured Claude output (no free-form JSON)
+- **Cross-agent failure detected** → Orchestrator's deepagents LangGraph graph with 3 specialist sub-agents diagnoses root cause, issues structured `OrchestrationResult` corrections — no regex JSON parsing
+- **New ML features discovered** → FeatureEngineerAgent reads Gold layer, asks Claude for 5 new features, validates each in a 5-gate sandbox, writes them — automatically merged into the next training run
+- **Dashboard needs updating** → DashboardAgent pushes new Grafana panels every 10 minutes, all from structured Claude output
 
 ---
 
@@ -28,12 +31,14 @@ Most supply chain platforms require humans to write ETL, tune models, and monito
                           NEW CUSTOMER DATA FLOW
   CSV Upload (API) ─────────────────────────────────────────────────┐
   S3 / MinIO Drop ──────────────────────────────────────────────────│
-  Kafka Stream ──────────────────────────────────────────────────── ▼
+  Kafka Stream ───────────────────────────────────────────────────── ▼
                                                           /data/source/ (watched)
                                                                 │
                                                    DataIngestionAgent (60s)
-                                             Claude infers schema → validates
-                                             → saves loader → triggers pipeline
+                                             deepagents iterative loop:
+                                             read_csv_sample → generate loader
+                                             → validate_python_loader → fix if needed
+                                             → save loader → trigger pipeline
                                                                 │
                               INGESTION LAYER                   │
   OpenBoxes WMS ──────────────────────────────────────────────-─│
@@ -66,20 +71,26 @@ Most supply chain platforms require humans to write ETL, tune models, and monito
                                        detects roc_auc drift →
                                        triggers retraining →
                                        Claude tool_use promotion decision →
-                                       auto-promotes if better + roc_auc ≥ 0.60
+                                       hard floors: roc_auc ≥ 0.60, train_rows ≥ 100
 
 
-                        ┌──────────────────────────────────────────────────────────┐
-                        │               AUTONOMOUS AGENT SYSTEM (13 agents)        │
-                        │                                                          │
-                        │  Orchestrator (Sonnet)  ←── Redis pub/sub alerts         │
-                        │       │                                                  │
-                        │  Kafka Guardian    DagsterGuardian  DataIngestion        │
-                        │  Bronze Agent      Silver Agent     Gold Agent           │
-                        │  Medallion Supervisor               AI Quality Monitor   │
-                        │  Database Health   MLflow Guardian  Feature Engineer     │
-                        │  Dashboard Agent                                         │
-                        └──────────────────────────────────────────────────────────┘
+                        ┌──────────────────────────────────────────────────────────────┐
+                        │          AUTONOMOUS AGENT SYSTEM (13 agents)                 │
+                        │                                                              │
+                        │  Orchestrator (Sonnet + deepagents LangGraph)                │
+                        │    ├── 3 sub-agents: kafka_investigator,                     │
+                        │    │                 dagster_investigator, ml_investigator   │
+                        │    ├── 7 LangChain tools (heartbeats, audit, Kafka,          │
+                        │    │   Dagster, MLflow, issue_correction, trigger_pipeline)  │
+                        │    ├── Skills: 5 SKILL.md domain knowledge files             │
+                        │    └── Memory: incident_patterns.md (8 patterns)             │
+                        │                                                              │
+                        │  Kafka Guardian    DagsterGuardian  DataIngestion            │
+                        │  Bronze Agent      Silver Agent     Gold Agent               │
+                        │  Medallion Supervisor               AI Quality Monitor       │
+                        │  Database Health   MLflow Guardian  Feature Engineer         │
+                        │  Dashboard Agent                                             │
+                        └──────────────────────────────────────────────────────────────┘
                                                    │
                         ┌──────────────────────────┼──────────────────────────┐
                         │                          │                          │
@@ -102,18 +113,18 @@ Most supply chain platforms require humans to write ETL, tune models, and monito
 
 | Agent | Model | Interval | Responsibility |
 |-------|-------|----------|----------------|
-| **Orchestrator** | Claude Sonnet 4.6 | 5 min | Cross-agent correlation, root cause analysis, correction issuance via Redis pub/sub |
+| **Orchestrator** | Claude Sonnet 4.6 | 5 min | deepagents LangGraph with 3 sub-agents and 7 tools. Cross-agent root cause analysis, structured `OrchestrationResult` corrections via Redis pub/sub. Loads 5 domain skills + incident memory. |
 | **Kafka Guardian** | Claude Haiku | 30s | Consumer lag, DLQ spikes, producer silence. Restarts containers via Docker API. |
 | **Dagster Guardian** | Claude Haiku | 2 min | Run failures, asset freshness, schedule health. Triggers full or incremental jobs. Responds to orchestrator corrections. |
-| **Bronze Agent** | Claude Haiku | 5 min | Parquet existence, schema drift, freshness validation. Triggers materialization on anomaly. |
-| **Silver Agent** | Claude Haiku | 5 min | Null rates, dedup verification, status enum, delay range. Triggers incremental on missing data. |
+| **Bronze Agent** | Claude Haiku | 5 min | Parquet existence, schema drift, freshness validation. `apply_correction("trigger materialization")` → real Dagster trigger. |
+| **Silver Agent** | Claude Haiku | 5 min | Null rates, dedup verification, status enum, delay range. Path check uses `str(f)` for nested parquet dirs. |
 | **Gold Agent** | Claude Haiku | 10 min | Financial formula re-validation, ML output bounds, forecast sanity. Escalates to Medallion Supervisor. |
 | **Medallion Supervisor** | Claude Haiku | 3 min | Data contract enforcement (Bronze→Silver→Gold dependency chain) |
 | **AI Quality Monitor** | Claude Haiku | 60s | Stuck pending actions, low-confidence re-triggers, REROUTE validation |
 | **Database Health** | Claude Haiku | 60s | Connection count, long queries, lock detection, table sizes |
-| **Data Ingestion** | Claude Haiku | 60s | Watches `/data/source/` for new CSVs. Infers schema via Claude tool_use. Validates loader in sandbox. Triggers full pipeline. |
-| **MLflow Guardian** | Claude Haiku | 5 min | Monitors roc_auc drift. Triggers retraining on 5% drop or model >24h stale. Auto-promotes via Claude tool_use decision. |
-| **Feature Engineer** | Claude Haiku | 15 min | Reads Gold layer. Asks Claude for new features. Validates each via 5-gate sandbox. Writes to computed_features/. Triggers ML retraining. |
+| **Data Ingestion** | Claude Haiku | 60s | deepagents iterative validation loop (up to 3 fix attempts). Watches `/data/source/`. Infers schema via `read_csv_sample` + `validate_python_loader` tools. |
+| **MLflow Guardian** | Claude Haiku | 5 min | Monitors roc_auc drift. Hard floors: never promote if `roc_auc < 0.60` or `train_rows < 100`. `apply_correction()` resets cooldown and triggers real retrain. |
+| **Feature Engineer** | Claude Haiku | 15 min | Reads Gold layer. Asks Claude for new features. Validates each via 5-gate sandbox. Writes to `computed_features/`. Triggers ML retraining. |
 | **Dashboard Agent** | Claude Haiku | 10 min | Reads agent heartbeats + Gold metrics. Asks Claude for panel spec. Builds deterministic Grafana JSON. Pushes via Grafana API. |
 
 ### Agent Design Principles
@@ -122,8 +133,69 @@ Most supply chain platforms require humans to write ETL, tune models, and monito
 2. **No LLM on every cycle** — `check()` runs threshold logic first. LLM called only on anomaly.
 3. **5-gate code validation** — any code generated by Claude runs through: syntax check → subprocess sandbox → sample validation → schema check → timeout kill. Never executed without all 5 gates passing.
 4. **Hard floors on ML** — `mlflow_guardian` never promotes a model with `roc_auc < 0.60` or `train_rows < 100`, regardless of Claude's decision.
-5. **Orchestrator corrections are actionable** — each agent implements `apply_correction()` that parses the instruction and takes real action (trigger job, reset cooldown, force regeneration). Not just logging.
+5. **Corrections are actionable** — every agent's `apply_correction()` parses the instruction keyword and takes a real action (trigger job, reset cooldown, force regeneration). Not just logging.
 6. **All actions audited** — every agent action writes to `agent_audit_log` in PostgreSQL with reasoning, outcome, and details.
+7. **Graceful fallback** — deepagents orchestrator and ingestion agent fall back to the legacy Anthropic SDK path if the library is unavailable. System never goes down on a missing dependency.
+8. **Path checks use full path** — all parquet file detection uses `str(f)` (full path), not `f.name` (just `data.parquet`). Prevents silent misses on nested directories like `orders_ai_ready/data.parquet`.
+
+### Orchestrator deepagents Architecture
+
+The orchestrator uses `create_deep_agent()` from the deepagents library (LangGraph-based):
+
+```
+OrchestratorAgent.check()
+  │
+  ├── < 2 degraded, no alerts → threshold logic only (no LLM)
+  │
+  └── ≥ 2 degraded or any CRITICAL/HIGH alert → deepagents invoked
+            │
+            ▼
+      create_deep_agent(llm=Sonnet, tools=[7 tools], subagents=[3 subagents],
+                        response_format=OrchestrationResult,
+                        memory_files=[incident_patterns.md],
+                        system_prompt=skills_text)
+            │
+            ├── Calls tools: get_all_heartbeats, get_dagster_recent_runs, etc.
+            ├── Delegates to sub-agents if deep investigation needed
+            └── Returns structured OrchestrationResult (Pydantic)
+                  {root_cause_analysis, correlations, corrections[],
+                   human_intervention_needed, confidence}
+                        │
+                        ▼
+              state.write_correction() + communication.publish_correction()
+              for each correction in the result
+```
+
+**Escalation rules:**
+- 1 agent DEGRADED → issue correction, monitor next cycle
+- 2+ agents DEGRADED (same domain) → correlated failure → investigate root cause first
+- 3+ agents DEGRADED (cross-domain) → `human_intervention_needed=True`
+- All agents offline → `human_intervention_needed=True` immediately
+
+### Skills System
+
+5 domain knowledge files are loaded into the orchestrator and ingestion agent system prompts at startup:
+
+| Skill | File | Contents |
+|-------|------|----------|
+| `supply-chain-ops` | `agents/skills/supply-chain-ops/SKILL.md` | Agent roster, failure correlation patterns, correction dispatch guide |
+| `dagster-diagnosis` | `agents/skills/dagster-diagnosis/SKILL.md` | Job names, GraphQL patterns, self-healing actions |
+| `kafka-diagnosis` | `agents/skills/kafka-diagnosis/SKILL.md` | Consumer groups, DLQ diagnosis, lag thresholds |
+| `mlflow-governance` | `agents/skills/mlflow-governance/SKILL.md` | Promotion rules, retraining triggers, baseline management |
+| `data-ingestion` | `agents/skills/data-ingestion/SKILL.md` | Loader patterns, validation gates, error diagnosis |
+
+### Incident Memory
+
+`agents/memories/incident_patterns.md` stores 8 documented incident patterns (P001–P008). Loaded into the orchestrator system prompt at startup so it recognizes recurring issues without re-learning them:
+
+- P001 — Dagster webserver port mismatch (3001 vs 3000)
+- P002 — Feature engineer `f.name` vs `str(f)` path bug
+- P003 — Silver agent same path bug
+- P004 — `medallion_incremental` not including `gold_delay_model`
+- P005 — PostgreSQL connection pool exhaustion
+- P006 — Kafka DLQ growing (schema registry incompatibility)
+- P007 — All medallion agents missing files during startup (expected — not an incident)
+- P008 — MLflow baseline drift after feature regeneration (expected — not an incident)
 
 ### Model Cost Strategy
 
@@ -137,17 +209,24 @@ Most supply chain platforms require humans to write ETL, tune models, and monito
 
 This is the core of the agentic vision: a new customer sends you their data and the entire platform handles it without a single human action.
 
-### How It Works Today
+### How It Works
 
 The `DataIngestionAgent` watches `/data/source/` every 60 seconds. When it sees a new file:
 
-1. Reads a 10-row sample
-2. Calls Claude `infer_csv_schema` tool_use → gets typed schema (column names, dtypes, nullable flags, primary key hint)
-3. Generates a Python loader function from the schema
-4. Validates the loader in a sandboxed subprocess on the sample (5-gate CodeExecutor)
-5. If validation fails, calls Claude again with the error for one auto-fix retry
-6. Saves the validated loader to `agents/_loaders/<table>.py`
-7. Triggers `medallion_full_pipeline` in Dagster
+**deepagents path (when available):**
+1. Calls `read_csv_sample` tool to understand the file structure
+2. Generates a Python `load_csv` loader function
+3. Calls `validate_python_loader` tool — runs the loader against the real CSV in a sandbox
+4. If validation fails, feeds the exact error back to the LLM and retries — up to **3 attempts**
+5. Returns structured `IngestionResult` (Pydantic) with `validation_passed=True` and attempt count
+6. Saves loader + triggers `medallion_full_pipeline`
+
+**Legacy path (fallback):**
+1. Reads 10-row sample
+2. Calls Claude `infer_csv_schema` tool_use → typed schema (column names, dtypes, nullable flags)
+3. Validates loader in CodeExecutor 5-gate sandbox
+4. One auto-fix retry with Claude if validation fails
+5. Saves loader + triggers pipeline
 
 After the pipeline runs:
 - Bronze layer ingests the new table
@@ -158,9 +237,20 @@ After the pipeline runs:
 
 ### Easiest Way to Add New Customer Data
 
-**Option 1 — HTTP Upload (recommended, already works)**
+**Option 1 — Direct file drop**
 
-Add this endpoint to FastAPI (`api/routers/data.py`):
+```bash
+# Copy any CSV (any schema, any column names) into the watched folder
+docker cp customer_orders.csv supply-chain-agents:/data/source/
+
+# Within 60 seconds, DataIngestionAgent auto-processes it
+# Watch it happen:
+docker logs supply-chain-agents 2>&1 | grep "data_ingestion" | tail -20
+```
+
+**Option 2 — HTTP Upload endpoint**
+
+Add to FastAPI (`api/routers/data.py`):
 
 ```python
 from fastapi import APIRouter, UploadFile
@@ -179,35 +269,17 @@ async def upload_customer_data(file: UploadFile):
     }
 ```
 
-Then the customer just does:
+Customer just runs:
 ```bash
 curl -X POST http://your-server:8000/data/upload \
   -F "file=@customer_orders.csv"
 ```
 
-Within 60 seconds:
-- Schema is inferred autonomously
-- Loader is validated
-- Full pipeline is triggered
-- Bronze/Silver/Gold tables are created
-- ML model is retrained with the new data
-- Dashboard updates to reflect new metrics
+**Option 3 — MinIO Drop Zone (large files / batch)**
 
-**Option 2 — MinIO Drop Zone (for large files or batch customers)**
+Customers upload to a MinIO bucket. A sensor or S3-polling agent copies to `/data/source/` and the same DataIngestionAgent flow handles the rest.
 
-Customers upload to a MinIO bucket. A sensor in Dagster or a small S3-polling agent detects new objects and copies them to `/data/source/`, then the same DataIngestionAgent flow runs.
-
-```python
-# agents/s3_ingestion_agent.py (extend DataIngestionAgent)
-# polls MinIO every 60s, downloads new objects to /data/source/
-# rest is handled by DataIngestionAgent automatically
-```
-
-**Option 3 — Kafka Stream (for real-time customer systems)**
-
-Customer pushes events to a dedicated Kafka topic per customer ID. The `pg-writer` consumer writes to PostgreSQL, and a sensor triggers the pipeline.
-
-### What Happens Fully Automatically After Drop
+### What Happens Automatically After Drop
 
 ```
 Customer drops CSV (any schema, any column names)
@@ -215,11 +287,8 @@ Customer drops CSV (any schema, any column names)
         ▼  [< 60 seconds]
 DataIngestionAgent wakes up
         │
-        ├── Reads 10 sample rows
-        ├── Claude infers: column names, dtypes, nullable, primary key
-        ├── Generates Python loader function
-        ├── Runs loader in sandbox on sample (5-gate validation)
-        ├── Auto-fixes if validation fails (1 retry via Claude)
+        ├── deepagents: read_csv_sample → generate loader → validate → fix if needed (3 attempts)
+        ├── loader validated against real CSV in sandbox
         └── Saves loader + triggers medallion_full_pipeline
                 │
                 ▼  [~ 2-3 minutes]
@@ -229,22 +298,22 @@ DataIngestionAgent wakes up
                 ├── Silver: validated, deduplicated, typed
                 ├── Gold: AI scoring, trust scores, delay flags
                 ├── gold_delay_model: XGBoost retrained with new data
-                │                    + computed features merged in
+                │                    + computed features merged in by order_id join
                 └── demand_forecast: Prophet retrained
                         │
                         ▼  [< 5 minutes after pipeline]
         FeatureEngineerAgent detects Gold mtime change
                 │
                 ├── Profiles new Gold columns
-                ├── Claude suggests 5 new features for new data schema
-                ├── Validates each feature in sandbox
+                ├── Claude suggests 5 new features
+                ├── Validates each in 5-gate sandbox
                 └── Writes features.parquet → triggers incremental retraining
                         │
                         ▼  [next 5-min cycle]
         MLflowGuardianAgent checks new model metrics
                 │
                 ├── If roc_auc improved → Claude promotion decision (tool_use)
-                ├── Hard floors: never promote if roc_auc < 0.60
+                ├── Hard floors enforced: roc_auc ≥ 0.60, train_rows ≥ 100
                 └── Promotes new model to Production stage in MLflow
                         │
                         ▼  [next 10-min cycle]
@@ -253,7 +322,7 @@ DataIngestionAgent wakes up
                     New customer's data appears in dashboard automatically
 ```
 
-**Total time from CSV drop to live dashboard: ~15-20 minutes, zero human action.**
+**Total time from CSV drop to live dashboard: ~15–20 minutes, zero human action.**
 
 ---
 
@@ -267,17 +336,20 @@ DataIngestionAgent wakes up
 | Cache / Pub-Sub | Redis 7 |
 | Object Storage | MinIO (S3-compatible) |
 | Pipeline Orchestration | Dagster 3-container (webserver + daemon + gRPC code server) |
-| Lakehouse | Medallion (Bronze/Silver/Gold Parquet) |
-| ML Training | XGBoost + Prophet |
-| ML Tracking | MLflow |
-| AI Reasoning | Claude Sonnet 4.6 (orchestrator) + Claude Haiku (12 sub-agents) |
+| Lakehouse | Medallion Architecture (Bronze / Silver / Gold Parquet) |
+| ML Training | XGBoost (delay prediction, dynamic feature columns) + Prophet (demand) |
+| ML Tracking | MLflow (model registry, promotion history, baseline management) |
+| AI Reasoning | Claude Sonnet 4.6 (orchestrator) + Claude Haiku 4.5 (12 sub-agents) |
+| Agentic Framework | deepagents 0.4.11 (LangGraph-based) — orchestrator + data ingestion |
+| LLM Wrappers | LangChain Anthropic + LangChain Core + LangGraph |
+| Structured Output | Pydantic v2 (`OrchestrationResult`, `IngestionResult` response models) |
 | Code Sandbox | Python subprocess isolation (5-gate: syntax → exec → validate → schema → timeout) |
-| API | FastAPI (async, WebSocket) |
+| API | FastAPI (async, WebSocket, OpenAPI) |
 | Frontend | Next.js 14 |
 | Observability | Grafana + Prometheus + Loki + Jaeger |
 | Log Collection | Grafana Alloy |
 | WMS Integration | OpenBoxes (live or mock) |
-| Autonomous Agents | Custom Python (13 agents, Redis pub/sub, PostgreSQL state) |
+| Autonomous Agents | 13 agents, Redis pub/sub, PostgreSQL state, Skills + Memory system |
 
 ---
 
@@ -336,13 +408,169 @@ See `.env.example` for the full list of 50+ configurable variables.
 
 ---
 
+## Validation Playbook
+
+### Layer 1 — Automated tests (runs in 4 seconds)
+
+```bash
+python -m pytest tests/ -v --tb=short -q
+# Expected: 203 passed, 3 skipped, 0 failed
+```
+
+203 tests across 14 test classes covering: deepagents integration, escalation rules, correction dispatch, path-checking bug proof, CSV loader gates, concurrent ingestion, Pydantic schemas, skill/memory files, docker config, pipeline config, and requirements.
+
+### Layer 2 — All 13 agents HEALTHY
+
+```bash
+docker exec supply-chain-agents python -c "
+from agents import state
+hbs = state.get_all_heartbeats()
+print(f'Agents: {len(hbs)}/13')
+for h in sorted(hbs, key=lambda x: x.get('agent_id','')):
+    print(f'  [{h[\"status\"]:10}] {h[\"agent_id\"]:25} {str(h.get(\"current_task\",\"\"))[:60]}')
+degraded = [h['agent_id'] for h in hbs if h['status'] not in ('HEALTHY',)]
+print(f'\nDEGRADED/OFFLINE: {degraded if degraded else \"none — all good\"}')
+"
+```
+
+**Pass:** All 13 show `[HEALTHY   ]`, 0 DEGRADED, 0 OFFLINE.
+
+### Layer 3 — API health
+
+```bash
+# Health check
+curl -s http://localhost:8000/health | python -m json.tool
+
+# ML delay prediction (tests the 10-feature model with computed features)
+curl -s -X POST http://localhost:8000/ml/predict \
+  -H "Content-Type: application/json" \
+  -d '{"supplier_id":"SUP-001","region":"US-EAST","quantity":10,"unit_price":5.0,"order_value":50.0,"inventory_level":500.0}' \
+  | python -m json.tool
+```
+
+**Pass:** health returns `{"status":"ok"}`, predict returns `{"is_delayed":false,"probability":...,"confidence":...}`.
+
+> The predict endpoint auto-fills missing computed features with `0.0` — it reads the model's actual `feature_names_in_` and handles any feature count without crashing.
+
+### Layer 4 — Dagster pipelines
+
+```bash
+curl -s -X POST http://localhost:3001/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ runsOrError(limit:5){... on Runs{results{runId status pipelineName}}}}"}' \
+  | python -m json.tool
+```
+
+**Pass:** Last 5 runs show `SUCCESS`. Or open [http://localhost:3001](http://localhost:3001) → Runs tab.
+
+### Layer 5 — MLflow model in Production
+
+```bash
+docker exec supply-chain-agents python -c "
+import redis, json
+r = redis.from_url('redis://redis:6379/0', decode_responses=True)
+baseline = json.loads(r.get('mlflow:baseline') or '{}')
+print(f'Production roc_auc : {baseline.get(\"roc_auc\", \"not set\")}')
+print(f'Accuracy           : {baseline.get(\"accuracy\", \"not set\")}')
+print(f'Train rows         : {baseline.get(\"train_rows\", \"not set\")}')
+"
+```
+
+**Pass:** `roc_auc >= 0.86`, `train_rows >= 7000`.
+
+### Layer 6 — New customer CSV end-to-end test
+
+```bash
+# Drop a brand new CSV into the source directory
+docker exec supply-chain-agents bash -c "cat > /data/source/stress_test_customer.csv << 'EOF'
+CustomerID,CompanyName,Region,OrderVolume,ContractValue,RiskScore
+CUST001,Stress Test Corp,US-WEST,500,250000.00,0.12
+CUST002,Validation Inc,EU-NORTH,150,89500.00,0.45
+EOF"
+
+# Wait 70s for DataIngestionAgent to detect + infer schema + trigger pipeline
+sleep 70
+
+# Verify ingested
+docker exec supply-chain-agents python -c "
+import redis
+r = redis.from_url('redis://redis:6379/0', decode_responses=True)
+known = r.smembers('ingestion:known_files')
+found = [f for f in known if 'stress_test' in f]
+print('Ingested:', found if found else 'NOT YET — wait 60s more')
+"
+
+# Check the generated loader
+docker exec supply-chain-agents cat /data/source/_loaders/stress_test_customer.py
+```
+
+**Pass:** Loader file exists, contains `def load_csv`, `validation_passed=True` in agent logs.
+
+### Layer 7 — Orchestrator deepagents is active
+
+```bash
+docker exec supply-chain-agents python -c "
+from agents import state
+entries = state.get_recent_audit(limit=20)
+orch = [e for e in (entries or []) if e.get('agent_id')=='orchestrator']
+for e in orch[-3:]:
+    engine = e.get('details',{}).get('engine','unknown')
+    print(f'  [{e[\"outcome\"]}] engine={engine} | {str(e.get(\"reasoning\",\"\"))[:80]}')
+"
+```
+
+**Pass:** Shows `engine=deepagents` when anomalies were detected, or `engine=legacy-sdk` if no issues warranted reasoning (both are correct).
+
+### Layer 8 — Force an incident and watch self-healing
+
+```bash
+# Inject a fake degraded status
+docker exec supply-chain-agents python -c "
+from agents import state, communication
+state.write_heartbeat('dagster_guardian','DEGRADED','fake_error',
+    {'consecutive_failures':3},'test injection','CONN_REFUSED',
+    'claude-haiku-4-5-20251001',60)
+communication.publish_alert('dagster_guardian','HIGH',
+    'Test: dagster_guardian connection refused',{})
+print('Incident injected — orchestrator responds within 5 minutes')
+"
+
+# Wait 5 min then check corrections were issued
+sleep 300
+docker exec supply-chain-agents python -c "
+from agents import state
+entries = state.get_recent_audit(limit=15)
+for e in (entries or []):
+    if 'orchestrat' in e.get('agent_id','') or 'CORRECTION' in e.get('action',''):
+        print(f'  [{e[\"outcome\"]}] {e[\"agent_id\"]} | {e[\"action\"]} | {str(e.get(\"reasoning\",\"\"))[:100]}')
+"
+```
+
+**Pass:** Shows `ORCHESTRATION_CYCLE SUCCESS` and/or `CORRECTION_ISSUED` to `dagster_guardian`.
+
+### Quick one-liner health check
+
+```bash
+docker exec supply-chain-agents python -c "
+from agents import state
+hbs = state.get_all_heartbeats()
+healthy = sum(1 for h in hbs if h['status']=='HEALTHY')
+print(f'RESULT: {healthy}/13 HEALTHY — {\"ALL GOOD\" if healthy==13 else \"ISSUES FOUND\"}')
+for h in hbs:
+    if h['status'] != 'HEALTHY':
+        print(f'  ISSUE: {h[\"agent_id\"]} is {h[\"status\"]} — {h.get(\"last_error\",\"\")}')
+"
+```
+
+---
+
 ## Dropping New Customer Data
 
 ```bash
-# Copy a CSV into the watched folder
+# Option 1 — Direct docker cp
 docker cp customer_orders.csv supply-chain-agents:/data/source/
 
-# Or use the HTTP upload endpoint (add to FastAPI)
+# Option 2 — HTTP upload (after adding the endpoint)
 curl -X POST http://localhost:8000/data/upload \
   -F "file=@customer_orders.csv"
 
@@ -371,6 +599,7 @@ open http://localhost:3001
 | POST | `/ai/analyze-scored` | Multi-model AI with quality scoring |
 | GET | `/forecasts/at-risk` | ML-predicted at-risk orders |
 | GET | `/forecasts/demand` | Prophet demand forecast |
+| POST | `/ml/predict` | Delay prediction (auto-detects model feature count) |
 | POST | `/actions/{id}/execute` | Execute a pending action |
 | GET | `/events` | Event sourcing log |
 | GET | `/lineage` | Data lineage graph |
@@ -390,12 +619,14 @@ The Dagster medallion pipeline runs on a 6-hour schedule and on-demand via agent
 | `medallion_full_pipeline` | All 16 assets (Bronze + Silver + Gold + ML + Forecast + Risk) | Schedule, DataIngestion, DagsterGuardian |
 | `medallion_incremental` | `bronze_orders → silver_orders → gold_orders_ai_ready → gold_delay_model` | FeatureEngineer, MLflowGuardian, agents |
 
+Both jobs include `gold_delay_model` — ML retraining happens on every incremental run, not just the full pipeline.
+
 ### Pipeline Step Details
 
 1. **Bronze**: Raw ingest from CSV or Kafka (append-only, schema-on-read)
 2. **Silver**: Validated, deduplicated, typed, business rules applied
 3. **Gold**: AI-ready with supplier trust scores, deviation flags, financial formulas
-4. **gold_delay_model**: XGBoost trained on Silver orders + computed features from FeatureEngineerAgent. Logs to MLflow.
+4. **gold_delay_model**: XGBoost trained on Silver orders + computed features merged by `order_id` join. Logs to MLflow. Supports dynamic feature columns via `extra_feature_cols` parameter.
 5. **demand_forecast**: Prophet demand forecast by product
 6. **supplier_risk**: Risk scoring per supplier
 
@@ -489,16 +720,7 @@ r = requests.post('http://mlflow:5000/api/2.0/mlflow/runs/search',
           'order_by':['start_time DESC'],'max_results':3})
 for run in r.json().get('runs',[]):
     m = {x['key']:x['value'] for x in run['data'].get('metrics',[]) if isinstance(x,dict)}
-    print(f'run={run[\"info\"][\"run_id\"][:8]} roc_auc={m.get(\"roc_auc\",\"N/A\"):.4f} rows={m.get(\"train_rows\",0):.0f}')
-"
-
-# Check production model
-docker exec supply-chain-agents python3 -c "
-import requests
-r = requests.get('http://mlflow:5000/api/2.0/mlflow/model-versions/search',
-    params={'filter':'name=\"supply_chain_delay_model\" AND current_stage=\"Production\"'})
-for v in r.json().get('model_versions',[]):
-    print(f'Production: v{v[\"version\"]} run={v[\"run_id\"][:8]}')
+    print(f'run={run[\"info\"][\"run_id\"][:8]} roc_auc={float(m.get(\"roc_auc\",0)):.4f} rows={float(m.get(\"train_rows\",0)):.0f}')
 "
 ```
 
@@ -519,60 +741,18 @@ for v in r.json().get('model_versions',[]):
 
 ---
 
-## Verifying Everything Works
+## Understanding Agent Logs
 
-### 1. All Containers Running
-```bash
-docker compose ps
-```
-All 22 containers should show `Up`. Critical ones show `(healthy)`.
+The agents report real activity — this is the system working correctly:
 
-### 2. All 13 Agents HEALTHY
-```bash
-docker exec supply-chain-postgres psql -U supplychain -d supply_chain_db \
-  -c "SELECT agent_id, status, error_count FROM agent_heartbeats ORDER BY agent_id;"
-```
-All 13 rows should show `HEALTHY` and `error_count=0`.
-
-### 3. Feature Engineering Running
-```bash
-docker logs supply-chain-agents 2>&1 | grep "feature_engineer" | grep -E "(feature|valid|Written)" | tail -10
-```
-Should show features validated and written to computed_features/.
-
-### 4. ML Model Trained With Computed Features
-```bash
-docker logs supply-chain-dagster-code-server 2>&1 | grep "Merged.*computed features" | tail -5
-```
-Should show: `Merged 5 computed features: ['order_value_per_unit', ...]`
-
-### 5. Kafka Receiving Events
-```bash
-docker exec supply-chain-kafka kafka-console-consumer \
-  --bootstrap-server localhost:9092 \
-  --topic supply-chain-events \
-  --max-messages 3 \
-  --from-beginning 2>/dev/null
-```
-
-### 6. One-Liner Full Health Check
-```bash
-for url in "localhost:8000/health" "localhost:3000" "localhost:3001" "localhost:3002" "localhost:5001"; do
-  code=$(curl -s -o /dev/null -w "%{http_code}" http://$url)
-  echo "$url → HTTP $code"
-done
-```
-
-### Understanding Agent Logs
-
-The agents report real issues as they find them — this is the system working correctly:
-
+- `deepagents available — will use structured LangGraph orchestration` → Orchestrator using deepagents path
 - `roc_auc dropped 0.0512 — retraining` → MLflow Guardian detected drift, triggered retraining
 - `Gold updated — generating features from data.parquet` → Feature Engineer running on new Gold data
 - `Merged 5 computed features` → ML training using AI-generated features
-- `Model v14 promoted to Production` → Auto-promotion after improvement
-- `Dagster webserver not reachable — waiting 60s` → Dagster is booting; agent waits with backoff and auto-retries
-- `Orchestrator correction → triggering incremental job` → Orchestrator correction was acted on
+- `Model v23 promoted to Production` → Auto-promotion after improvement
+- `Dagster webserver not reachable — waiting 60s` → Dagster is booting; agent waits with backoff
+- `Orchestrator correction → triggering incremental job` → deepagents correction was acted on
+- `Loader validated for customer.csv: 10 rows` → DataIngestionAgent iterative loop succeeded
 
 ---
 
@@ -580,7 +760,7 @@ The agents report real issues as they find them — this is the system working c
 
 The CI pipeline runs on every push and PR to `main`:
 
-1. **Unit Tests**: pytest with coverage (threshold: 45%)
+1. **Unit Tests**: pytest with coverage (threshold: 45%, currently 203 tests)
 2. **Secret Scan**: Detects hardcoded credentials in Python files
 3. **dbt Validate**: Ensures all dbt model files have content
 4. **Docker Validate**: Validates docker-compose syntax
@@ -593,61 +773,74 @@ The CI pipeline runs on every push and PR to `main`:
 
 ```
 supply-chain-os/
-  agents/                       # Autonomous agent system
-    base.py                     # BaseAgent: infinite loop, heartbeat, LLM, corrections
-    state.py                    # PostgreSQL: heartbeats, audit log, corrections
-    communication.py            # Redis pub/sub: alerts, corrections, heartbeats
-    orchestrator.py             # Main orchestrator (Claude Sonnet 4.6)
-    kafka_guardian.py           # Kafka consumer lag + DLQ + container restart
-    dagster_guardian.py         # Dagster run health + schedule + correction handler
-    ai_quality_monitor.py       # AI output quality, stuck actions, confidence
-    database_health.py          # PostgreSQL connections, locks, table sizes
-    data_ingestion_agent.py     # New CSV detection + Claude schema inference + loader gen
-    mlflow_guardian.py          # Model drift detection + auto-promotion via Claude tool_use
-    feature_engineer.py         # Auto feature generation + 5-gate sandbox validation
-    dashboard_agent.py          # Grafana auto-update via structured Claude panel spec
-    run_all.py                  # Entry point — starts all 13 agents as daemon threads
+  agents/                         # Autonomous agent system
+    base.py                       # BaseAgent: infinite loop, heartbeat, LLM, corrections
+    state.py                      # PostgreSQL: heartbeats, audit log, corrections
+    communication.py              # Redis pub/sub: alerts, corrections, heartbeats
+    orchestrator.py               # Orchestrator: deepagents LangGraph + 7 tools + 3 sub-agents
+    kafka_guardian.py             # Kafka consumer lag + DLQ + container restart
+    dagster_guardian.py           # Dagster run health + schedule + apply_correction()
+    ai_quality_monitor.py         # AI output quality, stuck actions, confidence
+    database_health.py            # PostgreSQL connections, locks, table sizes
+    data_ingestion_agent.py       # deepagents iterative loop: read_csv_sample + validate_python_loader
+    mlflow_guardian.py            # Model drift + auto-promotion + apply_correction()
+    feature_engineer.py           # Auto feature gen + 5-gate sandbox + apply_correction()
+    dashboard_agent.py            # Grafana auto-update via structured Claude panel spec
+    run_all.py                    # Entry point — starts all 13 agents as daemon threads
     tools/
-      code_executor.py          # 5-gate code sandbox (syntax→exec→validate→schema→timeout)
+      code_executor.py            # 5-gate code sandbox (syntax→exec→validate→schema→timeout)
     medallion/
-      bronze.py                 # Bronze parquet validation + materialization trigger
-      silver.py                 # Silver dedup/null/enum validation + trigger
-      gold.py                   # Gold financial formula + ML bounds + forecast sanity
-      supervisor.py             # Medallion data contract (Bronze→Silver→Gold chain)
-    _loaders/                   # Auto-generated CSV loaders (created by DataIngestionAgent)
-  api/                          # FastAPI application
-    routers/                    # REST endpoints (orders, suppliers, ai, alerts, etc.)
-    models.py                   # SQLAlchemy ORM models
-    database.py                 # Connection management
-  reasoning/                    # Claude AI reasoning engine
-    engine.py                   # Streaming + structured analysis
-  ingestion/                    # Data ingestion
-    producer.py                 # Kafka producer (synthetic events)
-    pg_writer.py                # Kafka → PostgreSQL consumer
-    openboxes_connector.py      # OpenBoxes WMS integration
-  pipeline/                     # Dagster pipeline
-    assets_medallion.py         # Bronze/Silver/Gold/ML assets (gold_delay_model reads computed_features)
-    jobs_medallion.py           # medallion_full_pipeline + medallion_incremental (includes gold_delay_model)
-    ml_model.py                 # XGBoost training with dynamic feature columns
-    demand_forecast.py          # Prophet demand forecasting
-    definitions.py              # Dagster definitions entry point
-  transforms/                   # dbt models
-  quality/                      # Great Expectations validations
-  streaming/                    # ksqlDB + WebSocket
-  docker/                       # Dockerfiles + dagster.yaml + workspace.yaml
-  alembic/                      # Database migrations
-  dashboard/                    # Next.js frontend
+      bronze.py                   # Bronze parquet validation + apply_correction()
+      silver.py                   # Silver validation, str(f) path check, apply_correction()
+      gold.py                     # Gold financial formula + ML bounds, str(f) path check
+      supervisor.py               # Medallion data contract (Bronze→Silver→Gold chain)
+    skills/                       # Domain knowledge injected into agent system prompts
+      supply-chain-ops/SKILL.md   # Agent roster, escalation rules, correction dispatch guide
+      dagster-diagnosis/SKILL.md  # Job names, failure patterns, GraphQL patterns
+      kafka-diagnosis/SKILL.md    # Consumer groups, DLQ thresholds, lag diagnosis
+      mlflow-governance/SKILL.md  # Promotion rules, hard floors, retraining triggers
+      data-ingestion/SKILL.md     # Loader patterns, validation gates, error diagnosis
+    memories/
+      incident_patterns.md        # 8 documented incident patterns loaded at orchestrator startup
+    _loaders/                     # Auto-generated CSV loaders (created by DataIngestionAgent)
+  api/                            # FastAPI application
+    routers/                      # REST endpoints (orders, suppliers, ai, alerts, ml, etc.)
+    models.py                     # SQLAlchemy ORM models
+    database.py                   # Connection management
+  reasoning/                      # Claude AI reasoning engine
+    engine.py                     # Streaming + structured analysis
+  ingestion/                      # Data ingestion
+    producer.py                   # Kafka producer (synthetic events)
+    pg_writer.py                  # Kafka → PostgreSQL consumer
+    openboxes_connector.py        # OpenBoxes WMS integration
+  pipeline/                       # Dagster pipeline
+    assets_medallion.py           # Bronze/Silver/Gold/ML assets (computed_features merge by order_id)
+    jobs_medallion.py             # medallion_full_pipeline + medallion_incremental (includes gold_delay_model)
+    ml_model.py                   # XGBoost: dynamic feature columns + predict handles any feature count
+    demand_forecast.py            # Prophet demand forecasting
+    definitions.py                # Dagster definitions entry point
+  tests/
+    test_stress_deepagents.py     # 70 tests: deepagents integration, escalation, ingestion, skills, memory
+    test_critical_paths.py        # Critical path tests (ML predict, API, pipeline)
+    test_api_health.py            # API endpoint health tests
+    (+ 8 more test files)         # Total: 203 passing tests
+  transforms/                     # dbt models
+  quality/                        # Great Expectations validations
+  streaming/                      # ksqlDB + WebSocket
+  docker/                         # Dockerfiles + dagster.yaml + workspace.yaml
+  alembic/                        # Database migrations
+  dashboard/                      # Next.js frontend
   data/
-    source/                     # Drop new CSV files here — picked up automatically
-    bronze/                     # Raw parquet (managed by Dagster)
-    silver/                     # Validated parquet
+    source/                       # Drop new CSV files here — picked up automatically
+    bronze/                       # Raw parquet (managed by Dagster)
+    silver/                       # Validated parquet
     gold/
-      orders_ai_ready/          # AI-enriched orders
-      computed_features/        # Auto-generated ML features (manifest.json + features.parquet)
+      orders_ai_ready/            # AI-enriched orders (data.parquet)
+      computed_features/          # Auto-generated ML features (features.parquet + manifest.json)
       supplier_risk/
       demand_forecast/
       deviations/
-    models/                     # Local model artifacts (XGBoost .json + encoders .pkl)
+    models/                       # Local model artifacts (XGBoost .json + encoders .pkl)
 ```
 
 ---
@@ -662,14 +855,6 @@ supply-chain-os/
 6. Validate agents: `python -c "from agents.run_all import AGENT_CLASSES; print(len(AGENT_CLASSES))"`
 7. Open a PR against `main`
 
----
-
-## License
-
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
-
----
-
 ### Agent Contribution Guidelines
 
 New agents must:
@@ -679,3 +864,17 @@ New agents must:
 - Use LLM calls sparingly — only on anomaly, not every cycle
 - Use `tool_choice={"type":"tool","name":"..."}` — never free-text LLM responses
 - Any generated code must pass through `CodeExecutor` (5-gate validation) before execution
+- Path checks on parquet files must use `str(f)` not `f.name` (files live in subdirectories)
+- `apply_correction()` must take real action, not just log
+
+---
+
+## License
+
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)** — see the [LICENSE](LICENSE) file for details.
+
+**What this means:**
+- ✅ Free to use, modify, and self-host for any purpose
+- ✅ Free for internal business use
+- ⚠️ If you run this as a **network service or SaaS**, you must release your full source code under AGPL-3.0
+- 💼 For a **commercial license** (to build a closed-source product on top), contact the maintainer

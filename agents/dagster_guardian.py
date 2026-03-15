@@ -63,8 +63,8 @@ ASSETS_QUERY = """
 query AssetFreshness {
   assetNodes {
     assetKey { path }
-    freshnessInfo {
-      lastMaterializationTimestamp
+    latestMaterializationByPartition {
+      timestamp
     }
   }
 }
@@ -154,8 +154,9 @@ class DagsterGuardianAgent(BaseAgent):
 
             for node in nodes:
                 key = "/".join(node.get("assetKey", {}).get("path", []))
-                freshness = node.get("freshnessInfo") or {}
-                last_mat = freshness.get("lastMaterializationTimestamp")
+                # latestMaterializationByPartition returns a list; take the first entry
+                mat_list = node.get("latestMaterializationByPartition") or []
+                last_mat = mat_list[0].get("timestamp") if mat_list else None
                 if last_mat:
                     age_min = (now - float(last_mat)) / 60
                     if age_min > FRESHNESS_THRESHOLD_MINUTES:

@@ -20,7 +20,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from api.auth import APIKeyMiddleware
 from api.database import init_db
-from api.routers import actions, ai, alerts, events, forecasts, lineage, ml, network, orders, ontology, query, streaming, suppliers
+from api.routers import actions, ai, alerts, data, events, forecasts, lineage, ml, network, orders, ontology, query, streaming, suppliers
 from api.telemetry import setup_tracing
 
 logging.basicConfig(
@@ -124,6 +124,7 @@ if ALLOWED_HOSTS:
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
+app.include_router(data.router)
 app.include_router(orders.router, prefix="/orders", tags=["orders"])
 app.include_router(suppliers.router, prefix="/suppliers", tags=["suppliers"])
 app.include_router(alerts.router, prefix="/alerts", tags=["alerts"])

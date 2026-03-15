@@ -264,7 +264,23 @@ def predict_delay(features: dict) -> dict:
     }
     df_row = pd.DataFrame([row])
     df_row, _ = _encode_features(df_row, encoders=encoders)
-    X = df_row[_FEATURES]
+
+    # Detect the model's actual feature set (may include computed features from feature_engineer)
+    model_feature_names = getattr(model, "feature_names_in_", None)
+    if model_feature_names is None:
+        try:
+            model_feature_names = model.get_booster().feature_names
+        except Exception:
+            model_feature_names = None
+
+    if model_feature_names is not None:
+        # Fill any missing computed features with 0.0 (neutral value)
+        for col in model_feature_names:
+            if col not in df_row.columns:
+                df_row[col] = 0.0
+        X = df_row[list(model_feature_names)]
+    else:
+        X = df_row[_FEATURES]
 
     prob = float(model.predict_proba(X)[0, 1])
     is_delayed = prob >= 0.5
