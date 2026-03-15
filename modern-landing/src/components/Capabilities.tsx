@@ -56,13 +56,13 @@ export function Capabilities() {
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
           className="mb-16 max-w-3xl"
         >
-          <h2 className="text-sm font-mono text-accent uppercase tracking-widest mb-4 font-semibold">Technical Capabilities</h2>
+          <h2 className="text-sm font-mono text-accent uppercase tracking-widest mb-4 font-semibold">What's Under the Hood</h2>
           <h3 className="text-3xl lg:text-4xl font-semibold tracking-tight text-ink mb-6">
-            A 17-service production-grade data ecosystem.
+            22 containers. 13 agents. One system.
           </h3>
           <p className="text-steel text-lg font-light leading-relaxed mb-8">
-            The platform replicates the end-to-end architecture of a $100M+ enterprise operations tower.
-            By connecting raw data pipelines directly to deterministic AI agents, we execute decisions the moment a signal drops.
+            Every component is open source, self-hosted, and production-grade.
+            Drop a CSV and the entire stack activates autonomously — schema inference, pipeline, agents, forecasts, audit trail.
           </p>
         </motion.div>
 

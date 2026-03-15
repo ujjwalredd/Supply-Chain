@@ -10,12 +10,12 @@ export function AIFeature() {
 
   const [displayData, setDisplayData] = useState({
     confidence: "0.982",
-    model: "claude-sonnet-3.5",
-    quality: "0.82",
-    fallback: "false",
+    model: "claude-sonnet-4-6",
+    quality: "0.94",
+    escalated: "false",
     confidenceColor: "text-success",
     qualityColor: "text-success",
-    fallbackColor: "text-warning"
+    escalatedColor: "text-warning"
   });
 
   // Mouse tracking for holographic tilt
@@ -33,39 +33,37 @@ export function AIFeature() {
 
   useEffect(() => {
     if (isSimulatingFallback) {
-      // Trigger glitch effect FIRST
       setIsGlitching(true);
       setTimeout(() => {
         setDisplayData({
-          confidence: "0.245",
-          model: "gpt-4o",
-          quality: "0.31",
-          fallback: "true",
+          confidence: "0.312",
+          model: "claude-sonnet-4-6",
+          quality: "0.28",
+          escalated: "true",
           confidenceColor: "text-danger",
           qualityColor: "text-danger",
-          fallbackColor: "text-success"
+          escalatedColor: "text-success"
         });
-        // End glitch after data has changed
         setTimeout(() => setIsGlitching(false), 400);
       }, 300);
     } else {
       setDisplayData({
         confidence: "0.982",
-        model: "claude-sonnet-3.5",
-        quality: "0.82",
-        fallback: "false",
+        model: "claude-sonnet-4-6",
+        quality: "0.94",
+        escalated: "false",
         confidenceColor: "text-success",
         qualityColor: "text-success",
-        fallbackColor: "text-warning"
+        escalatedColor: "text-warning"
       });
       setIsGlitching(false);
     }
   }, [isSimulatingFallback]);
 
   const ontologyRules = [
-    { name: 'Claude Sonnet Primary', desc: 'Evaluates deviations against strict mathematical bounds.', status: 'Active' },
-    { name: 'Execution Quality Scoring', desc: 'Deterministically scores generated schemas (0.0 to 1.0).', status: 'Active' },
-    { name: 'GPT-4o Zero-Downtime Fallback', desc: 'Automatic reroute if reasoning quality score drops < 0.4.', status: 'Strict' },
+    { name: 'Orchestrator Agent', desc: 'Claude Sonnet reads every agent heartbeat, detects cross-agent patterns, issues corrections.', status: 'Sonnet' },
+    { name: 'Confidence Threshold Gate', desc: 'Deterministic quality scoring (0.0–1.0). Auto-executes when safe, escalates to human when uncertain.', status: 'Active' },
+    { name: 'Human Escalation Protocol', desc: 'If confidence < 0.4 or impact > $500k, action is held for human approval. Full audit trail either way.', status: 'Strict' },
   ];
 
   return (
@@ -75,10 +73,10 @@ export function AIFeature() {
         {/* Left Concept */}
         <div>
           <h2 className="text-3xl lg:text-5xl font-semibold tracking-tight text-ink mb-6">
-            Multi-Model AI Pipeline.
+            13 agents. One orchestrator. Zero gaps.
           </h2>
           <p className="text-steel text-lg font-light leading-relaxed mb-8">
-            No hallucinated logistics. We use a deterministic quality scoring engine. Claude Sonnet evaluates every deviation, but if the execution schema quality drops below a 0.4 threshold, the reasoning engine automatically fails over to GPT-4o.
+            Every agent runs on its own schedule, self-heals on failure, and escalates only when genuinely needed. The Orchestrator reads every heartbeat, detects cross-agent patterns using deepagents, and issues corrections — all without human involvement.
           </p>
 
           <div className="space-y-4">
@@ -103,12 +101,12 @@ export function AIFeature() {
           </div>
 
           <a
-            href="https://github.com/ujjwalredd/Supply-Chain/tree/main/reasoning"
+            href="https://github.com/ujjwalredd/Supply-Chain/tree/main/agents"
             target="_blank"
             rel="noopener noreferrer"
             className="mt-8 inline-flex items-center gap-2 text-sm text-ink font-medium hover:text-accent transition-colors"
           >
-            View Full Rule Engine <ArrowRight size={16} />
+            View All 13 Agents on GitHub <ArrowRight size={16} />
           </a>
         </div>
 
@@ -155,9 +153,9 @@ export function AIFeature() {
                 <motion.div 
                   initial={{ opacity: 0, scale: 0.8 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  className="ml-auto text-[9px] font-mono font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full"
+                  className="ml-auto text-[9px] font-mono font-bold text-warning bg-warning/10 px-2 py-0.5 rounded-full"
                 >
-                  ⚡ FALLBACK ACTIVE
+                  ⚡ ESCALATED TO HUMAN
                 </motion.div>
               )}
             </div>
@@ -182,10 +180,10 @@ export function AIFeature() {
               <span className="ml-8 text-ink font-semibold">"computed_loss_usd"</span>: <span className="text-warning">2400000</span>,<br />
               <span className="ml-8 text-ink font-semibold">"penalty_risk"</span>: <span className="text-danger">"CRITICAL"</span><br />
               <span className="ml-4 text-ink">{'}'}</span>,<br />
-              <span className="ml-4 text-ink font-semibold">"model_used"</span>: <motion.span key={displayData.model} initial={{ opacity: 0, scale: 0.8, filter: "blur(4px)" }} animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }} transition={{ type: "spring", bounce: 0.3 }} className={isSimulatingFallback ? "text-purple-600 font-bold" : "text-accent"}>"{displayData.model}"</motion.span>,<br />
+              <span className="ml-4 text-ink font-semibold">"model_used"</span>: <motion.span key={displayData.model} initial={{ opacity: 0, scale: 0.8, filter: "blur(4px)" }} animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }} transition={{ type: "spring", bounce: 0.3 }} className="text-accent">"{displayData.model}"</motion.span>,<br />
               <span className="ml-4 text-ink font-semibold">"quality_score"</span>: <motion.span key={displayData.quality} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", bounce: 0.4 }} className={displayData.qualityColor}>{displayData.quality}</motion.span>,<br />
-              <span className="ml-4 text-ink font-semibold">"fallback_triggered"</span>: <motion.span key={displayData.fallback} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", bounce: 0.4 }} className={displayData.fallbackColor}>{displayData.fallback}</motion.span>,<br />
-              <span className="ml-4 text-ink font-semibold">"action_executor"</span>: <span className="text-accent">"REROUTE"</span><br />
+              <span className="ml-4 text-ink font-semibold">"human_escalated"</span>: <motion.span key={displayData.escalated} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", bounce: 0.4 }} className={displayData.escalatedColor}>{displayData.escalated}</motion.span>,<br />
+              <span className="ml-4 text-ink font-semibold">"action_executor"</span>: <span className={isSimulatingFallback ? "text-warning" : "text-success"}>{isSimulatingFallback ? '"ESCALATE_TO_HUMAN"' : '"AUTO_RESOLVED"'}</span><br />
               <span className="text-ink">{'}'}</span>
             </div>
             
@@ -196,7 +194,7 @@ export function AIFeature() {
                 className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-semibold transition-all shadow-sm border ${isSimulatingFallback ? 'bg-purple-600 text-white border-transparent hover:bg-purple-700' : 'bg-white text-ink border-black/10 hover:bg-gray-50'}`}
               >
                 <RefreshCw size={14} className={isGlitching ? 'animate-spin' : ''} />
-                {isSimulatingFallback ? 'Reset to Primary (Claude)' : 'Simulate Low Confidence (< 0.4)'}
+                {isSimulatingFallback ? 'Reset — Auto-Resolved' : 'Simulate Low Confidence → Escalate'}
               </button>
             </div>
           </div>

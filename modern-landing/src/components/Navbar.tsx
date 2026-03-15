@@ -28,15 +28,16 @@ export function Navbar() {
           className="flex items-center gap-2 cursor-pointer transition-transform hover:-translate-y-0.5"
         >
           <Activity className="text-accent" size={18} />
-          <span className="font-semibold tracking-wide text-sm text-ink">Adopt</span>
+          <span className="font-semibold tracking-wide text-sm text-ink">Supply Chain AI OS</span>
         </button>
         <nav className="hidden md:flex items-center gap-8 text-xs font-medium text-steel">
-          <a href="#platform" className="hover:text-ink transition-colors">Platform</a>
+          <a href="#platform" className="hover:text-ink transition-colors">Agents</a>
           <a href="#dashboard" className="hover:text-ink transition-colors">Control Tower</a>
           <a href="#architecture" className="hover:text-ink transition-colors">Architecture</a>
+          <a href="#design-partner" className="hover:text-ink transition-colors">Design Partner</a>
         </nav>
         <div className="flex items-center gap-4 text-xs font-medium">
-          <button 
+          <button
             onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))}
             className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-md border border-black/5 hover:bg-subtle/50 transition-colors text-steel h-[32px]"
           >
@@ -46,14 +47,14 @@ export function Navbar() {
               <span className="text-sm leading-none">⌘</span> K
             </kbd>
           </button>
-          
-          <a 
-            href="https://github.com/ujjwalredd/Supply-Chain" 
-            target="_blank" 
+
+          <a
+            href="https://github.com/ujjwalredd/Supply-Chain"
+            target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 bg-ink text-paper px-4 py-1.5 rounded-md hover:bg-black transition-colors font-semibold shadow-sm h-[32px]"
           >
-            View Source
+            View on GitHub
           </a>
         </div>
       </div>
