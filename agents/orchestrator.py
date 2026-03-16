@@ -218,7 +218,8 @@ def _build_tools(agent_instance: "OrchestratorAgent"):
         - silver_agent: 'trigger materialization'
         Returns confirmation of the correction being issued."""
         try:
-            state.write_correction("orchestrator", agent_id, correction)
+            from agents.security import sign_correction
+            state.write_correction("orchestrator", agent_id, correction, sign_correction(correction))
             communication.publish_correction(agent_id, correction)
             agent_instance.audit(
                 "CORRECTION_ISSUED",
@@ -608,12 +609,13 @@ class OrchestratorAgent(BaseAgent):
                 return
 
             # Apply corrections from structured result
+            from agents.security import sign_correction as _sign
             corrections_issued = 0
             for corr in (structured.corrections or []):
                 agent_id = corr.agent_id
                 message = corr.correction
                 if agent_id and message:
-                    state.write_correction("orchestrator", agent_id, message)
+                    state.write_correction("orchestrator", agent_id, message, _sign(message))
                     communication.publish_correction(agent_id, message)
                     corrections_issued += 1
                     logger.info(f"[orchestrator/deepagents] Correction → {agent_id}: {message}")
@@ -669,12 +671,13 @@ class OrchestratorAgent(BaseAgent):
                 return
             json_match = re.search(r'\{.*\}', text, re.DOTALL)
             if json_match:
+                from agents.security import sign_correction as _sign
                 parsed = json.loads(json_match.group())
                 for corr in parsed.get("corrections", []):
                     agent_id = corr.get("agent_id")
                     message = corr.get("correction", "")
                     if agent_id and message:
-                        state.write_correction("orchestrator", agent_id, message)
+                        state.write_correction("orchestrator", agent_id, message, _sign(message))
                         communication.publish_correction(agent_id, message)
                         logger.info(f"[orchestrator/fallback] Correction → {agent_id}: {message}")
                 self.audit("ORCHESTRATION_CYCLE", parsed.get("root_cause_analysis", text[:300]), "PARTIAL",
@@ -736,6 +739,7 @@ Respond with a JSON object:
             )
 
             import re
+            from agents.security import sign_correction as _sign
             json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
             if json_match:
                 result = json.loads(json_match.group())
@@ -744,7 +748,7 @@ Respond with a JSON object:
                     agent_id = corr.get("agent_id")
                     message = corr.get("correction", "")
                     if agent_id and message:
-                        state.write_correction("orchestrator", agent_id, message)
+                        state.write_correction("orchestrator", agent_id, message, _sign(message))
                         communication.publish_correction(agent_id, message)
                         logger.info(f"[orchestrator/legacy] Correction → {agent_id}: {message}")
 

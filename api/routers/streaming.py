@@ -35,7 +35,7 @@ async def get_streaming_aggregations() -> dict[str, Any]:
             "supplier_delay_rates": [],
             "region_demand": [],
             "source": "unavailable",
-            "error": str(exc),
+            "error": "ksqlDB unavailable",
         }
 
 
@@ -46,7 +46,8 @@ async def get_supplier_delay_rates(limit: int = Query(20, le=100)) -> dict[str, 
         from streaming.ksql_queries import get_supplier_delay_rates as _get
         return {"data": _get(limit=limit), "source": "ksqldb"}
     except Exception as exc:
-        return {"data": [], "error": str(exc)}
+        logger.warning("get_supplier_delay_rates: ksqlDB unavailable: %s", exc)
+        return {"data": [], "error": "ksqlDB unavailable"}
 
 
 @router.get("/region-demand")
@@ -56,7 +57,8 @@ async def get_region_demand(limit: int = Query(10, le=50)) -> dict[str, Any]:
         from streaming.ksql_queries import get_region_demand as _get
         return {"data": _get(limit=limit), "source": "ksqldb"}
     except Exception as exc:
-        return {"data": [], "error": str(exc)}
+        logger.warning("get_region_demand: ksqlDB unavailable: %s", exc)
+        return {"data": [], "error": "ksqlDB unavailable"}
 
 
 @router.post("/init")
@@ -70,4 +72,5 @@ async def init_ksql() -> dict[str, Any]:
         success = init_ksql_streams()
         return {"success": success, "message": "ksqlDB streams initialized" if success else "ksqlDB unavailable"}
     except Exception as exc:
-        return {"success": False, "error": str(exc)}
+        logger.warning("init_ksql: failed: %s", exc)
+        return {"success": False, "error": "ksqlDB initialization failed"}

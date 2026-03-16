@@ -67,7 +67,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 
         # Skip auth for public paths
         path = request.url.path
-        if path in _PUBLIC_EXACT or any(path == p or path.startswith(p) for p in _PUBLIC_PREFIXES):
+        if path in _PUBLIC_EXACT or any(path == p or path.startswith(p + "/") for p in _PUBLIC_PREFIXES):
             return await call_next(request)
 
         # Extract key from Authorization header or X-API-Key header

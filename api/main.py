@@ -20,7 +20,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from api.auth import APIKeyMiddleware
 from api.database import init_db
-from api.routers import actions, ai, alerts, data, events, forecasts, lineage, ml, network, orders, ontology, query, streaming, suppliers
+from api.routers import actions, ai, alerts, data, escalations, events, forecasts, lineage, ml, network, orders, ontology, query, streaming, suppliers
 from api.telemetry import setup_tracing
 
 logging.basicConfig(
@@ -129,7 +129,8 @@ app.add_middleware(
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Request-ID", "Accept"],
+    allow_headers=["Content-Type", "Authorization", "X-Request-ID", "Accept", "X-API-Key"],
+    expose_headers=["X-Request-ID"],
 )
 # Only enforce trusted host checking when ALLOWED_HOSTS is explicitly configured
 if ALLOWED_HOSTS:
@@ -138,6 +139,7 @@ if ALLOWED_HOSTS:
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 app.include_router(data.router)
+app.include_router(escalations.router)
 app.include_router(orders.router, prefix="/orders", tags=["orders"])
 app.include_router(suppliers.router, prefix="/suppliers", tags=["suppliers"])
 app.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
@@ -273,8 +275,8 @@ async def health():
         try:
             await _redis_client.ping()
             checks["redis"] = "ok"
-        except Exception as e:
-            checks["redis"] = f"error: {e}"
+        except Exception:
+            checks["redis"] = "error: connection failed"
     else:
         checks["redis"] = "unavailable"
 

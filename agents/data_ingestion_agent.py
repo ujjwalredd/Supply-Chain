@@ -23,6 +23,7 @@ Anti-hallucination:
 import os
 import csv
 import json
+import re
 import time
 import logging
 import textwrap
@@ -334,7 +335,9 @@ class DataIngestionAgent(BaseAgent):
             return False
 
         loader_code = schema.get("loader_code", "")
-        table_name = schema.get("table_name", path.stem.lower().replace("-", "_"))
+        raw_table_name = schema.get("table_name", path.stem.lower().replace("-", "_"))
+        # Sanitize LLM-generated table_name: allow only word chars, truncate to 80
+        table_name = re.sub(r"[^\w]", "_", raw_table_name)[:80]
         columns = schema.get("columns", [])
 
         # Normalize columns: could be list of dicts or list of Pydantic models

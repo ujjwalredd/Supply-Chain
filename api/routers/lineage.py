@@ -102,7 +102,7 @@ async def get_lineage(
         }
     except Exception as e:
         logger.error("Lineage query failed: %s", e)
-        raise HTTPException(status_code=503, detail=f"Lineage query failed: {e}")
+        raise HTTPException(status_code=503, detail="Lineage query failed")
 
 
 @router.get("/jobs")
@@ -119,4 +119,4 @@ async def get_lineage_jobs(db: AsyncSession = Depends(get_db)) -> dict[str, Any]
         return {"jobs": [dict(r) for r in rows]}
     except Exception as e:
         logger.error("Lineage jobs query failed: %s", e)
-        raise HTTPException(status_code=503, detail=f"Lineage jobs query failed: {e}")
+        raise HTTPException(status_code=503, detail="Lineage jobs query failed")

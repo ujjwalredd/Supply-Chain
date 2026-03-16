@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agents.security import sanitize_for_prompt
 from api.database import get_db
 from api.models import Deviation, Order, Supplier
 
@@ -136,8 +137,9 @@ async def query_stream(
         "Lead with the most actionable insight. Cite specific order IDs, supplier IDs, or numbers when relevant."
     )
 
+    safe_question = sanitize_for_prompt(question, max_length=2000, field_name="question")
     prompt = (
-        f"Question: {question}\n\n"
+        f"<question>{safe_question}</question>\n\n"
         f"Live supply chain data:\n{context_str}\n\n"
         "Answer the question using only the data above. Be specific and direct."
     )
@@ -165,8 +167,10 @@ async def query_stream(
                     }
                 except Exception as e:
                     logger.debug("Could not extract final usage tokens: %s", e)
-        except (APIConnectionError, APIStatusError) as e:
-            yield f"data: {json.dumps({'token': f'Error: {e}'})}\n\n"
+        except APIConnectionError:
+            yield f"data: {json.dumps({'error': 'AI service connection failed'})}\n\n"
+        except APIStatusError:
+            yield f"data: {json.dumps({'error': 'AI service returned an error'})}\n\n"
         elapsed_ms = int((time.monotonic() - start_ms) * 1000)
         yield f"data: {json.dumps({'done': True, 'usage': {**usage, 'analysis_time_ms': elapsed_ms}})}\n\n"
 

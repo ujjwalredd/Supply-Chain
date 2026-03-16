@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
 
@@ -30,43 +31,59 @@ async def append_event(
     """Append an immutable event to order_events. Returns event_id."""
     from api.models import OrderEvent
 
-    # Get next aggregate version atomically using MAX to avoid race conditions
-    # Two concurrent appends using COUNT(*)+1 would both read the same count and
-    # produce a duplicate version. MAX+1 inside a transaction is safe because
-    # each INSERT holds a row-level lock until the transaction commits.
-    result = await db.execute(
-        text("SELECT COALESCE(MAX(aggregate_version), 0) + 1 FROM order_events WHERE order_id = :oid"),
-        {"oid": order_id}
-    )
-    version = result.scalar() or 1
+    # Get next aggregate version and insert, retrying on the rare concurrent-write
+    # collision that the UNIQUE constraint (order_id, aggregate_version) will catch.
+    # Use begin_nested() (SAVEPOINT) so only the failing INSERT is rolled back —
+    # the caller's surrounding transaction (which may have prior writes) is preserved.
+    for attempt in range(3):
+        result = await db.execute(
+            text("SELECT COALESCE(MAX(aggregate_version), 0) + 1 FROM order_events WHERE order_id = :oid"),
+            {"oid": order_id}
+        )
+        version = result.scalar() or 1
 
-    event = OrderEvent(
-        event_id=str(uuid.uuid4()),
-        order_id=order_id,
-        event_type=event_type,
-        old_status=old_status,
-        new_status=new_status,
-        old_delay_days=old_delay_days,
-        new_delay_days=new_delay_days,
-        supplier_id=supplier_id,
-        region=region,
-        event_metadata=metadata or {},
-        actor=actor,
-        aggregate_version=version,
-    )
-    db.add(event)
-    await db.flush()
-    logger.info("Event sourced: %s %s v%d", event_type, order_id, version)
-    return event.event_id
+        event = OrderEvent(
+            event_id=str(uuid.uuid4()),
+            order_id=order_id,
+            event_type=event_type,
+            old_status=old_status,
+            new_status=new_status,
+            old_delay_days=old_delay_days,
+            new_delay_days=new_delay_days,
+            supplier_id=supplier_id,
+            region=region,
+            event_metadata=metadata or {},
+            actor=actor,
+            aggregate_version=version,
+        )
+        try:
+            async with db.begin_nested():  # creates a SAVEPOINT
+                db.add(event)
+                await db.flush()
+        except IntegrityError:
+            if attempt == 2:
+                raise
+            logger.warning("append_event: version collision for %s v%d, retrying", order_id, version)
+            continue
+        logger.info("Event sourced: %s %s v%d", event_type, order_id, version)
+        return event.event_id
+    raise RuntimeError(f"append_event: failed to assign version for {order_id} after 3 attempts")
 
 
-async def get_order_history(db: AsyncSession, order_id: str) -> list[dict]:
+async def get_order_history(
+    db: AsyncSession,
+    order_id: str,
+    limit: int = 200,
+    offset: int = 0,
+) -> list[dict]:
     """Replay all events for an order (chronological)."""
     from api.models import OrderEvent
     result = await db.execute(
         select(OrderEvent)
         .where(OrderEvent.order_id == order_id)
         .order_by(OrderEvent.aggregate_version)
+        .limit(limit)
+        .offset(offset)
     )
     events = result.scalars().all()
     return [

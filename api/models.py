@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -165,3 +165,8 @@ class OrderEvent(Base):
     actor: Mapped[Optional[str]] = mapped_column(String, nullable=True, default="system")  # who triggered: system | kafka | api | dagster
     aggregate_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("order_id", "aggregate_version", name="uq_order_events_order_version"),
+        Index("ix_order_events_order_version", "order_id", "aggregate_version"),
+    )

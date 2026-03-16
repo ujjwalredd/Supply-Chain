@@ -70,7 +70,14 @@ def publish_heartbeat(agent_id: str, status: str):
 
 def publish_correction(to_agent: str, message: str):
     try:
-        payload = json.dumps({"to": to_agent, "message": message, "ts": time.time()})
+        from agents.security import sign_correction
+        sig = sign_correction(message)
+        payload = json.dumps({
+            "to": to_agent,
+            "message": message,
+            "sig": sig,
+            "ts": time.time(),
+        })
         get_client().publish(f"agent:corrections:{to_agent}", payload)
     except Exception as e:
         logger.error(f"Failed to publish correction: {e}")

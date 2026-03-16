@@ -41,6 +41,7 @@ ROC_AUC_DROP_THRESHOLD = 0.05   # 5% drop triggers retraining
 ROC_AUC_MIN_FLOOR = 0.60        # never promote below this
 STALE_HOURS = 24                # retrain if no successful run in N hours
 BASELINE_KEY = "mlflow:baseline"
+LAST_RETRAIN_KEY = "mlflow:last_retrain_time"
 
 # ── tool schema for promotion decisions ──────────────────────────────────────
 PROMOTION_TOOL = {
@@ -79,7 +80,6 @@ class MLflowGuardianAgent(BaseAgent):
             )
         )
         self._redis: Optional[redis.Redis] = None
-        self._last_retrain_time: float = 0.0
 
     def _r(self) -> redis.Redis:
         if self._redis is None:
@@ -252,10 +252,25 @@ class MLflowGuardianAgent(BaseAgent):
             logger.error(f"[mlflow_guardian] Promotion LLM call failed: {e}")
         return None
 
+    def _get_last_retrain_time(self) -> float:
+        """Return last retrain timestamp from Redis (survives restarts). Falls back to 0."""
+        try:
+            val = self._r().get(LAST_RETRAIN_KEY)
+            return float(val) if val else 0.0
+        except Exception:
+            return 0.0
+
+    def _set_last_retrain_time(self, ts: float):
+        """Persist last retrain timestamp to Redis with 2-hour TTL."""
+        try:
+            self._r().set(LAST_RETRAIN_KEY, str(ts), ex=7200)
+        except Exception as e:
+            logger.warning("[mlflow_guardian] Could not persist retrain time to Redis: %s", e)
+
     # ── Trigger retraining ────────────────────────────────────────────────────
     def _trigger_retraining(self, reason: str):
         # Cooldown: don't retrain more than once per 30 minutes
-        if time.time() - self._last_retrain_time < 1800:
+        if time.time() - self._get_last_retrain_time() < 1800:
             logger.info(f"[mlflow_guardian] Retraining cooldown active — skipping ({reason})")
             return
         try:
@@ -281,7 +296,7 @@ class MLflowGuardianAgent(BaseAgent):
             run_id = (resp.json().get("data", {})
                       .get("launchRun", {}).get("run", {}).get("runId"))
             if run_id:
-                self._last_retrain_time = time.time()
+                self._set_last_retrain_time(time.time())
                 logger.info(f"[mlflow_guardian] Triggered retraining: run_id={run_id}")
                 self.audit("TRIGGER_RETRAINING", reason, "SUCCESS", {"run_id": run_id})
         except Exception as e:
@@ -379,7 +394,7 @@ class MLflowGuardianAgent(BaseAgent):
         c = correction.lower()
         if "retrain" in c or "trigger" in c:
             logger.info("[mlflow_guardian] Orchestrator correction → forcing retraining")
-            self._last_retrain_time = 0.0  # reset cooldown
+            self._set_last_retrain_time(0.0)  # reset cooldown
             self._trigger_retraining(f"Orchestrator correction: {correction}")
         elif "reset" in c and "baseline" in c:
             logger.info("[mlflow_guardian] Orchestrator correction → clearing baseline for reset")

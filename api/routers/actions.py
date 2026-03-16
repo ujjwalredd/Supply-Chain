@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+_VALID_ACTION_STATUSES = {"PENDING", "COMPLETED", "CANCELLED", "FAILED"}
+
 
 @router.get("/stats")
 async def actions_stats(
@@ -29,12 +31,12 @@ async def actions_stats(
         select(
             func.count().label("total"),
             func.avg(
-                func.extract("epoch", PendingAction.created_at - Deviation.detected_at)
+                func.extract("epoch", PendingAction.completed_at - Deviation.detected_at)
             ).label("avg_resolve_seconds"),
         )
         .select_from(j)
         .where(PendingAction.status == "COMPLETED")
-        .where(PendingAction.created_at >= cutoff)
+        .where(PendingAction.completed_at >= cutoff)
     )
     row = result.one()
     avg_secs = float(row.avg_resolve_seconds or 0)
@@ -113,9 +115,11 @@ async def list_actions(
     db: AsyncSession = Depends(get_db),
 ):
     """List pending actions."""
+    if status and status.upper() not in _VALID_ACTION_STATUSES:
+        raise HTTPException(status_code=422, detail=f"status must be one of {sorted(_VALID_ACTION_STATUSES)}")
     q = select(PendingAction).order_by(PendingAction.created_at.desc()).limit(limit)
     if status:
-        q = q.where(PendingAction.status == status)
+        q = q.where(PendingAction.status == status.upper())
     result = await db.execute(q)
     return [PendingActionRead.model_validate(a) for a in result.scalars().all()]
 
@@ -148,6 +152,8 @@ async def complete_action(action_id: int, db: AsyncSession = Depends(get_db)):
     if not action:
         logger.warning("complete_action: action_id=%s not found", action_id)
         raise HTTPException(status_code=404, detail="Action not found")
+    if action.status in ("COMPLETED", "CANCELLED", "FAILED"):
+        raise HTTPException(status_code=409, detail=f"Action is already {action.status}")
     action.status = "COMPLETED"
     action.completed_at = datetime.now(timezone.utc)
     await db.commit()
@@ -164,6 +170,8 @@ async def cancel_action(action_id: int, db: AsyncSession = Depends(get_db)):
     if not action:
         logger.warning("cancel_action: action_id=%s not found", action_id)
         raise HTTPException(status_code=404, detail="Action not found")
+    if action.status in ("COMPLETED", "CANCELLED", "FAILED"):
+        raise HTTPException(status_code=409, detail=f"Action is already {action.status}")
     action.status = "CANCELLED"
     await db.commit()
     await db.refresh(action)
@@ -184,6 +192,8 @@ async def resolve_action(
     if not action:
         logger.warning("resolve_action: action_id=%s not found", action_id)
         raise HTTPException(status_code=404, detail="Action not found")
+    if action.resolved:
+        raise HTTPException(status_code=409, detail="Action is already resolved")
     action.resolved = True
     action.outcome_note = outcome_note
     action.resolved_at = datetime.now(timezone.utc)

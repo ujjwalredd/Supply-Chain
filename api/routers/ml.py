@@ -59,7 +59,7 @@ async def predict_delay_endpoint(request: DelayPredictRequest):
         result = _inline_heuristic(features)
     except Exception as e:
         logger.error("predict_delay raised an unexpected error: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Prediction failed: {e}")
+        raise HTTPException(status_code=500, detail="Prediction failed")
 
     return DelayPredictResponse(
         is_delayed=result["is_delayed"],

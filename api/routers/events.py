@@ -13,14 +13,19 @@ router = APIRouter(prefix="/events", tags=["events"])
 
 
 @router.get("/orders/{order_id}/history")
-async def get_event_history(order_id: str, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    """Return full event history for an order (event sourcing audit trail)."""
+async def get_event_history(
+    order_id: str,
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Return event history for an order (event sourcing audit trail)."""
     try:
-        history = await get_order_history(db, order_id)
-        return {"order_id": order_id, "events": history, "total": len(history)}
+        history = await get_order_history(db, order_id, limit=limit, offset=offset)
+        return {"order_id": order_id, "events": history, "total": len(history), "limit": limit, "offset": offset}
     except Exception as e:
         logger.warning("get_event_history: order_id=%s error: %s", order_id, e)
-        return {"order_id": order_id, "events": [], "error": str(e)}
+        raise HTTPException(status_code=500, detail="Failed to retrieve event history")
 
 
 @router.get("/orders/{order_id}/replay")
@@ -35,7 +40,7 @@ async def replay_order_state(
         return {"order_id": order_id, "state_at_version": version, "state": state}
     except Exception as e:
         logger.warning("replay_order_state: order_id=%s version=%s error: %s", order_id, version, e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to replay order state")
 
 
 @router.get("/recent")
@@ -73,4 +78,5 @@ async def get_recent_events(
             events.append(e)
         return {"events": events, "total": len(events)}
     except Exception as e:
-        return {"events": [], "error": str(e)}
+        logger.warning("get_recent_events error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to retrieve recent events")

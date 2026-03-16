@@ -63,7 +63,7 @@ async def upload_customer_data(file: UploadFile = File(...)):
         raise
     except Exception as e:
         logger.error(f"Upload failed for {file.filename}: {e}")
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Upload failed")
 
     logger.info(f"[data/upload] Received {file.filename} ({size_bytes/1024:.1f} KB)")
 
@@ -131,7 +131,7 @@ async def ingestion_status():
         }
     except Exception as e:
         logger.warning(f"Status check failed: {e}")
-        return {"customer_files_ingested": 0, "files": [], "error": str(e)}
+        return {"customer_files_ingested": 0, "files": [], "error": "status check failed"}
 
 
 @router.get("/audit")
@@ -169,4 +169,4 @@ async def ingestion_audit():
             ]
         }
     except Exception as e:
-        return {"entries": [], "error": str(e)}
+        return {"entries": [], "error": "audit log unavailable"}

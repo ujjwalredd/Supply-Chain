@@ -135,11 +135,11 @@ export default function App() {
         />
         <GlassBox />
 
-        {/* ── ACT 6: TRUST & SECURITY ─────────────────── */}
+        {/* ── ACT 6: GOVERNANCE & SECURITY ────────────── */}
         <Divider
-          number="05  Security"
-          title="Autonomous. Not unaccountable."
-          subtitle="Your data, your rules. Hard delete, full audit trail, human always has final say."
+          number="05  Governance & Security"
+          title="Data governance. AI security. Full trustworthiness."
+          subtitle="Three independent layers — harden every model interaction, make every decision replayable, control exactly what data moves where."
         />
         <TrustSecurity />
 

@@ -145,4 +145,4 @@ async def get_demand_forecast():
         }
     except Exception as exc:
         logger.error("Demand forecast generation failed: %s", exc)
-        raise HTTPException(status_code=503, detail=f"Demand forecast unavailable: {exc}")
+        raise HTTPException(status_code=503, detail="Demand forecast unavailable")

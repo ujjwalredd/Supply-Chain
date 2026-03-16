@@ -83,6 +83,7 @@ _SSE_HEADERS = {
     "Connection": "keep-alive",
     "X-Accel-Buffering": "no",
 }
+_AI_STREAM_ERROR_TOKEN = "\n\nAn error occurred during AI analysis."
 
 
 class AnalyzeBody(BaseModel):
@@ -223,9 +224,13 @@ async def _get_redis_cache():
 @router.post("/analyze/stream")
 async def analyze_stream(
     body: AnalyzeBody,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Stream Claude analysis token-by-token for real-time display."""
+    client_ip = request.client.host if request.client else "unknown"
+    if not await _check_ai_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail=f"Rate limit exceeded: max {_AI_RATE_MAX} requests/minute per IP")
     if not os.getenv("ANTHROPIC_API_KEY"):
         raise HTTPException(status_code=503, detail="AI analysis unavailable: ANTHROPIC_API_KEY not set")
     order_data, supplier_data, constraints, network_context = await _fetch_context(
@@ -253,7 +258,7 @@ async def analyze_stream(
                 yield f"data: {json.dumps({'token': token})}\n\n"
         except Exception as e:
             logger.exception("Stream error: %s", e)
-            yield f"data: {json.dumps({'token': chr(10) + chr(10) + 'Error: ' + str(e)})}\n\n"
+            yield f"data: {json.dumps({'token': _AI_STREAM_ERROR_TOKEN})}\n\n"
         elapsed_ms = int((time.monotonic() - start_ms) * 1000)
         yield f"data: {json.dumps({'done': True, 'usage': {**usage, 'analysis_time_ms': elapsed_ms}, 'financial_impact_usd': fi['usd']})}\n\n"
 
@@ -263,9 +268,13 @@ async def analyze_stream(
 @router.post("/analyze/bulk")
 async def analyze_bulk_stream(
     body: BulkAnalyzeBody,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Stream a prioritized triage analysis of all open deviations matching severity_filter."""
+    client_ip = request.client.host if request.client else "unknown"
+    if not await _check_ai_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail=f"Rate limit exceeded: max {_AI_RATE_MAX} requests/minute per IP")
     if not os.getenv("ANTHROPIC_API_KEY"):
         raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY not set")
 
@@ -303,8 +312,7 @@ async def analyze_bulk_stream(
                 yield f"data: {json.dumps({'token': token})}\n\n"
         except Exception as e:
             logger.exception("Bulk triage error: %s", e)
-            err_msg = "\n\nError: " + str(e)
-            yield f"data: {json.dumps({'token': err_msg})}\n\n"
+            yield f"data: {json.dumps({'token': _AI_STREAM_ERROR_TOKEN})}\n\n"
         elapsed_ms = int((time.monotonic() - start_ms) * 1000)
         yield f"data: {json.dumps({'done': True, 'usage': {**usage, 'analysis_time_ms': elapsed_ms}, 'count': len(dev_summaries)})}\n\n"
 
@@ -314,9 +322,13 @@ async def analyze_bulk_stream(
 @router.post("/whatif/stream")
 async def whatif_stream(
     body: WhatIfBody,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Stream Claude's analysis of a volume shift what-if scenario."""
+    client_ip = request.client.host if request.client else "unknown"
+    if not await _check_ai_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail=f"Rate limit exceeded: max {_AI_RATE_MAX} requests/minute per IP")
     if not os.getenv("ANTHROPIC_API_KEY"):
         raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY not set")
 
@@ -386,8 +398,7 @@ async def whatif_stream(
                 yield f"data: {json.dumps({'token': token})}\n\n"
         except Exception as e:
             logger.exception("What-if error: %s", e)
-            err_msg = "\n\nError: " + str(e)
-            yield f"data: {json.dumps({'token': err_msg})}\n\n"
+            yield f"data: {json.dumps({'token': _AI_STREAM_ERROR_TOKEN})}\n\n"
         elapsed_ms = int((time.monotonic() - start_ms) * 1000)
         yield f"data: {json.dumps({'done': True, 'usage': {**usage, 'analysis_time_ms': elapsed_ms}})}\n\n"
 

@@ -108,7 +108,6 @@ _FIELD_MAP: dict[str, str] = {
     # ── OpenBoxes / WMS field aliases ────────────────────────────────────────
     # Order identification
     "orderNumber": "order_id",
-    "order_number": "order_id",
     "identifier": "order_id",
     "po_ref": "order_id",
     "purchase_order_no": "order_id",
@@ -287,12 +286,27 @@ async def normalize_fields(
             normalized[canonical] = value
             mapping_applied.append({"from": raw_key, "to": canonical})
         else:
-            # Try partial match — e.g. "order_no" → contains "order" → "order_id"
-            partial_match = next(
-                (canon for alias, canon in _FIELD_MAP_LOWER.items() if alias in lower or lower in alias),
-                None,
-            )
-            if partial_match:
+            # Partial match: the caller's field name must be a *substring* of a
+            # known alias (e.g. "order_num" ⊆ "order_number" → order_id).
+            #
+            # We intentionally do NOT check the reverse direction
+            # (alias ⊆ caller's field) because that causes false positives:
+            # a short alias like "rate" would match any field whose name
+            # contains "rate" (e.g. "price_rate_schedule") leading to silent
+            # mis-mapping.
+            #
+            # Both sides must be ≥ 4 chars to filter out single-letter noise.
+            #
+            # If the input matches aliases that resolve to *multiple different*
+            # canonical fields the match is ambiguous — we fall through to
+            # unmapped rather than silently picking the wrong one.
+            partial_targets: set[str] = {
+                canon
+                for alias, canon in _FIELD_MAP_LOWER.items()
+                if len(alias) >= 4 and len(lower) >= 4 and lower in alias
+            }
+            if len(partial_targets) == 1:
+                partial_match = next(iter(partial_targets))
                 normalized[partial_match] = value
                 mapping_applied.append({"from": raw_key, "to": partial_match, "match": "partial"})
             else:

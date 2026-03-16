@@ -10,6 +10,7 @@ COPY requirements-api.txt .
 RUN pip install --no-cache-dir -r requirements-api.txt
 
 COPY api/ api/
+COPY agents/ agents/
 COPY reasoning/ reasoning/
 COPY ingestion/ ingestion/
 COPY integrations/ integrations/

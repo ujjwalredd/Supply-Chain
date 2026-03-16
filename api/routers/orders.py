@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+_VALID_ORDER_STATUSES = {"PENDING", "IN_TRANSIT", "DELIVERED", "DELAYED", "CANCELLED"}
+
 
 @router.get("", response_model=list[OrderRead])
 async def list_orders(
@@ -26,9 +28,11 @@ async def list_orders(
     db: AsyncSession = Depends(get_db),
 ):
     """List orders with optional filters."""
+    if status and status.upper() not in _VALID_ORDER_STATUSES:
+        raise HTTPException(status_code=422, detail=f"status must be one of {sorted(_VALID_ORDER_STATUSES)}")
     q = select(Order).order_by(Order.created_at.desc()).limit(limit).offset(offset)
     if status:
-        q = q.where(Order.status == status)
+        q = q.where(Order.status == status.upper())
     if supplier_id:
         q = q.where(Order.supplier_id == supplier_id)
     result = await db.execute(q)

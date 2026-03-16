@@ -10,6 +10,9 @@ What it does:
 4. Validates each feature:
      gate 1 — syntax check
      gate 2 — run on 20-row sample, check output is numeric/bool, no NaN explosion
+     gate 6 — distribution sanity: no infinite / abs(value) > 1e10
+     gate 7 — non-trivial variance: std > 0.001 (blocks constant features)
+     gate 8 — novelty: max Pearson |r| with any existing column < 0.99
 5. Writes validated features to /data/gold/computed_features/features.parquet
 6. Writes feature manifest to /data/gold/computed_features/manifest.json
 7. Triggers incremental pipeline so MLflow picks up new features
@@ -279,6 +282,7 @@ print(json.dumps({{"ok": True, "columns": list(df.columns), "stats": stats, "row
 
     # ── Validate a single feature ─────────────────────────────────────────────
     def _validate_feature(self, name: str, expr: str, gold_path: str) -> dict:
+        # Gate 1 — syntax check via CodeExecutor
         res = self._executor.validate_feature_code(
             feature_lines=[f"df[{repr(name)}] = {expr}"],
             sample_parquet=gold_path,
@@ -287,7 +291,7 @@ print(json.dumps({{"ok": True, "columns": list(df.columns), "stats": stats, "row
         if not res.get("ok"):
             return {"ok": False, "error": res.get("error", "unknown")}
 
-        # Additional check: no NaN explosion
+        # Gate 2 — no NaN explosion (>5% null in 50 rows)
         check_code = f"""
 import sys, json, shutil, tempfile
 import pandas as pd
@@ -309,9 +313,124 @@ except Exception as e:
         if not res2["ok"]:
             return {"ok": False, "error": res2["stderr"]}
         try:
-            return json.loads(res2["stdout"].strip())
+            gate2_result = json.loads(res2["stdout"].strip())
         except Exception:
-            return {"ok": False, "error": "bad validation output"}
+            return {"ok": False, "error": "bad gate2 output"}
+        if not gate2_result.get("ok"):
+            return gate2_result
+
+        # Gate 6 — distribution sanity: no infinite or astronomically large values
+        # A feature producing values > 1e10 in absolute magnitude is almost certainly
+        # a computation error (division by near-zero, overflow) rather than a signal.
+        gate6_code = f"""
+import sys, json, shutil, tempfile
+import pandas as pd
+import pyarrow.parquet as pq
+import numpy as np
+
+with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as t:
+    tmp = t.name
+shutil.copy2({repr(gold_path)}, tmp)
+df = pq.read_table(tmp, use_threads=False).to_pandas().head(200)
+try:
+    df[{repr(name)}] = {expr}
+    col = pd.to_numeric(df[{repr(name)}], errors='coerce').dropna()
+    has_inf = bool(np.any(np.isinf(col)))
+    max_abs = float(col.abs().max()) if len(col) > 0 else 0.0
+    ok = not has_inf and max_abs < 1e10
+    print(json.dumps({{"ok": ok, "has_inf": has_inf, "max_abs": max_abs}}))
+except Exception as e:
+    print(json.dumps({{"ok": False, "error": str(e)}}))
+"""
+        res6 = self._executor.execute_python(gate6_code, timeout=20)
+        if not res6["ok"]:
+            return {"ok": False, "error": f"gate6 executor error: {res6['stderr'][:200]}"}
+        try:
+            g6 = json.loads(res6["stdout"].strip())
+        except Exception:
+            return {"ok": False, "error": "bad gate6 output"}
+        if not g6.get("ok"):
+            return {"ok": False, "error": f"gate6 distribution: has_inf={g6.get('has_inf')}, max_abs={g6.get('max_abs')}"}
+
+        # Gate 7 — non-trivial variance: feature must carry a signal (std > 0.001).
+        # A constant feature (std ≈ 0) adds no predictive value and wastes model capacity.
+        gate7_code = f"""
+import sys, json, shutil, tempfile
+import pandas as pd
+import pyarrow.parquet as pq
+
+with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as t:
+    tmp = t.name
+shutil.copy2({repr(gold_path)}, tmp)
+df = pq.read_table(tmp, use_threads=False).to_pandas().head(200)
+try:
+    df[{repr(name)}] = {expr}
+    col = pd.to_numeric(df[{repr(name)}], errors='coerce').dropna()
+    std = float(col.std()) if len(col) > 1 else 0.0
+    ok = std > 0.001
+    print(json.dumps({{"ok": ok, "std": std}}))
+except Exception as e:
+    print(json.dumps({{"ok": False, "error": str(e)}}))
+"""
+        res7 = self._executor.execute_python(gate7_code, timeout=20)
+        if not res7["ok"]:
+            return {"ok": False, "error": f"gate7 executor error: {res7['stderr'][:200]}"}
+        try:
+            g7 = json.loads(res7["stdout"].strip())
+        except Exception:
+            return {"ok": False, "error": "bad gate7 output"}
+        if not g7.get("ok"):
+            return {"ok": False, "error": f"gate7 variance: std={g7.get('std')} — feature is near-constant"}
+
+        # Gate 8 — novelty: the new feature must not be a near-duplicate of an existing
+        # numeric column (Pearson |r| < 0.99).  A duplicate provides no new information
+        # but increases dimensionality and can destabilise training.
+        gate8_code = f"""
+import sys, json, shutil, tempfile
+import pandas as pd
+import pyarrow.parquet as pq
+
+with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as t:
+    tmp = t.name
+shutil.copy2({repr(gold_path)}, tmp)
+df = pq.read_table(tmp, use_threads=False).to_pandas().head(200)
+try:
+    df[{repr(name)}] = {expr}
+    new_col = pd.to_numeric(df[{repr(name)}], errors='coerce')
+    numeric_existing = df.select_dtypes(include='number').drop(columns=[{repr(name)}], errors='ignore')
+    max_corr = 0.0
+    corr_with = ""
+    for col in numeric_existing.columns:
+        existing = pd.to_numeric(numeric_existing[col], errors='coerce')
+        paired = pd.concat([new_col, existing], axis=1).dropna()
+        if len(paired) > 5:
+            r = abs(float(paired.iloc[:, 0].corr(paired.iloc[:, 1])))
+            if r > max_corr:
+                max_corr = r
+                corr_with = col
+    ok = max_corr < 0.99
+    print(json.dumps({{"ok": ok, "max_corr": round(max_corr, 4), "corr_with": corr_with}}))
+except Exception as e:
+    print(json.dumps({{"ok": False, "error": str(e)}}))
+"""
+        res8 = self._executor.execute_python(gate8_code, timeout=30)
+        if not res8["ok"]:
+            return {"ok": False, "error": f"gate8 executor error: {res8['stderr'][:200]}"}
+        try:
+            g8 = json.loads(res8["stdout"].strip())
+        except Exception:
+            return {"ok": False, "error": "bad gate8 output"}
+        if not g8.get("ok"):
+            return {
+                "ok": False,
+                "error": (
+                    f"gate8 novelty: |r|={g8.get('max_corr')} with '{g8.get('corr_with')}' "
+                    "— feature is near-duplicate of existing column"
+                ),
+            }
+
+        # All gates passed — return gate2 result (contains null_ratio + dtype)
+        return gate2_result
 
     # ── Compute features and write parquet ────────────────────────────────────
     def _compute_and_write_features(self, gold_path: str, features: list) -> bool:

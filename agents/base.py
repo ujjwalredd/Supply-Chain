@@ -130,18 +130,41 @@ class BaseAgent(ABC):
             raise
 
     def check_for_corrections(self):
-        """Apply any pending corrections from the orchestrator."""
+        """Apply pending corrections from the orchestrator.
+
+        Uses get_pending_corrections_raw() so each correction's HMAC signature
+        is verified before apply_correction() is called.  If CORRECTION_HMAC_KEY
+        is not set, all corrections pass (dev mode — same behaviour as before).
+        """
         try:
-            corrections = state.get_pending_corrections(self.agent_id)
-            for correction in corrections:
-                logger.warning(f"[{self.agent_id}] Orchestrator correction: {correction}")
-                self.apply_correction(correction)
+            from agents.security import verify_correction
+            rows = state.get_pending_corrections_raw(self.agent_id)
+            for row in rows:
+                message = row["message"]
+                signature = row.get("signature", "")
+                if not verify_correction(message, signature):
+                    logger.error(
+                        "[%s] Rejecting correction with invalid HMAC signature: %s",
+                        self.agent_id, message[:80],
+                    )
+                    continue
+                logger.warning(f"[{self.agent_id}] Orchestrator correction: {message}")
+                self.apply_correction(message)
         except Exception as e:
             logger.debug(f"[{self.agent_id}] Correction check failed: {e}")
 
     def apply_correction(self, correction: str):
         """Override in subclasses to handle orchestrator corrections."""
         logger.info(f"[{self.agent_id}] Correction received (default handler): {correction}")
+
+    def sanitize_external_input(self, text: str, field_name: str = "input", max_length: int = 4000) -> str:
+        """Sanitize text from external sources before embedding in LLM prompts.
+
+        Call this on any data that comes from outside the system boundary:
+        CSV values, Kafka messages, API responses, file contents, supplier names, etc.
+        """
+        from agents.security import sanitize_for_prompt
+        return sanitize_for_prompt(text, max_length=max_length, field_name=field_name)
 
     @abstractmethod
     def check(self) -> dict:
