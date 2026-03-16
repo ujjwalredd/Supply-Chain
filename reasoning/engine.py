@@ -52,6 +52,8 @@ class AIAnalysisOutput(BaseModel):
     output_tokens: int = Field(0, description="Claude output token count")
 
 
+_STREAM_ERROR_TOKEN = "\n\nAn error occurred during analysis."
+
 SYSTEM_PROMPT = """You are an expert supply chain analyst for a control tower. Analyze deviations and recommend corrective actions.
 
 You have access to:
@@ -246,7 +248,7 @@ Recommendation — your primary recommended action with rationale.
                     pass
     except Exception as e:
         logger.exception("Claude stream failed: %s", e)
-        yield f"\n\nError: {str(e)}"
+        yield _STREAM_ERROR_TOKEN
 
 
 async def stream_analysis_async(
@@ -267,7 +269,7 @@ async def stream_analysis_async(
             for token in stream_analysis(deviation, order, supplier, ontology_constraints):
                 loop.call_soon_threadsafe(queue.put_nowait, token)
         except Exception as exc:
-            loop.call_soon_threadsafe(queue.put_nowait, f"\n\nError: {exc}")
+            loop.call_soon_threadsafe(queue.put_nowait, _STREAM_ERROR_TOKEN)
         finally:
             loop.call_soon_threadsafe(queue.put_nowait, "")
 
@@ -424,7 +426,7 @@ Be concrete, specific, and factual."""
                     pass
     except Exception as e:
         logger.exception("Bulk triage stream failed: %s", e)
-        yield f"\n\nError: {str(e)}"
+        yield _STREAM_ERROR_TOKEN
 
 
 def stream_whatif(
@@ -478,7 +480,7 @@ Be specific. Do not hedge without data."""
                     pass
     except Exception as e:
         logger.exception("What-if stream failed: %s", e)
-        yield f"\n\nError: {str(e)}"
+        yield _STREAM_ERROR_TOKEN
 
 
 # ── Multi-Model AI with Quality Scoring ──────────────────────────────────────

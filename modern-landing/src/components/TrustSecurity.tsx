@@ -140,7 +140,7 @@ function PillarGroup({
               className="flex flex-col group"
             >
               <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-white/60 backdrop-blur-sm border border-white/40 shadow-sm group-hover:shadow-md group-hover:border-accent/20 group-hover:scale-110 transition-all duration-500">
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-white/60 backdrop-blur-sm border border-white/40 shadow-sm group-hover:shadow-md group-hover:border-accent/20 group-hover:scale-110 transition-[transform,box-shadow,border-color] duration-500">
                   <Icon size={18} className="text-ink group-hover:text-accent transition-colors duration-300" />
                 </div>
                 <h4 className="text-ink font-semibold text-sm leading-snug">{p.title}</h4>

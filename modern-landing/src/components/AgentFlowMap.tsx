@@ -371,6 +371,7 @@ export function AgentFlowMap() {
               ref={svgRef}
               viewBox={`0 0 ${VB_W} ${VB_H}`}
               className="absolute inset-0 w-full h-full"
+              style={{ contain: 'paint layout' }}
             >
               <defs>
                 {CONNS.map(c => (

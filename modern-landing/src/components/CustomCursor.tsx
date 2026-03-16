@@ -3,13 +3,18 @@ import { useEffect, useRef, useState } from 'react';
 export function CustomCursor() {
   const dotRef = useRef<HTMLDivElement>(null);
   const [hovering, setHovering] = useState(false);
+  const rafId = useRef(0);
 
   useEffect(() => {
     const dot = dotRef.current;
     if (!dot) return;
 
     const onMove = (e: MouseEvent) => {
-      dot.style.transform = `translate(calc(${e.clientX}px - 50%), calc(${e.clientY}px - 50%))`;
+      if (rafId.current) return;
+      rafId.current = requestAnimationFrame(() => {
+        dot.style.transform = `translate(calc(${e.clientX}px - 50%), calc(${e.clientY}px - 50%))`;
+        rafId.current = 0;
+      });
     };
     const onOver = (e: MouseEvent) => {
       if ((e.target as HTMLElement).closest('a, button, [role="button"]')) setHovering(true);
@@ -25,6 +30,7 @@ export function CustomCursor() {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseover', onOver);
       window.removeEventListener('mouseout', onOut);
+      if (rafId.current) cancelAnimationFrame(rafId.current);
     };
   }, []);
 

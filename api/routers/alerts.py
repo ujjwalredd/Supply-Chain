@@ -16,22 +16,29 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+_VALID_DEVIATION_TYPES = {"DELAY", "STOCKOUT", "ANOMALY"}
+_VALID_SEVERITIES = {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
+
 
 @router.get("", response_model=list[DeviationRead])
 async def list_alerts(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     type: Optional[str] = Query(None, description="DELAY | STOCKOUT | ANOMALY"),
-    severity: Optional[str] = Query(None),
+    severity: Optional[str] = Query(None, description="LOW | MEDIUM | HIGH | CRITICAL"),
     executed: Optional[bool] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     """List deviations (alerts)."""
+    if type and type.upper() not in _VALID_DEVIATION_TYPES:
+        raise HTTPException(status_code=422, detail=f"Invalid type '{type}'. Must be one of: {sorted(_VALID_DEVIATION_TYPES)}")
+    if severity and severity.upper() not in _VALID_SEVERITIES:
+        raise HTTPException(status_code=422, detail=f"Invalid severity '{severity}'. Must be one of: {sorted(_VALID_SEVERITIES)}")
     q = select(Deviation).order_by(Deviation.detected_at.desc()).limit(limit).offset(offset)
     if type:
-        q = q.where(Deviation.type == type)
+        q = q.where(Deviation.type == type.upper())
     if severity:
-        q = q.where(Deviation.severity == severity)
+        q = q.where(Deviation.severity == severity.upper())
     if executed is not None:
         q = q.where(Deviation.executed == executed)
     result = await db.execute(q)
@@ -117,7 +124,7 @@ async def deviation_clusters(
 @router.get("/enriched")
 async def list_alerts_enriched(
     limit: int = Query(100, ge=1, le=500),
-    severity: Optional[str] = Query(None),
+    severity: Optional[str] = Query(None, description="LOW | MEDIUM | HIGH | CRITICAL"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -146,7 +153,9 @@ async def list_alerts_enriched(
         .limit(limit)
     )
     if severity:
-        q = q.where(Deviation.severity == severity)
+        if severity.upper() not in _VALID_SEVERITIES:
+            raise HTTPException(status_code=422, detail=f"Invalid severity '{severity}'. Must be one of: {sorted(_VALID_SEVERITIES)}")
+        q = q.where(Deviation.severity == severity.upper())
 
     result = await db.execute(q)
     rows = result.all()

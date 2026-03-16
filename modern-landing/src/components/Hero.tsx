@@ -208,7 +208,7 @@ export function Hero() {
           </div>
           <div className="absolute left-0 top-6 bottom-0 w-24 bg-gradient-to-r from-paper to-transparent z-10 pointer-events-none" />
           <div className="absolute right-0 top-6 bottom-0 w-24 bg-gradient-to-l from-paper to-transparent z-10 pointer-events-none" />
-          <div className="flex w-[200%] animate-infinite-scroll hover:[animation-play-state:paused]">
+          <div className="flex w-[200%] animate-infinite-scroll hover:[animation-play-state:paused]" style={{ willChange: 'transform' }}>
             {[0, 1].map(copy => (
               <div key={copy} className="flex w-1/2 justify-around items-center min-w-max gap-12 sm:gap-16 px-6">
                 {TECH_STACK.map((tech) => (

@@ -30,6 +30,8 @@
 }
 .animate-infinite-scroll {
   animation: infinite-scroll 40s linear infinite;
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 /* ─── AMBIENT GLOW SYSTEM (Dashboard Health) ──── */
@@ -49,6 +51,9 @@
   pointer-events: none;
   z-index: 0;
   transition: background 1.2s ease, filter 1.2s ease;
+  will-change: opacity, transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 .ambient-glow--stable {
   background: radial-gradient(ellipse at center, rgba(0,112,243,0.08) 0%, rgba(16,185,129,0.04) 40%, transparent 70%);
@@ -101,6 +106,8 @@
   z-index: 30;
   pointer-events: none;
   animation: laser-scan 3s ease-in-out infinite;
+  will-change: transform;
+  transform: translateZ(0);
 }
 .scanning-laser--crisis {
   background: linear-gradient(90deg, transparent 0%, rgba(239,68,68,0.6) 20%, rgba(239,68,68,0.9) 50%, rgba(239,68,68,0.6) 80%, transparent 100%);
@@ -199,13 +206,13 @@
   0%, 100% { transform: translateY(0px); }
   50%      { transform: translateY(-12px); }
 }
-.float-slow { animation: float-slow 6s ease-in-out infinite; }
+.float-slow { animation: float-slow 6s ease-in-out infinite; will-change: transform; }
 
 @keyframes float-slower {
   0%, 100% { transform: translateY(0px); }
   50%      { transform: translateY(-8px); }
 }
-.float-slower { animation: float-slower 8s ease-in-out infinite; }
+.float-slower { animation: float-slower 8s ease-in-out infinite; will-change: transform; }
 
 /* ─── GRADIENT TEXT (accent) ────────────────────── */
 .text-gradient-accent {
@@ -265,6 +272,8 @@
   mask-image: radial-gradient(ellipse 85% 75% at 50% 30%, white 0%, transparent 72%);
   -webkit-mask-image: radial-gradient(ellipse 85% 75% at 50% 30%, white 0%, transparent 72%);
   animation: dot-grid-breathe 6s ease-in-out infinite;
+  will-change: opacity;
+  transform: translateZ(0);
 }
 @keyframes dot-grid-breathe {
   0%, 100% { opacity: 0.35; }

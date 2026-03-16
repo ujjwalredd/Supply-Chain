@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState, useCallback } from 'react';
 import type { MouseEvent } from 'react';
 import { motion } from 'framer-motion';
 
@@ -9,56 +9,60 @@ interface TiltCardProps {
   rotationIntensity?: number;
 }
 
+interface TiltState {
+  rX: number;
+  rY: number;
+  glareX: number;
+  glareY: number;
+  glareVisible: boolean;
+}
+
+const IDLE: TiltState = { rX: 0, rY: 0, glareX: 50, glareY: 50, glareVisible: false };
+
 export function TiltCard({ children, className = '', glareOpacity = 0.2, rotationIntensity = 15 }: TiltCardProps) {
-  const [rotateX, setRotateX] = useState(0);
-  const [rotateY, setRotateY] = useState(0);
-  const [glarePosition, setGlarePosition] = useState({ x: 50, y: 50, opacity: 0 });
+  const rectCache = useRef<DOMRect | null>(null);
+  const [tilt, setTilt] = useState<TiltState>(IDLE);
 
-  const handleMouseMove = (e: MouseEvent<HTMLDivElement>) => {
-    const card = e.currentTarget;
-    const { left, top, width, height } = card.getBoundingClientRect();
+  // Cache rect on enter to avoid getBoundingClientRect on every mousemove
+  const handleEnter = useCallback((e: MouseEvent<HTMLDivElement>) => {
+    rectCache.current = e.currentTarget.getBoundingClientRect();
+  }, []);
 
-    const mouseX = e.clientX - left;
-    const mouseY = e.clientY - top;
+  const handleMouseMove = useCallback((e: MouseEvent<HTMLDivElement>) => {
+    const rect = rectCache.current;
+    if (!rect) return;
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    setTilt({
+      rX: ((mouseY / rect.height) - 0.5) * -rotationIntensity,
+      rY: ((mouseX / rect.width) - 0.5) * rotationIntensity,
+      glareX: (mouseX / rect.width) * 100,
+      glareY: (mouseY / rect.height) * 100,
+      glareVisible: true,
+    });
+  }, [rotationIntensity]);
 
-    // Calculate rotation (-15 to +15 depending on rotationIntensity)
-    const rX = ((mouseY / height) - 0.5) * -rotationIntensity;
-    const rY = ((mouseX / width) - 0.5) * rotationIntensity;
-
-    setRotateX(rX);
-    setRotateY(rY);
-
-    // Glare moves to follow mouse exactly (percentages 0-100)
-    const glareX = (mouseX / width) * 100;
-    const glareY = (mouseY / height) * 100;
-    
-    setGlarePosition({ x: glareX, y: glareY, opacity: glareOpacity });
-  };
-
-  const handleMouseLeave = () => {
-    setRotateX(0);
-    setRotateY(0);
-    setGlarePosition({ ...glarePosition, opacity: 0 });
-  };
+  const handleMouseLeave = useCallback(() => {
+    rectCache.current = null;
+    setTilt(IDLE);
+  }, []);
 
   return (
     <motion.div
+      onMouseEnter={handleEnter}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
-      animate={{
-        rotateX,
-        rotateY,
-      }}
+      animate={{ rotateX: tilt.rX, rotateY: tilt.rY }}
       transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-      style={{ perspective: 1000 }} // Gives it the true 3D depth
+      style={{ perspective: 1000, willChange: 'transform' }}
       className={`relative overflow-hidden group ${className}`}
     >
-      {/* Glare effect tracking mouse */}
-      <div 
+      {/* Glare effect */}
+      <div
         className="absolute inset-0 pointer-events-none z-50 transition-opacity duration-300 rounded-inherit"
         style={{
-          opacity: glarePosition.opacity,
-          background: `radial-gradient(circle at ${glarePosition.x}% ${glarePosition.y}%, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0) 60%)`,
+          opacity: tilt.glareVisible ? glareOpacity : 0,
+          background: `radial-gradient(circle at ${tilt.glareX}% ${tilt.glareY}%, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0) 60%)`,
         }}
       />
       {children}
