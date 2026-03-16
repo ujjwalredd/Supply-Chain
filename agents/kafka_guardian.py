@@ -56,6 +56,13 @@ def _get_consumer_lag() -> dict:
 
         lag_info = {}
         for group_id in group_ids:
+            # Bug 9/32: use try/finally to guarantee consumer.close() even if
+            # end_offsets() or iteration throws. The phantom group
+            # _admin_lag_check_<group_id> is an unavoidable side-effect of using
+            # KafkaConsumer for offset fetching; the proper long-term fix is to
+            # use AdminClient.list_consumer_group_offsets + end_offsets via the
+            # admin protocol so no new consumer group is registered at all.
+            consumer = None
             try:
                 offsets = admin.list_consumer_group_offsets(group_id)
                 if not offsets:
@@ -76,10 +83,12 @@ def _get_consumer_lag() -> dict:
                     lag = max(0, end - offset_meta.offset)
                     total_lag += lag
 
-                consumer.close()
                 lag_info[group_id] = total_lag
             except Exception:
                 pass
+            finally:
+                if consumer:
+                    consumer.close()
 
         admin.close()
         return lag_info
@@ -113,18 +122,28 @@ def _get_dlq_count() -> int:
 
 
 def _get_last_event_age_seconds() -> int:
-    """Check how many seconds ago the last event was written to PostgreSQL."""
+    """Check how many seconds ago the last event was written to PostgreSQL.
+
+    Bug 10: Each call opens a fresh psycopg2 connection (every 30 s). This
+    bypasses the shared agent pool and can trip DatabaseHealthAgent's connection
+    count alarms. The long-term fix is to refactor this to use a shared
+    connection pool. For now, the connection is guarded with try/finally so it
+    is always closed even if the query raises.
+    """
+    conn = None  # Bug 10: initialize before try so finally can safely guard on it
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
         cur.execute("SELECT EXTRACT(EPOCH FROM (NOW() - MAX(created_at))) FROM orders WHERE created_at IS NOT NULL")
         row = cur.fetchone()
         cur.close()
-        conn.close()
         return int(row[0]) if row and row[0] else 9999
     except Exception as e:
         logger.warning(f"Last event age check failed: {e}")
         return -1
+    finally:
+        if conn:  # Bug 10: guarantee close even if the query throws
+            conn.close()
 
 
 def _restart_container(name: str) -> bool:

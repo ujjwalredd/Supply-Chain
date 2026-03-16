@@ -1,20 +1,112 @@
 import { useRef } from 'react';
 import { motion, useInView } from 'framer-motion';
 
+// Real agents from agents/run_all.py — verified against codebase
 const AGENTS = [
-  { name: 'orchestrator',    role: 'Routes tasks, manages agent context, decides escalation', model: 'Claude Sonnet 4.6', interval: '5 min',     color: '#0070F3' },
-  { name: 'deviation_agent', role: 'Detects supplier & logistics deviations in real-time',   model: 'Claude Sonnet 4.6', interval: '15 min',    color: '#F59E0B' },
-  { name: 'supplier_intel',  role: 'Researches alternate carriers & executes rerouting',      model: 'Claude Sonnet 4.6', interval: 'on-demand', color: '#10B981' },
-  { name: 'dagster_guardian',role: 'Monitors pipeline health, fixes stale assets',           model: 'Rules Engine',      interval: '10 min',    color: '#8B5CF6' },
-  { name: 'forecast_agent',  role: '14-day demand forecast · 91% confidence',                model: 'XGBoost + LLM',     interval: '1 day',     color: '#0070F3' },
-  { name: 'ml_model_agent',  role: 'Auto-promotes models when ROC-AUC > 0.80 via MLflow',    model: 'MLflow + AutoML',   interval: '6 hr',      color: '#EC4899' },
-  { name: 'inventory_agent', role: 'Triggers reorders when safety stock thresholds hit',     model: 'Claude Haiku 4.5',  interval: '30 min',    color: '#10B981' },
-  { name: 'compliance_agent',role: 'Tracks tariffs, customs & trade regs across 40+ markets',model: 'Claude Sonnet 4.6', interval: '6 hr',      color: '#F59E0B' },
-  { name: 'quality_agent',   role: 'Monitors defect rates, triggers quality holds auto',     model: 'Claude Haiku 4.5',  interval: '1 hr',      color: '#EF4444' },
-  { name: 'carrier_agent',   role: 'Scores carriers on cost, reliability & carbon footprint',model: 'Claude Sonnet 4.6', interval: '1 day',     color: '#0070F3' },
-  { name: 'finance_agent',   role: 'Tracks cost variance, flags budget anomalies',           model: 'Claude Haiku 4.5',  interval: '1 hr',      color: '#10B981' },
-  { name: 'risk_agent',      role: 'Geo-political risk monitoring, route scoring',           model: 'Claude Sonnet 4.6', interval: '2 hr',      color: '#EF4444' },
-  { name: 'reporting_agent', role: 'Daily digests, Slack notifications, exec summaries',     model: 'Claude Haiku 4.5',  interval: '1 day',     color: '#8B5CF6' },
+  {
+    name: 'orchestrator',
+    role: 'deepagents LangGraph with 3 sub-agents and 7 tools. Cross-agent root cause analysis, structured corrections via Redis pub/sub.',
+    model: 'Claude Sonnet 4.6',
+    interval: '5 min',
+    color: '#0070F3',
+    heals: 'Issues structured corrections to all agents via Redis pub/sub',
+  },
+  {
+    name: 'kafka_guardian',
+    role: 'Consumer lag, DLQ spikes, producer silence detection. Restarts containers via Docker API when thresholds breached.',
+    model: 'Claude Haiku 4.5',
+    interval: '30 sec',
+    color: '#F59E0B',
+    heals: 'Restarts Kafka containers via Docker API',
+  },
+  {
+    name: 'dagster_guardian',
+    role: 'Run failures, asset freshness, schedule health. Triggers full or incremental jobs on anomaly detection.',
+    model: 'Claude Haiku 4.5',
+    interval: '2 min',
+    color: '#8B5CF6',
+    heals: 'Triggers medallion_full_pipeline or incremental job',
+  },
+  {
+    name: 'bronze_agent',
+    role: 'Parquet existence, schema drift, freshness validation on raw Bronze layer. Triggers Dagster materialization on failure.',
+    model: 'Claude Haiku 4.5',
+    interval: '5 min',
+    color: '#71717A',
+    heals: 'Triggers Dagster asset materialization',
+  },
+  {
+    name: 'silver_agent',
+    role: 'Null rates, dedup verification, status enum validation, delay range checks across the validated Silver layer.',
+    model: 'Claude Haiku 4.5',
+    interval: '5 min',
+    color: '#10B981',
+    heals: 'Escalates to medallion_supervisor on repeated failure',
+  },
+  {
+    name: 'gold_agent',
+    role: 'Financial formula re-validation, ML output bounds, forecast sanity checks on the AI-ready Gold layer.',
+    model: 'Claude Haiku 4.5',
+    interval: '10 min',
+    color: '#F59E0B',
+    heals: 'Escalates to medallion_supervisor',
+  },
+  {
+    name: 'medallion_supervisor',
+    role: 'Data contract enforcement across the Bronze → Silver → Gold dependency chain. Ensures ordering and freshness.',
+    model: 'Claude Haiku 4.5',
+    interval: '3 min',
+    color: '#EC4899',
+    heals: 'Publishes cross-layer correction alerts',
+  },
+  {
+    name: 'ai_quality_monitor',
+    role: 'Stuck pending actions, low-confidence re-triggers, REROUTE validation. Guards AI output quality on every cycle.',
+    model: 'Claude Haiku 4.5',
+    interval: '60 sec',
+    color: '#EF4444',
+    heals: 'Re-triggers low-confidence actions automatically',
+  },
+  {
+    name: 'database_health',
+    role: 'Connection count, long queries, lock detection, table sizes across the PostgreSQL supply chain database.',
+    model: 'Claude Haiku 4.5',
+    interval: '60 sec',
+    color: '#0070F3',
+    heals: 'Alerts on long-running locks and pool exhaustion',
+  },
+  {
+    name: 'data_ingestion_agent',
+    role: 'Watches /data/source/. deepagents iterative loop: read_csv_sample → generate loader → validate → fix (up to 3 attempts).',
+    model: 'Claude Haiku 4.5',
+    interval: '60 sec',
+    color: '#10B981',
+    heals: 'Auto-retries loader generation up to 3 times',
+  },
+  {
+    name: 'mlflow_guardian',
+    role: 'Monitors roc_auc drift. Hard floors: never promotes if roc_auc < 0.60 or train_rows < 100. Triggers retraining on drift.',
+    model: 'Claude Haiku 4.5',
+    interval: '5 min',
+    color: '#EC4899',
+    heals: 'Resets cooldown and triggers real MLflow retraining',
+  },
+  {
+    name: 'feature_engineer',
+    role: 'Reads Gold layer, asks Claude for 5 new features, validates each via 5-gate sandbox, writes to computed_features/.',
+    model: 'Claude Haiku 4.5',
+    interval: '15 min',
+    color: '#8B5CF6',
+    heals: 'Triggers incremental ML retraining after feature write',
+  },
+  {
+    name: 'dashboard_agent',
+    role: 'Reads agent heartbeats + Gold metrics. Asks Claude for panel spec. Builds deterministic Grafana JSON. Pushes via API.',
+    model: 'Claude Haiku 4.5',
+    interval: '10 min',
+    color: '#0070F3',
+    heals: 'Auto-regenerates and pushes broken Grafana panels',
+  },
 ];
 
 export function AgentRoster() {
@@ -23,7 +115,6 @@ export function AgentRoster() {
 
   return (
     <section ref={ref} className="bg-paper py-20 border-t border-black/5 overflow-hidden">
-      {/* Header */}
       <div className="max-w-7xl mx-auto px-6 mb-10">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
@@ -38,7 +129,7 @@ export function AgentRoster() {
             <span className="text-accent">Every one autonomous.</span>
           </h2>
           <p className="text-steel text-base mt-2 font-light max-w-xl">
-            Each agent runs independently on its own schedule. The orchestrator coordinates — no agent waits for a human.
+            Each agent runs independently on its own schedule, self-heals on failure, and escalates only when genuinely needed.
           </p>
         </motion.div>
       </div>
@@ -55,36 +146,31 @@ export function AgentRoster() {
               initial={{ opacity: 0, y: 16 }}
               animate={inView ? { opacity: 1, y: 0 } : {}}
               transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1], delay: i * 0.04 }}
-              className="flex-shrink-0 w-[230px] glass-card glass-card-hover p-4 flex flex-col gap-2.5 group"
+              className="flex-shrink-0 w-[250px] glass-card glass-card-hover p-4 flex flex-col gap-2.5 group"
             >
-              {/* Header */}
               <div className="flex items-center justify-between">
-                <div
-                  className="w-2 h-2 rounded-full"
-                  style={{ background: agent.color }}
-                />
+                <div className="w-2 h-2 rounded-full" style={{ background: agent.color }} />
                 <div className="flex items-center gap-1">
                   <div className="w-1 h-1 rounded-full bg-success" />
                   <span className="text-[9px] font-mono text-success">live</span>
                 </div>
               </div>
 
-              {/* Name */}
-              <h3
-                className="text-[12px] font-semibold font-mono tracking-tight"
-                style={{ color: agent.color }}
-              >
+              <h3 className="text-[12px] font-semibold font-mono tracking-tight" style={{ color: agent.color }}>
                 {agent.name}
               </h3>
 
-              {/* Role */}
               <p className="text-steel text-[11px] leading-relaxed line-clamp-2 flex-1">
                 {agent.role}
               </p>
 
-              {/* Footer */}
+              {/* Self-heal line */}
+              <div className="text-[10px] text-ink/50 font-mono bg-black/[0.03] rounded px-2 py-1 leading-snug">
+                ↺ {agent.heals}
+              </div>
+
               <div className="flex items-center justify-between pt-2 border-t border-black/5">
-                <span className="text-[9px] font-mono text-steel/70 bg-subtle px-1.5 py-0.5 rounded truncate max-w-[130px]">
+                <span className="text-[9px] font-mono text-steel/70 bg-subtle px-1.5 py-0.5 rounded truncate max-w-[140px]">
                   {agent.model}
                 </span>
                 <span className="text-[9px] font-mono text-steel/60">↻ {agent.interval}</span>
@@ -94,7 +180,6 @@ export function AgentRoster() {
         </div>
       </div>
 
-      {/* Dot indicators */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={inView ? { opacity: 1 } : {}}

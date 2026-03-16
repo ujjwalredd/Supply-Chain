@@ -8,6 +8,8 @@
 
 [Live Demo](https://supply-chain-silk.vercel.app)
 
+**Disruptions resolved before you wake up.**
+
 An end-to-end AI-native supply chain control tower with a **fully autonomous 13-agent system** powered by **deepagents (LangGraph)**. Drop any CSV into a watched folder and the platform automatically infers the schema, builds data pipelines, engineers ML features, retrains the delay prediction model, promotes it to production, and updates the Grafana dashboard — with zero human intervention.
 
 ---

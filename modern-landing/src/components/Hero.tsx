@@ -6,60 +6,40 @@ const ease = [0.16, 1, 0.3, 1] as const;
 
 function AnimatedHeadline() {
   return (
-    <h1 className="text-5xl sm:text-6xl md:text-[72px] font-bold tracking-tighter leading-[1.05] mb-6 text-ink">
+    <h1 className="text-5xl sm:text-6xl md:text-[76px] font-extrabold tracking-[-0.04em] leading-[1.0] mb-6 text-ink">
       <motion.span
         className="block"
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8, ease, delay: 0.1 }}
+        transition={{ duration: 0.9, ease, delay: 0.1 }}
       >
-        Your supply chain
+        By the time
       </motion.span>
       <motion.span
         className="block"
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8, ease, delay: 0.22 }}
+        transition={{ duration: 0.9, ease, delay: 0.24 }}
       >
-        runs{' '}
-        <span className="text-accent">itself.</span>
+        you check,{' '}
+        <span className="text-accent italic font-extrabold">it's handled.</span>
       </motion.span>
     </h1>
   );
 }
 
-function MetricCard({ label, value, sub, delay }: { label: string; value: string; sub: string; delay: number }) {
-  const [show, setShow] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(() => setShow(true), delay * 1000 + 700);
-    return () => clearTimeout(t);
-  }, [delay]);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6, ease, delay: 0.5 + delay }}
-      className="liquid-glass rounded-xl px-5 py-4 flex flex-col gap-1 min-w-[108px]"
-    >
-      <span className="text-[10px] font-mono uppercase tracking-widest text-steel">{label}</span>
-      <span className="text-2xl font-bold text-ink tracking-tight">{show ? value : '—'}</span>
-      <span className="text-[10px] text-steel font-mono">{sub}</span>
-    </motion.div>
-  );
-}
 
 const LOG_LINES = [
-  { prefix: 'orchestrator',    msg: 'analyzing 847 data points across 13 agents...', color: 'text-accent' },
-  { prefix: 'deviation_agent', msg: 'ALERT: Supplier XJ-4421 delay +72h detected',   color: 'text-warning' },
-  { prefix: 'supplier_intel',  msg: 'fetching alternate carrier options...',          color: 'text-steel' },
-  { prefix: 'supplier_intel',  msg: 'Alt carrier CN-7 available · ETA delta: +6h',   color: 'text-success' },
-  { prefix: 'orchestrator',    msg: 'issuing correction to supplier_intel reroute',   color: 'text-accent' },
-  { prefix: 'dagster_guardian',msg: 'pipeline healthy · 0 stale assets',             color: 'text-success' },
-  { prefix: 'forecast_agent',  msg: 'demand spike +18% next 14d · confidence 91%',   color: 'text-steel' },
-  { prefix: 'ml_model_agent',  msg: 'delay_classifier roc_auc=0.84 · promoting...',  color: 'text-accent' },
-  { prefix: 'deviation_agent', msg: 'RESOLVED — no human intervention required',      color: 'text-success' },
-  { prefix: 'orchestrator',    msg: 'all agents healthy · offline=0 · cycle complete', color: 'text-accent' },
+  { prefix: 'orchestrator',       msg: 'analyzing 847 data points across 13 agents...', color: 'text-accent' },
+  { prefix: 'kafka_guardian',     msg: 'ALERT: Supplier XJ-4421 delay +72h detected',   color: 'text-warning' },
+  { prefix: 'data_ingestion',     msg: 'fetching alternate carrier options...',          color: 'text-steel' },
+  { prefix: 'data_ingestion',     msg: 'Alt carrier CN-7 available · ETA delta: +6h',   color: 'text-success' },
+  { prefix: 'orchestrator',       msg: 'issuing correction to dagster_guardian reroute', color: 'text-accent' },
+  { prefix: 'dagster_guardian',   msg: 'pipeline healthy · 0 stale assets',             color: 'text-success' },
+  { prefix: 'feature_engineer',   msg: 'demand spike +18% next 14d · confidence 91%',   color: 'text-steel' },
+  { prefix: 'mlflow_guardian',    msg: 'delay_classifier roc_auc=0.84 · promoting...',  color: 'text-accent' },
+  { prefix: 'ai_quality_monitor', msg: 'RESOLVED — no human intervention required',     color: 'text-success' },
+  { prefix: 'orchestrator',       msg: 'all agents healthy · offline=0 · cycle complete', color: 'text-accent' },
 ];
 
 function AgentTerminal() {
@@ -70,7 +50,7 @@ function AgentTerminal() {
     if (phase < LOG_LINES.length) {
       const t = setTimeout(() => {
         setPhase(p => p + 1);
-        containerRef.current?.scrollTo({ top: containerRef.current.scrollHeight });
+        containerRef.current?.scrollTo({ top: containerRef.current?.scrollHeight ?? 0 });
       }, 900);
       return () => clearTimeout(t);
     } else {
@@ -162,18 +142,6 @@ export function Hero() {
 
           {/* LEFT */}
           <div className="flex flex-col justify-center">
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, ease }}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-black/8 bg-white/80 backdrop-blur shadow-sm mb-8 w-fit"
-            >
-              <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-              <span className="text-[10px] font-mono tracking-widest text-steel uppercase">
-                13 Agents · 0 Human Interventions · AGPL-3.0
-              </span>
-            </motion.div>
-
             <AnimatedHeadline />
 
             <motion.p
@@ -185,16 +153,9 @@ export function Hero() {
               13 AI agents monitor, predict, and self-heal your supply chain 24/7.
               Detect disruptions{' '}
               <span className="text-ink font-medium">4+ hours early.</span>{' '}
-              Drop a CSV — pipeline runs in{' '}
-              <span className="text-ink font-medium">60 seconds.</span>
+              Drop a CSV — pipeline triggered in{' '}
+              <span className="text-ink font-medium">&lt;60 seconds.</span>
             </motion.p>
-
-            <div className="flex flex-wrap gap-3 mb-10">
-              <MetricCard label="Agents"        value="13"    sub="running 24/7"   delay={0}   />
-              <MetricCard label="Interventions" value="0"     sub="human required" delay={0.08} />
-              <MetricCard label="Early warning" value="4.2h"  sub="avg lead time"  delay={0.16} />
-              <MetricCard label="CSV → Pipeline" value="<60s" sub="automated"      delay={0.24} />
-            </div>
 
             <motion.div
               initial={{ opacity: 0, y: 12 }}

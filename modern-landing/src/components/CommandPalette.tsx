@@ -1,22 +1,27 @@
 import { useEffect, useState } from 'react';
 import { Command } from 'cmdk';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Map, Code2, Layers, ArrowRight, X, AlertTriangle } from 'lucide-react';
+import { Search, Map, Code2, Layers, ArrowRight, X } from 'lucide-react';
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
 
-  // Toggle the menu when ⌘K is pressed
+  // Toggle via real keyboard (Cmd+K / Ctrl+K) or custom event from Navbar button
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        setOpen((open) => !open);
+        setOpen(o => !o);
       }
     };
+    const onCustom = () => setOpen(o => !o);
 
     document.addEventListener('keydown', down);
-    return () => document.removeEventListener('keydown', down);
+    window.addEventListener('fa:open-command-palette', onCustom);
+    return () => {
+      document.removeEventListener('keydown', down);
+      window.removeEventListener('fa:open-command-palette', onCustom);
+    };
   }, []);
 
   return (
@@ -85,23 +90,6 @@ export function CommandPalette() {
                   </Command.Item>
                 </Command.Group>
 
-                <div className="h-px bg-black/5 my-2 mx-2" />
-
-                <Command.Group heading={<span className="text-[10px] uppercase font-semibold text-steel/50 px-2 py-1 select-none">Simulations</span>}>
-                  <Command.Item 
-                    onSelect={() => { 
-                      setOpen(false); 
-                      document.getElementById('dashboard')?.scrollIntoView({ behavior: 'smooth' });
-                      setTimeout(() => {
-                        window.dispatchEvent(new CustomEvent('simulate-deviation', { detail: 'factory-fire' }));
-                      }, 500);
-                    }}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-danger aria-selected:bg-danger/5 aria-selected:text-danger-dark cursor-pointer transition-colors"
-                  >
-                    <AlertTriangle size={16} className="text-danger" />
-                    <span>Trigger: Mass Cascading Failure (Shenzhen)</span>
-                  </Command.Item>
-                </Command.Group>
               </Command.List>
 
               <div className="p-3 border-t border-black/5 bg-subtle text-[10px] font-medium text-steel flex justify-between items-center">

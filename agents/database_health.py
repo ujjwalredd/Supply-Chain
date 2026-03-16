@@ -39,9 +39,10 @@ class DatabaseHealthAgent(BaseAgent):
 
     def check(self) -> dict:
         metrics = {}
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = None  # Bug 8/33: initialize before try so finally can safely guard on it
 
         try:
+            conn = psycopg2.connect(DATABASE_URL)
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
 
                 # 1. Active connections
@@ -70,7 +71,8 @@ class DatabaseHealthAgent(BaseAgent):
                     for q in long_queries[:3]:
                         logger.warning(f"  PID={q['pid']} duration={q['duration']} query={str(q['query'])[:100]}")
                     self.alert("MEDIUM", f"{len(long_queries)} queries running >{LONG_QUERY_THRESHOLD_SEC}s",
-                               {"queries": [{"pid": q["pid"], "duration": str(q["duration"])}
+                               {"queries": [{"pid": q["pid"],
+                                             "duration_sec": q["duration"].total_seconds()}  # Bug 24: float seconds, consistent with other agents
                                             for q in long_queries[:5]]})
 
                 # 3. Blocked queries
@@ -108,7 +110,7 @@ class DatabaseHealthAgent(BaseAgent):
                 cur.execute("""
                     SELECT relname, seq_scan, idx_scan
                     FROM pg_stat_user_tables
-                    WHERE seq_scan > idx_scan * 10
+                    WHERE seq_scan > COALESCE(idx_scan, 0) * 10
                       AND n_live_tup > 10000
                     ORDER BY seq_scan DESC
                     LIMIT 3
@@ -118,7 +120,8 @@ class DatabaseHealthAgent(BaseAgent):
                     logger.info(f"Tables with high seq_scan ratio: {[t['relname'] for t in seq_scan_heavy]}")
 
         finally:
-            conn.close()
+            if conn:  # Bug 8/33: guard so a failed connect() doesn't cause NameError
+                conn.close()
 
         metrics["task"] = f"conns={metrics.get('active_connections',0)}|long_q={metrics.get('long_running_queries',0)}|pending={metrics.get('pending_actions_queue',0)}"
         return metrics
