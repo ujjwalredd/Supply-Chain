@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # kafka-python installed (e.g. in unit tests that only use _detect_deviations).
 from pydantic import ValidationError
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import URL
 from sqlalchemy.orm import sessionmaker
@@ -272,6 +273,97 @@ def _upsert_orders(session, events: list[OrderEvent]) -> int:
     )
     session.execute(stmt)
     return len(records)
+
+
+def _load_order_snapshots(session, events: list[OrderEvent]) -> dict[str, dict[str, Any]]:
+    """Load current state before an upsert so the event log can record transitions."""
+    from api.models import Order
+    from sqlalchemy import select
+
+    order_ids = {e.order_id for e in events}
+    if not order_ids:
+        return {}
+    rows = session.execute(
+        select(Order.order_id, Order.status, Order.delay_days)
+        .where(Order.order_id.in_(order_ids))
+    ).all()
+    return {
+        row.order_id: {
+            "status": row.status,
+            "delay_days": row.delay_days,
+        }
+        for row in rows
+    }
+
+
+def _event_type_for_transition(old: dict[str, Any] | None, event: OrderEvent) -> str:
+    """Classify the operational state change for point-in-time replay."""
+    if old is None:
+        return "CREATED"
+    if old.get("status") != event.status:
+        if event.status in {"DELIVERED", "CANCELLED"}:
+            return event.status
+        return "STATUS_CHANGED"
+    if old.get("delay_days") != event.delay_days:
+        return "DELAY_UPDATED"
+    return "SNAPSHOT"
+
+
+def _append_order_events(
+    session,
+    events: list[OrderEvent],
+    previous: dict[str, dict[str, Any]],
+) -> int:
+    """Append immutable order_events rows for Kafka-driven state changes."""
+    from api.models import OrderEvent as OrderEventModel
+
+    inserted = 0
+    for event in events:
+        old = previous.get(event.order_id)
+        for attempt in range(3):
+            version = session.execute(
+                text(
+                    "SELECT COALESCE(MAX(aggregate_version), 0) + 1 "
+                    "FROM order_events WHERE order_id = :order_id"
+                ),
+                {"order_id": event.order_id},
+            ).scalar() or 1
+            savepoint = session.begin_nested()
+            try:
+                session.add(OrderEventModel(
+                    event_id=str(uuid.uuid4()),
+                    order_id=event.order_id,
+                    event_type=_event_type_for_transition(old, event),
+                    old_status=old.get("status") if old else None,
+                    new_status=event.status,
+                    old_delay_days=old.get("delay_days") if old else None,
+                    new_delay_days=event.delay_days,
+                    supplier_id=event.supplier_id,
+                    region=event.region,
+                    event_metadata={
+                        "source": "kafka",
+                        "product": event.product,
+                        "quantity": event.quantity,
+                        "order_value": event.order_value,
+                        "inventory_level": event.inventory_level,
+                    },
+                    actor="kafka",
+                    aggregate_version=version,
+                ))
+                session.flush()
+                savepoint.commit()
+                inserted += 1
+                break
+            except IntegrityError:
+                savepoint.rollback()
+                if attempt == 2:
+                    raise
+                logger.warning(
+                    "order_events version collision for %s v%d, retrying",
+                    event.order_id,
+                    version,
+                )
+    return inserted
 
 
 def _upsert_suppliers(session, events: list[OrderEvent]) -> None:
@@ -635,7 +727,9 @@ def process_batch(
     """
     try:
         _upsert_suppliers(session, events)
+        previous = _load_order_snapshots(session, events)
         orders_count = _upsert_orders(session, events)
+        events_count = _append_order_events(session, events, previous)
 
         all_deviations: list[dict] = []
         for e in events:
@@ -644,6 +738,7 @@ def process_batch(
         inserted_devs = _insert_deviations(session, all_deviations)
         _update_supplier_stats(session, events)
         session.commit()
+        logger.info("Appended %d order event records", events_count)
 
         _publish_deviations(redis_client, inserted_devs)
 

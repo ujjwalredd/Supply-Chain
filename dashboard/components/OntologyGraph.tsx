@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { fetchOntologyConstraints } from "@/lib/api";
 
 type Constraint = {
   id: number;
@@ -17,8 +16,7 @@ export function OntologyGraph() {
   const [constraints, setConstraints] = useState<Constraint[]>([]);
 
   useEffect(() => {
-    fetch(`${API_BASE}/ontology/constraints?limit=50`)
-      .then((r) => (r.ok ? r.json() : []))
+    fetchOntologyConstraints(50)
       .then(setConstraints)
       .catch(() => setConstraints([]));
   }, []);

@@ -17,7 +17,10 @@ export function useWebSocket(onMessage?: (msg: WebSocketMessage) => void) {
   const reconnectRef = useRef<NodeJS.Timeout | null>(null);
   const retriesRef = useRef(0);
   const onMessageRef = useRef(onMessage);
-  onMessageRef.current = onMessage;
+
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  }, [onMessage]);
 
   const connect = useCallback(() => {
     if (retriesRef.current >= MAX_RETRIES) return; // stop retrying after max attempts

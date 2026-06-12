@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Menu, X } from 'lucide-react';
 
 // Shared event so CommandPalette can listen without synthetic keyboard hacks
-export const openCommandPalette = () =>
+const openCommandPalette = () =>
   window.dispatchEvent(new CustomEvent('fa:open-command-palette'));
 
 const NAV_LINKS = [

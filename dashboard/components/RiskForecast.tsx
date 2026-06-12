@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchForecasts } from "@/lib/api";
+import { fetchForecasts, fetchForecastSummary } from "@/lib/api";
 
 type RiskRow = {
   order_id: string;
@@ -33,8 +33,7 @@ export function RiskForecast() {
     fetchForecasts({ limit: 20 })
       .then(setRows)
       .catch(() => setRows([]));
-    fetch((process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000") + "/forecasts/summary")
-      .then((r) => (r.ok ? r.json() : null))
+    fetchForecastSummary()
       .then(setSummary)
       .catch(() => {});
   }, []);

@@ -36,6 +36,8 @@ LAG_WARN = int(os.getenv("KAFKA_LAG_WARN", "500"))
 LAG_CRITICAL = int(os.getenv("KAFKA_LAG_CRITICAL", "2000"))
 DLQ_SPIKE_THRESHOLD = int(os.getenv("DLQ_SPIKE_THRESHOLD", "10"))
 PRODUCER_SILENCE_SECONDS = int(os.getenv("PRODUCER_SILENCE_SECONDS", "120"))
+PRODUCER_CONTAINER = os.getenv("PRODUCER_CONTAINER", "supply-chain-producer")
+PG_WRITER_CONTAINER = os.getenv("PG_WRITER_CONTAINER", "supply-chain-pg-writer")
 
 
 def _get_consumer_lag() -> dict:
@@ -189,14 +191,14 @@ class KafkaGuardianAgent(BaseAgent):
 
         if age > PRODUCER_SILENCE_SECONDS and age != -1:
             logger.warning(f"Producer silence detected: last event {age}s ago")
-            if self._can_restart("supply-chain-os-producer-1"):
-                restarted = _restart_container("supply-chain-os-producer-1")
+            if self._can_restart(PRODUCER_CONTAINER):
+                restarted = _restart_container(PRODUCER_CONTAINER)
                 self.audit("RESTART_PRODUCER",
                            f"Last event was {age}s ago (threshold={PRODUCER_SILENCE_SECONDS}s)",
                            "SUCCESS" if restarted else "FAILED",
                            {"last_event_age": age})
                 if restarted:
-                    self._restart_cooldown["supply-chain-os-producer-1"] = time.time()
+                    self._restart_cooldown[PRODUCER_CONTAINER] = time.time()
                 else:
                     self.alert("HIGH", f"Producer silent for {age}s, restart failed")
             else:
@@ -208,14 +210,14 @@ class KafkaGuardianAgent(BaseAgent):
         for group, lag in lag_info.items():
             if lag > LAG_CRITICAL:
                 logger.error(f"CRITICAL consumer lag: group={group} lag={lag}")
-                if self._can_restart("supply-chain-os-pg-writer-1"):
-                    restarted = _restart_container("supply-chain-os-pg-writer-1")
+                if self._can_restart(PG_WRITER_CONTAINER):
+                    restarted = _restart_container(PG_WRITER_CONTAINER)
                     self.audit("RESTART_PG_WRITER",
                                f"Consumer lag {lag} > {LAG_CRITICAL} for group {group}",
                                "SUCCESS" if restarted else "FAILED",
                                {"group": group, "lag": lag})
                     if restarted:
-                        self._restart_cooldown["supply-chain-os-pg-writer-1"] = time.time()
+                        self._restart_cooldown[PG_WRITER_CONTAINER] = time.time()
                     else:
                         self.alert("CRITICAL", f"pg-writer restart failed, lag={lag}", {"group": group, "lag": lag})
                 else:

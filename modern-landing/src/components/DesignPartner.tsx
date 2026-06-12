@@ -43,8 +43,8 @@ export function DesignPartner() {
       if (res.ok) {
         setStatus('success');
       } else {
-        const data = await res.json().catch(() => ({}));
-        setErrorMsg((data as any)?.error ?? 'Something went wrong. Please try again.');
+        const data = await res.json().catch((): { error?: string } => ({}));
+        setErrorMsg(data.error ?? 'Something went wrong. Please try again.');
         setStatus('error');
       }
     } catch {

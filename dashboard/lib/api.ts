@@ -139,14 +139,20 @@ export async function fetchForecasts(params?: { limit?: number; min_risk_score?:
   return res.json();
 }
 
+export async function fetchForecastSummary() {
+  const res = await apiFetch(`${API_BASE}/forecasts/summary`);
+  if (!res.ok) throw new Error("Failed to fetch forecast summary");
+  return res.json();
+}
+
 export async function fetchNetworkGraph() {
   const res = await apiFetch(`${API_BASE}/network`);
   if (!res.ok) throw new Error("Failed to fetch network graph");
   return res.json();
 }
 
-export async function fetchOntologyConstraints() {
-  const res = await apiFetch(`${API_BASE}/ontology/constraints`);
+export async function fetchOntologyConstraints(limit = 50) {
+  const res = await apiFetch(`${API_BASE}/ontology/constraints?limit=${limit}`);
   if (!res.ok) throw new Error("Failed to fetch constraints");
   return res.json();
 }

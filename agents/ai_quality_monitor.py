@@ -153,7 +153,7 @@ class AIQualityMonitorAgent(BaseAgent):
     def _retrigger_analysis(self, deviation_id: str):
         try:
             resp = requests.post(
-                f"{FASTAPI_URL}/ai/analyze/structured",
+                f"{FASTAPI_URL}/ai/analyze",
                 json={"deviation_id": deviation_id, "context": "re-analysis triggered by quality monitor"},
                 headers={"X-API-Key": os.getenv("API_KEY_INTERNAL", "internal-monitor")},
                 timeout=30

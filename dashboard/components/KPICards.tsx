@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useWebSocket } from "@/hooks/useWebSocket";
-import { fetchActionsStats } from "@/lib/api";
+import { fetchActionsStats, fetchOrders } from "@/lib/api";
 
 type KPIData = {
   pipeline_value?: number;
@@ -21,9 +21,7 @@ export function KPICards() {
   useEffect(() => {
     async function fetchKPIs() {
       try {
-        const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-        const ordersRes = await fetch(`${base}/orders?limit=500`);
-        const orders = await ordersRes.json();
+        const orders = await fetchOrders({ limit: 500 });
         const total = orders.length;
         const delayed = orders.filter((o: { delay_days?: number }) => (o.delay_days ?? 0) > 0).length;
         const critical = orders.filter((o: { delay_days?: number }) => (o.delay_days ?? 0) > 7).length;

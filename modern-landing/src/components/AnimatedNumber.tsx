@@ -20,7 +20,7 @@ export function AnimatedDecimal({ value }: { value: number }) {
   useEffect(() => {
     const controls = animate(count, value, { duration: 1.5, ease: [0.16, 1, 0.3, 1] });
     return controls.stop;
-  }, [value]);
+  }, [value, count]);
 
   return <motion.span>{rounded}</motion.span>;
 }

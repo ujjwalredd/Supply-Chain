@@ -26,6 +26,8 @@ from pipeline.assets_medallion import (
     gold_delay_model,
     # Feature 6: demand forecast
     gold_demand_forecast,
+    # Maintenance
+    delta_maintenance,
 )
 from pipeline.jobs_medallion import medallion_full_job, medallion_incremental_job
 
@@ -46,6 +48,7 @@ all_assets = [
     gold_forecasted_risks,
     gold_delay_model,
     gold_demand_forecast,
+    delta_maintenance,
 ]
 
 defs = Definitions(

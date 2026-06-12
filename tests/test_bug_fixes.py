@@ -9,6 +9,7 @@ mocked where necessary.
 import pytest
 import re
 import time
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
@@ -140,6 +141,7 @@ class TestTerminalStateGuards:
             assert exc_info.value.status_code == 409
 
         asyncio.get_event_loop().run_until_complete(run())
+
 
     def test_cancel_rejects_already_cancelled(self):
         from fastapi import HTTPException
@@ -542,3 +544,48 @@ class TestOntologyPartialMatchV2:
             # If unambiguous (only one canonical), it may be in normalized — that's fine too
 
         asyncio.get_event_loop().run_until_complete(run())
+
+
+class TestInterviewReadinessFixes:
+    ROOT = Path(__file__).resolve().parents[1]
+
+    def test_ai_quality_monitor_hits_existing_analyze_route(self):
+        src = (self.ROOT / "agents" / "ai_quality_monitor.py").read_text()
+        assert "/ai/analyze/structured" not in src
+        assert "/ai/analyze" in src
+
+    def test_kafka_guardian_container_names_match_compose(self):
+        src = (self.ROOT / "agents" / "kafka_guardian.py").read_text()
+        compose = (self.ROOT / "docker-compose.yml").read_text()
+        assert 'PRODUCER_CONTAINER = os.getenv("PRODUCER_CONTAINER", "supply-chain-producer")' in src
+        assert 'PG_WRITER_CONTAINER = os.getenv("PG_WRITER_CONTAINER", "supply-chain-pg-writer")' in src
+        assert "container_name: supply-chain-producer" in compose
+        assert "container_name: supply-chain-pg-writer" in compose
+
+    def test_compose_ksql_schema_matches_query_client(self):
+        compose = (self.ROOT / "docker-compose.yml").read_text()
+        query_client = (self.ROOT / "streaming" / "ksql_queries.py").read_text()
+        assert "avg_inventory_level" in compose
+        assert "avg_inventory_level" in query_client
+
+    def test_dashboard_components_use_api_key_wrapper_helpers(self):
+        for rel_path in (
+            "dashboard/components/KPICards.tsx",
+            "dashboard/components/OntologyGraph.tsx",
+            "dashboard/components/RiskForecast.tsx",
+        ):
+            src = (self.ROOT / rel_path).read_text()
+            assert "NEXT_PUBLIC_API_URL" not in src
+            assert "fetch(`" not in src
+            assert "fetch(" not in src
+
+    def test_delta_maintenance_registered_in_dagster_defs(self):
+        src = (self.ROOT / "pipeline" / "definitions_medallion.py").read_text()
+        assert "delta_maintenance" in src
+        assert "assets=all_assets" in src
+
+    def test_pg_writer_appends_event_sourcing_records(self):
+        src = (self.ROOT / "ingestion" / "pg_writer.py").read_text()
+        assert "_append_order_events" in src
+        assert "OrderEventModel" in src
+        assert 'actor="kafka"' in src
