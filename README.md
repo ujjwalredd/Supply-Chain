@@ -3,7 +3,7 @@
 [![CI](https://github.com/ujjwalredd/Supply-Chain/actions/workflows/ci.yml/badge.svg)](https://github.com/ujjwalredd/Supply-Chain/actions/workflows/ci.yml)
 [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://supply-chain-silk.vercel.app)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-203%20passed-brightgreen)](#validation-playbook)
+[![Tests](https://img.shields.io/badge/tests-354%20passed-brightgreen)](#validation-playbook)
 [![Agents](https://img.shields.io/badge/agents-13%20HEALTHY-brightgreen)](#autonomous-agent-system)
 
 [Live Demo](https://supply-chain-silk.vercel.app)
@@ -499,10 +499,10 @@ See `.env.example` for the full list of 50+ configurable variables.
 
 ```bash
 python -m pytest tests/ -v --tb=short -q
-# Expected: 203 passed, 3 skipped, 0 failed
+# Expected: 354 passed, 3 skipped, 0 failed
 ```
 
-203 tests across 14 test classes covering: deepagents integration, escalation rules, correction dispatch, path-checking bug proof, CSV loader gates, concurrent ingestion, Pydantic schemas, skill/memory files, docker config, pipeline config, and requirements.
+354 tests across 14 test classes covering: deepagents integration, escalation rules, correction dispatch, path-checking bug proof, CSV loader gates, concurrent ingestion, Pydantic schemas, skill/memory files, docker config, pipeline config, and requirements.
 
 ### Layer 2 — All 13 agents HEALTHY
 
@@ -845,7 +845,7 @@ The agents report real activity — this is the system working correctly:
 
 The CI pipeline runs on every push and PR to `main`:
 
-1. **Unit Tests**: pytest with coverage (threshold: 45%, currently 203 tests)
+1. **Unit Tests**: pytest with coverage (threshold: 45%, currently 354 tests)
 2. **Secret Scan**: Detects hardcoded credentials in Python files
 3. **dbt Validate**: Ensures all dbt model files have content
 4. **Docker Validate**: Validates docker-compose syntax
