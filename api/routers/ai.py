@@ -83,7 +83,7 @@ _SSE_HEADERS = {
     "Connection": "keep-alive",
     "X-Accel-Buffering": "no",
 }
-_AI_STREAM_ERROR_TOKEN = "\n\nAn error occurred during AI analysis."
+from reasoning.engine import _STREAM_ERROR_TOKEN as _AI_STREAM_ERROR_TOKEN
 
 
 class AnalyzeBody(BaseModel):

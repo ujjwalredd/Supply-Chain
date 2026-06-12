@@ -171,6 +171,9 @@ async def query_stream(
             yield f"data: {json.dumps({'error': 'AI service connection failed'})}\n\n"
         except APIStatusError:
             yield f"data: {json.dumps({'error': 'AI service returned an error'})}\n\n"
+        except Exception as e:
+            logger.exception("Query stream failed: %s", e)
+            yield f"data: {json.dumps({'error': 'An error occurred during analysis'})}\n\n"
         elapsed_ms = int((time.monotonic() - start_ms) * 1000)
         yield f"data: {json.dumps({'done': True, 'usage': {**usage, 'analysis_time_ms': elapsed_ms}})}\n\n"
 

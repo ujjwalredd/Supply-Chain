@@ -31,18 +31,26 @@ async def upload_customer_data(file: UploadFile = File(...)):
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
 
-    suffix = Path(file.filename).suffix.lower()
+    # Strip any directory components to prevent path traversal (e.g. "../../etc/x").
+    safe_name = Path(file.filename).name
+    if not safe_name or safe_name in (".", ".."):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    suffix = Path(safe_name).suffix.lower()
     if suffix not in (".csv", ".tsv", ".txt"):
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported file type: {suffix}. Must be .csv, .tsv, or .txt"
         )
 
-    source_dir = Path(DATA_SOURCE_DIR)
+    source_dir = Path(DATA_SOURCE_DIR).resolve()
     if not source_dir.exists():
         raise HTTPException(status_code=503, detail="Data source directory not available")
 
-    dest_path = source_dir / file.filename
+    dest_path = (source_dir / safe_name).resolve()
+    # Defense in depth: ensure the resolved path stays inside source_dir.
+    if source_dir not in dest_path.parents:
+        raise HTTPException(status_code=400, detail="Invalid filename")
 
     # Stream to disk checking size limit
     size_bytes = 0
@@ -62,14 +70,14 @@ async def upload_customer_data(file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Upload failed for {file.filename}: {e}")
+        logger.error(f"Upload failed for {safe_name}: {e}")
         raise HTTPException(status_code=500, detail="Upload failed")
 
-    logger.info(f"[data/upload] Received {file.filename} ({size_bytes/1024:.1f} KB)")
+    logger.info(f"[data/upload] Received {safe_name} ({size_bytes/1024:.1f} KB)")
 
     return JSONResponse(status_code=202, content={
         "status": "accepted",
-        "file": file.filename,
+        "file": safe_name,
         "size_kb": round(size_bytes / 1024, 1),
         "message": "DataIngestionAgent will auto-process within 60 seconds. "
                    "Schema will be inferred, loader validated, and pipeline triggered automatically.",
@@ -139,12 +147,12 @@ async def ingestion_audit():
     """
     Show recent DataIngestionAgent audit log entries.
     """
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        return {"entries": [], "error": "audit log unavailable"}
     try:
         import psycopg2
-        conn = psycopg2.connect(os.getenv(
-            "DATABASE_URL",
-            "postgresql://supplychain:supplychain@postgres:5432/supply_chain_db"
-        ))
+        conn = psycopg2.connect(db_url)
         cur = conn.cursor()
         cur.execute("""
             SELECT action, reasoning, outcome, details, created_at

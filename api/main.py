@@ -127,7 +127,9 @@ app.add_middleware(APIKeyMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
-    allow_credentials=True,
+    # Auth is header-based (X-API-Key / Bearer), not cookie-based, so
+    # credentialed CORS is unnecessary and only widens exposure.
+    allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Request-ID", "Accept", "X-API-Key"],
     expose_headers=["X-Request-ID"],

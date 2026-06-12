@@ -88,9 +88,13 @@ class ActionExecutor:
                         return False
         except Exception as e:
             logger.warning(
-                "Policy check failed for action id=%s — allowing execution (fail-open): %s",
+                "Policy check failed for action id=%s — blocking auto-execution (fail-closed), "
+                "escalating for human review: %s",
                 action.id, e,
             )
+            # Fail closed: a money-moving autonomous action must not run when the
+            # policy gate cannot be evaluated. Escalate instead.
+            return False
         return True
 
     def execute(self, action) -> bool:

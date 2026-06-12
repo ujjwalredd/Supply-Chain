@@ -1,5 +1,18 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "";
+
+function authHeaders(extra?: HeadersInit): HeadersInit {
+  const h: Record<string, string> = { ...((extra as Record<string, string>) ?? {}) };
+  if (API_KEY) h["X-API-Key"] = API_KEY;
+  return h;
+}
+
+// Central fetch wrapper: injects the API key header so requests pass the
+// backend's APIKeyMiddleware when API_KEYS is configured (required in prod).
+async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(input, { ...init, headers: authHeaders(init.headers) });
+}
 
 export async function fetchOrders(params?: {
   limit?: number;
@@ -11,13 +24,13 @@ export async function fetchOrders(params?: {
     Object.entries(params ?? {}).filter(([, v]) => v !== undefined && v !== null && v !== "")
   ) as Record<string, string>;
   const search = new URLSearchParams(filtered);
-  const res = await fetch(`${API_BASE}/orders?${search}`);
+  const res = await apiFetch(`${API_BASE}/orders?${search}`);
   if (!res.ok) throw new Error("Failed to fetch orders");
   return res.json();
 }
 
 export async function fetchOrder(id: string) {
-  const res = await fetch(`${API_BASE}/orders/${id}`);
+  const res = await apiFetch(`${API_BASE}/orders/${id}`);
   if (!res.ok) throw new Error("Order not found");
   return res.json();
 }
@@ -31,13 +44,13 @@ export async function fetchSuppliers(params?: {
     Object.entries(params ?? {}).filter(([, v]) => v !== undefined && v !== null && v !== "")
   ) as Record<string, string>;
   const search = new URLSearchParams(filtered);
-  const res = await fetch(`${API_BASE}/suppliers?${search}`);
+  const res = await apiFetch(`${API_BASE}/suppliers?${search}`);
   if (!res.ok) throw new Error("Failed to fetch suppliers");
   return res.json();
 }
 
 export async function fetchSupplierRisk(limit = 20) {
-  const res = await fetch(`${API_BASE}/suppliers/risk?limit=${limit}`);
+  const res = await apiFetch(`${API_BASE}/suppliers/risk?limit=${limit}`);
   if (!res.ok) throw new Error("Failed to fetch supplier risk");
   return res.json();
 }
@@ -53,13 +66,13 @@ export async function fetchAlerts(params?: {
     Object.entries(params ?? {}).filter(([, v]) => v !== undefined && v !== null)
   ) as Record<string, string>;
   const search = new URLSearchParams(filtered);
-  const res = await fetch(`${API_BASE}/alerts?${search}`);
+  const res = await apiFetch(`${API_BASE}/alerts?${search}`);
   if (!res.ok) throw new Error("Failed to fetch alerts");
   return res.json();
 }
 
 export async function dismissAlert(id: string) {
-  const res = await fetch(`${API_BASE}/alerts/${id}/dismiss`, {
+  const res = await apiFetch(`${API_BASE}/alerts/${id}/dismiss`, {
     method: "POST",
   });
   if (!res.ok) throw new Error("Failed to dismiss alert");
@@ -86,48 +99,7 @@ export async function analyzeDeviationStream(
     onDone?: (usage: StreamUsage) => void;
   }
 ) {
-  const res = await fetch(`${API_BASE}/ai/analyze/stream`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: options?.signal,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    let message = `AI analysis failed (${res.status})`;
-    try {
-      const j = JSON.parse(text);
-      if (j.detail) message = typeof j.detail === "string" ? j.detail : j.detail.join?.(" ") || message;
-    } catch {
-      if (text) message = text.slice(0, 200);
-    }
-    throw new Error(message);
-  }
-  const reader = res.body?.getReader();
-  if (!reader) throw new Error("No response body");
-  const decoder = new TextDecoder();
-  let buffer = "";
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.token) onToken(data.token);
-            if (data.done && options?.onDone) options.onDone(data.usage ?? {});
-          } catch {}
-        }
-      }
-    }
-  } catch (err) {
-    if ((err as Error).name === "AbortError") return; // cancelled — not an error
-    throw err;
-  }
+  return _streamSSE(`${API_BASE}/ai/analyze/stream`, body, onToken, options);
 }
 
 export async function analyzeDeviation(body: {
@@ -136,7 +108,7 @@ export async function analyzeDeviation(body: {
   deviation_type?: string;
   severity?: string;
 }) {
-  const res = await fetch(`${API_BASE}/ai/analyze`, {
+  const res = await apiFetch(`${API_BASE}/ai/analyze`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -150,7 +122,7 @@ export async function fetchActions(params?: { limit?: number; status?: string })
     Object.entries(params ?? {}).filter(([, v]) => v !== undefined && v !== null && v !== "")
   ) as Record<string, string>;
   const search = new URLSearchParams(filtered);
-  const res = await fetch(`${API_BASE}/actions?${search}`);
+  const res = await apiFetch(`${API_BASE}/actions?${search}`);
   if (!res.ok) throw new Error("Failed to fetch actions");
   return res.json();
 }
@@ -162,31 +134,31 @@ export async function fetchForecasts(params?: { limit?: number; min_risk_score?:
       .map(([k, v]) => [k, String(v)])
   );
   const search = new URLSearchParams(filtered);
-  const res = await fetch(`${API_BASE}/forecasts?${search}`);
+  const res = await apiFetch(`${API_BASE}/forecasts?${search}`);
   if (!res.ok) throw new Error("Failed to fetch forecasts");
   return res.json();
 }
 
 export async function fetchNetworkGraph() {
-  const res = await fetch(`${API_BASE}/network`);
+  const res = await apiFetch(`${API_BASE}/network`);
   if (!res.ok) throw new Error("Failed to fetch network graph");
   return res.json();
 }
 
 export async function fetchOntologyConstraints() {
-  const res = await fetch(`${API_BASE}/ontology/constraints`);
+  const res = await apiFetch(`${API_BASE}/ontology/constraints`);
   if (!res.ok) throw new Error("Failed to fetch constraints");
   return res.json();
 }
 
 export async function fetchDeviationTrend(days = 7) {
-  const res = await fetch(`${API_BASE}/alerts/trend?days=${days}`);
+  const res = await apiFetch(`${API_BASE}/alerts/trend?days=${days}`);
   if (!res.ok) throw new Error("Failed to fetch deviation trend");
   return res.json();
 }
 
 export async function fetchActionsStats() {
-  const res = await fetch(`${API_BASE}/actions/stats`);
+  const res = await apiFetch(`${API_BASE}/actions/stats`);
   if (!res.ok) throw new Error("Failed to fetch action stats");
   return res.json();
 }
@@ -195,7 +167,7 @@ export { WS_URL };
 
 export async function fetchQuerySuggestions(): Promise<string[]> {
   try {
-    const res = await fetch(`${API_BASE}/ai/query/suggestions`);
+    const res = await apiFetch(`${API_BASE}/ai/query/suggestions`);
     if (!res.ok) return [];
     const data = await res.json();
     return (data.suggestions as string[]) ?? [];
@@ -205,31 +177,31 @@ export async function fetchQuerySuggestions(): Promise<string[]> {
 }
 
 export async function fetchSupplierScorecard(supplierId: string, weeks = 12) {
-  const res = await fetch(`${API_BASE}/suppliers/${supplierId}/scorecard?weeks=${weeks}`);
+  const res = await apiFetch(`${API_BASE}/suppliers/${supplierId}/scorecard?weeks=${weeks}`);
   if (!res.ok) throw new Error("Failed to fetch scorecard");
   return res.json();
 }
 
 export async function fetchOrderTimeline(orderId: string) {
-  const res = await fetch(`${API_BASE}/orders/${orderId}/timeline`);
+  const res = await apiFetch(`${API_BASE}/orders/${orderId}/timeline`);
   if (!res.ok) throw new Error("Failed to fetch order timeline");
   return res.json();
 }
 
 export async function fetchDeviationClusters(days = 30) {
-  const res = await fetch(`${API_BASE}/alerts/clusters?days=${days}`);
+  const res = await apiFetch(`${API_BASE}/alerts/clusters?days=${days}`);
   if (!res.ok) throw new Error("Failed to fetch deviation clusters");
   return res.json();
 }
 
 export async function fetchActionsAudit(limit = 50) {
-  const res = await fetch(`${API_BASE}/actions/audit?limit=${limit}`);
+  const res = await apiFetch(`${API_BASE}/actions/audit?limit=${limit}`);
   if (!res.ok) throw new Error("Failed to fetch audit log");
   return res.json();
 }
 
 export async function resolveAction(actionId: number, outcomeNote: string, success = true) {
-  const res = await fetch(`${API_BASE}/actions/${actionId}/resolve`, {
+  const res = await apiFetch(`${API_BASE}/actions/${actionId}/resolve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ outcome_note: outcomeNote, success }),
@@ -239,19 +211,19 @@ export async function resolveAction(actionId: number, outcomeNote: string, succe
 }
 
 export async function fetchActionSuccessRates() {
-  const res = await fetch(`${API_BASE}/actions/success-rates`);
+  const res = await apiFetch(`${API_BASE}/actions/success-rates`);
   if (!res.ok) throw new Error("Failed to fetch success rates");
   return res.json();
 }
 
 export async function fetchDelayPredictions(limit = 20, minProbability = 0.3) {
-  const res = await fetch(`${API_BASE}/orders/delay-predictions?limit=${limit}&min_probability=${minProbability}`);
+  const res = await apiFetch(`${API_BASE}/orders/delay-predictions?limit=${limit}&min_probability=${minProbability}`);
   if (!res.ok) throw new Error("Failed to fetch delay predictions");
   return res.json();
 }
 
 export async function fetchCostAnalytics() {
-  const res = await fetch(`${API_BASE}/suppliers/cost-analytics`);
+  const res = await apiFetch(`${API_BASE}/suppliers/cost-analytics`);
   if (!res.ok) throw new Error("Failed to fetch cost analytics");
   return res.json();
 }
@@ -260,7 +232,7 @@ export async function fetchSupplierBenchmarks(product?: string) {
   const url = product
     ? `${API_BASE}/suppliers/benchmarks?product=${encodeURIComponent(product)}`
     : `${API_BASE}/suppliers/benchmarks`;
-  const res = await fetch(url);
+  const res = await apiFetch(url);
   if (!res.ok) throw new Error("Failed to fetch benchmarks");
   return res.json();
 }
@@ -271,7 +243,7 @@ async function _streamSSE(
   onToken: (token: string) => void,
   options?: { signal?: AbortSignal; onDone?: (usage: StreamUsage & { count?: number }) => void }
 ) {
-  const res = await fetch(url, {
+  const res = await apiFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -331,60 +303,19 @@ export async function querySupplyChainStream(
   onToken: (token: string) => void,
   options?: { signal?: AbortSignal; onDone?: (usage: StreamUsage) => void }
 ) {
-  const res = await fetch(`${API_BASE}/ai/query/stream`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
-    signal: options?.signal,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    let message = `Query failed (${res.status})`;
-    try {
-      const j = JSON.parse(text);
-      if (j.detail) message = typeof j.detail === "string" ? j.detail : message;
-    } catch {
-      if (text) message = text.slice(0, 200);
-    }
-    throw new Error(message);
-  }
-  const reader = res.body?.getReader();
-  if (!reader) throw new Error("No response body");
-  const decoder = new TextDecoder();
-  let buffer = "";
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.token) onToken(data.token);
-            if (data.done && options?.onDone) options.onDone(data.usage ?? {});
-          } catch { /* skip malformed SSE */ }
-        }
-      }
-    }
-  } catch (err) {
-    if ((err as Error).name === "AbortError") return;
-    throw err;
-  }
+  return _streamSSE(`${API_BASE}/ai/query/stream`, { question }, onToken, options);
 }
 
 export async function fetchAlertsEnriched(limit = 100, severity?: string) {
   const params = new URLSearchParams({ limit: String(limit) });
   if (severity) params.set("severity", severity);
-  const res = await fetch(`${API_BASE}/alerts/enriched?${params}`);
+  const res = await apiFetch(`${API_BASE}/alerts/enriched?${params}`);
   if (!res.ok) throw new Error("Failed to fetch enriched alerts");
   return res.json();
 }
 
 export async function fetchSupplierPolicy(supplierId: string) {
-  const res = await fetch(`${API_BASE}/suppliers/${supplierId}/policy`);
+  const res = await apiFetch(`${API_BASE}/suppliers/${supplierId}/policy`);
   if (!res.ok) throw new Error("Failed to fetch supplier policy");
   return res.json();
 }
@@ -398,7 +329,7 @@ export async function updateSupplierPolicy(
     min_confidence: number;
   }
 ) {
-  const res = await fetch(`${API_BASE}/suppliers/${supplierId}/policy`, {
+  const res = await apiFetch(`${API_BASE}/suppliers/${supplierId}/policy`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(policy),
@@ -408,7 +339,7 @@ export async function updateSupplierPolicy(
 }
 
 export async function normalizeFields(fields: Record<string, unknown>) {
-  const res = await fetch(`${API_BASE}/ontology/normalize`, {
+  const res = await apiFetch(`${API_BASE}/ontology/normalize`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(fields),

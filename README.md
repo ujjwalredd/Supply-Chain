@@ -29,80 +29,67 @@ Most supply chain platforms require humans to write ETL, tune models, and monito
 
 ## Architecture
 
+The platform is built in five layers. Data enters through any of three sources, flows
+through a medallion lakehouse into the ML models, and is served to the dashboard and
+API. A control plane of 13 autonomous agents observes every layer and issues
+corrections without human involvement.
+
+### 1. Data flow (source → serving)
+
 ```
-                          NEW CUSTOMER DATA FLOW
-  CSV Upload (API) ─────────────────────────────────────────────────┐
-  S3 / MinIO Drop ──────────────────────────────────────────────────│
-  Kafka Stream ──────────────────────────────────────────────────── ▼
-                                                          /data/source/ (watched)
-                                                                │
-                                                   DataIngestionAgent (60s)
-                                             deepagents iterative loop:
-                                             read_csv_sample → generate loader
-                                             → validate_python_loader → fix if needed
-                                             → save loader → trigger pipeline
-                                                                │
-                              INGESTION LAYER                   │
-  OpenBoxes WMS ──────────────────────────────────────────────-─│
-  Kafka (supply-chain-events) ──────────────────────────────-───│
-         │                                                      │
-         v                                                      v
-    pg-writer                                         Dagster Full Pipeline
-  (Kafka → PostgreSQL)                                          │
-                                              ┌─────────────────┼─────────────────┐
-                                              ▼                 ▼                 ▼
-                                          Bronze             Silver             Gold
-                                        (raw parquet)    (validated)      (AI-ready + ML)
-                                              │                 │                 │
-                                              └─────────────────┼─────────────────┘
-                                                                │
-                                                   ┌────────────┼────────────┐
-                                                   ▼            ▼            ▼
-                                           gold_delay_model  demand_forecast  supplier_risk
-                                           (XGBoost + MLflow)  (Prophet)
-                                                   │
-                                                   ▼
-                                       FeatureEngineerAgent (15 min)
-                                       Claude suggests features →
-                                       5-gate sandbox validation →
-                                       written to computed_features/ →
-                                       merged into next training run
-                                                   │
-                                                   ▼
-                                       MLflowGuardianAgent (5 min)
-                                       detects roc_auc drift →
-                                       triggers retraining →
-                                       Claude tool_use promotion decision →
-                                       hard floors: roc_auc ≥ 0.60, train_rows ≥ 100
+┌─ SOURCES ─────────────┐   ┌─ LANDING ────────┐   ┌─ LAKEHOUSE (Dagster) ──────────────┐
+│ CSV upload  (REST)    │   │                  │   │  Bronze  → Silver  → Gold          │
+│ MinIO / S3 drop       │──▶│ /data/source/    │──▶│  (raw)     (clean)   (AI-ready)    │
+│ Kafka events ─┐       │   │ (watched, 60s)   │   └───────────────┬────────────────────┘
+└───────────────┼───────┘   └──────────────────┘                   │
+                │                                                  ▼
+                │            ┌─ OPERATIONAL PATH ─┐   ┌─ ML MODELS ─────────────────────────┐
+                └───────────▶│ pg-writer          │   │  gold_delay_model   (XGBoost+MLflow)│
+                             │ (Kafka→PostgreSQL) │   │  demand_forecast    (Prophet)       │
+                             └─────────┬──────────┘   │  supplier_risk      (scoring)       │
+                                       │              └───────────────┬─────────────────────┘
+                                       ▼                              │
+                             ┌─ SERVING ──────────────────────────────┴──────────────────────┐
+                             │  PostgreSQL ──▶ FastAPI (REST + WebSocket) ──▶ Next.js dash   │
+                             │  Grafana ◀── DashboardAgent      Prometheus / Loki / Jaeger   │
+                             └───────────────────────────────────────────────────────────────┘
+```
 
+The Kafka stream forks: the **operational path** (`pg-writer`) lands orders/deviations
+in PostgreSQL for the live dashboard, while the **analytics path** feeds the Dagster
+medallion lakehouse for ML training.
 
-                        ┌──────────────────────────────────────────────────────────────┐
-                        │          AUTONOMOUS AGENT SYSTEM (13 agents)                 │
-                        │                                                              │
-                        │  Orchestrator (Sonnet + deepagents LangGraph)                │
-                        │    ├── 3 sub-agents: kafka_investigator,                     │
-                        │    │                 dagster_investigator, ml_investigator   │
-                        │    ├── 7 LangChain tools (heartbeats, audit, Kafka,          │
-                        │    │   Dagster, MLflow, issue_correction, trigger_pipeline)  │
-                        │    ├── Skills: 5 SKILL.md domain knowledge files             │
-                        │    └── Memory: incident_patterns.md (8 patterns)             │
-                        │                                                              │
-                        │  Kafka Guardian    DagsterGuardian  DataIngestion            │
-                        │  Bronze Agent      Silver Agent     Gold Agent               │
-                        │  Medallion Supervisor               AI Quality Monitor       │
-                        │  Database Health   MLflow Guardian  Feature Engineer         │
-                        │  Dashboard Agent                                             │
-                        └──────────────────────────────────────────────────────────────┘
-                                                   │
-                        ┌──────────────────────────┼──────────────────────────┐
-                        │                          │                          │
-                        ▼                          ▼                          ▼
-                  PostgreSQL                  FastAPI                    Grafana
-                  (orders, deviations,        (REST + WebSocket)         (auto-updated
-                   suppliers, audit_log)                                  by DashboardAgent)
-                        │                          │
-                        ▼                          ▼
-                   Next.js Dashboard          Prometheus + Loki + Jaeger
+### 2. Autonomous control plane (13 agents)
+
+Agents run as daemon threads alongside the pipeline, each watching one domain on its own
+interval. The Orchestrator correlates failures across agents and issues signed corrections.
+
+```
+┌─ ORCHESTRATOR (Claude Sonnet + deepagents/LangGraph) ─────────────────────────┐
+│   3 sub-agents : kafka_investigator · dagster_investigator · ml_investigator  │
+│   7 tools      : heartbeats · audit · Kafka · Dagster · MLflow ·              │
+│                  issue_correction · trigger_pipeline                          │
+│   knowledge    : 5 SKILL.md files + incident_patterns.md (8 patterns)         │
+└──────────────────────────────────┬────────────────────────────────────────────┘
+            issues HMAC-signed corrections via Redis pub/sub
+                                    │
+   ┌───────────────┬────────────────┼────────────────┬───────────────┐
+   ▼               ▼                ▼                ▼               ▼
+ Kafka          Dagster        Medallion          ML / Data       Platform
+ Guardian       Guardian       Bronze·Silver·     MLflow Guardian Database Health
+                               Gold·Supervisor    Feature Eng.    AI Quality Mon.
+                                                  Data Ingestion  Dashboard Agent
+```
+
+### 3. ML feedback loop
+
+```
+new Gold data ─▶ FeatureEngineer (15m) ─▶ 8-gate sandbox ─▶ computed_features/
+                                                                  │
+                                                                  ▼
+        MLflow Production  ◀── promote (hard floors: ──  MLflowGuardian (5m)
+                               roc_auc ≥ 0.60,             detects drift →
+                               train_rows ≥ 100)           retrain → tool_use decision
 ```
 
 ---
