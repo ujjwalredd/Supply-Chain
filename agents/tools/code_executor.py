@@ -23,6 +23,26 @@ logger = logging.getLogger(__name__)
 
 EXEC_TIMEOUT = int(os.getenv("CODE_EXEC_TIMEOUT", "45"))   # seconds
 
+# Environment variables that LLM-generated code is allowed to see. Everything
+# else (API keys, DB passwords, cloud credentials) is withheld so a malicious
+# or hallucinated snippet cannot exfiltrate secrets via the subprocess env.
+_ENV_ALLOWLIST = {
+    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TMPDIR",
+    "PYTHONPATH", "PYTHONHASHSEED", "PYTHONUNBUFFERED", "PYTHONDONTWRITEBYTECODE",
+}
+
+
+def _safe_subprocess_env(extra_env: dict | None = None) -> dict:
+    """Build a minimal env for executing untrusted/agent-generated code.
+
+    Starts from an allowlisted subset of the parent env (no secrets), then
+    layers any caller-supplied extra_env on top.
+    """
+    base = {k: v for k, v in os.environ.items() if k in _ENV_ALLOWLIST}
+    if extra_env:
+        base.update(extra_env)
+    return base
+
 
 class CodeExecutionError(Exception):
     pass
@@ -49,7 +69,7 @@ class CodeExecutor:
         # Gate 1 — syntax check
         self._assert_syntax(code)
 
-        env = {**os.environ, **(extra_env or {})}
+        env = _safe_subprocess_env(extra_env)
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".py", delete=False, encoding="utf-8"
         ) as f:

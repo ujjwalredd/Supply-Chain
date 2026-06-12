@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import time
-from typing import Any, AsyncIterator, Iterator
+from typing import Any, Iterator
 
 from anthropic import Anthropic, APIConnectionError, APIStatusError
 from pydantic import BaseModel, Field
@@ -249,40 +249,6 @@ Recommendation — your primary recommended action with rationale.
     except Exception as e:
         logger.exception("Claude stream failed: %s", e)
         yield _STREAM_ERROR_TOKEN
-
-
-async def stream_analysis_async(
-    deviation: dict[str, Any],
-    order: dict | None = None,
-    supplier: dict | None = None,
-    ontology_constraints: list[dict] | None = None,
-) -> AsyncIterator[str]:
-    """Async version of stream_analysis."""
-    # Anthropic SDK sync streaming - run in executor for async
-    import asyncio
-
-    loop = asyncio.get_running_loop()
-    queue: asyncio.Queue[str] = asyncio.Queue()
-
-    def _run_stream() -> None:
-        try:
-            for token in stream_analysis(deviation, order, supplier, ontology_constraints):
-                loop.call_soon_threadsafe(queue.put_nowait, token)
-        except Exception as exc:
-            loop.call_soon_threadsafe(queue.put_nowait, _STREAM_ERROR_TOKEN)
-        finally:
-            loop.call_soon_threadsafe(queue.put_nowait, "")
-
-    task = asyncio.create_task(asyncio.to_thread(_run_stream))
-    try:
-        while True:
-            token = await queue.get()
-            if not token:
-                break
-            yield token
-    finally:
-        # Ensure background task is cleaned up if consumer exits early
-        task.cancel()
 
 
 def analyze_structured(

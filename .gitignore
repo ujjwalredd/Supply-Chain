@@ -63,3 +63,8 @@ secrets/
 .idea/
 *.swp
 *.swo
+
+# Test / coverage artifacts
+.coverage
+coverage.xml
+htmlcov/

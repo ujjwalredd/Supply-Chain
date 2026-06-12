@@ -494,6 +494,7 @@ def _trigger_ai_background(deviation: dict, engine_factory) -> None:
     """
     if not os.getenv("ANTHROPIC_API_KEY"):
         return
+    engine = None
     try:
         from api.models import Deviation, Order, PendingAction, Supplier
         from integrations.action_executor import ActionExecutor
@@ -584,6 +585,7 @@ def _trigger_ai_background(deviation: dict, engine_factory) -> None:
         # so operators are notified and no CRITICAL deviation falls through silently.
         # Open a FRESH session — `session` may be undefined (import/engine failure) or
         # already closed/rolled-back (exception inside the with-block above).
+        _engine = None
         try:
             from api.models import PendingAction as _PendingAction
             from sqlalchemy.orm import sessionmaker as _sessionmaker
@@ -611,6 +613,14 @@ def _trigger_ai_background(deviation: dict, engine_factory) -> None:
             logger.info("Fallback ESCALATE action created for deviation %s", deviation.get("deviation_id"))
         except Exception as fallback_err:
             logger.error("Failed to create fallback action for deviation %s: %s", deviation.get("deviation_id"), fallback_err)
+        finally:
+            if _engine is not None:
+                _engine.dispose()
+    finally:
+        # Dispose the per-task engine so its connection pool is released —
+        # otherwise pools accumulate, one per CRITICAL deviation, exhausting Postgres.
+        if engine is not None:
+            engine.dispose()
 
 
 def process_batch(
