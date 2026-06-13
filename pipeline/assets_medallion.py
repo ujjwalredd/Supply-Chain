@@ -8,9 +8,13 @@ Gold: Modeled, AI-ready, analytics-optimized
 
 import logging
 import os
+import json
+import re
+import tempfile
 from pathlib import Path
+from typing import Any
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from dagster import AssetExecutionContext, asset, MaterializeResult, MetadataValue, FreshnessPolicy
 
@@ -34,28 +38,256 @@ def _read_bronze_parquet(table: str) -> "pd.DataFrame | None":
     return None
 
 
+ORDER_REQUIRED_COLS = {
+    "order_id", "supplier_id", "product", "quantity",
+    "unit_price", "order_value", "status", "delay_days",
+}
+VALID_ORDER_STATUSES = {"PENDING", "IN_TRANSIT", "DELIVERED", "DELAYED", "CANCELLED"}
+
+
+def _safe_table_name(name: str) -> str:
+    """Return a bounded table name safe for local Bronze paths."""
+    cleaned = re.sub(r"[^\w]", "_", str(name or "")).strip("_")[:80]
+    return cleaned or "customer_data"
+
+
+def _loader_file_for_metadata(meta_path: Path, meta: dict[str, Any]) -> Path | None:
+    """Resolve a generated loader path without trusting arbitrary metadata paths."""
+    loaders_dir = meta_path.parent.resolve()
+    table_name = _safe_table_name(meta.get("table_name") or meta_path.stem)
+    candidates = []
+
+    declared = str(meta.get("loader_file") or "")
+    if declared:
+        candidates.append(loaders_dir / Path(declared).name)
+    candidates.extend([loaders_dir / f"{table_name}.py", meta_path.with_suffix(".py")])
+
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except Exception:
+            continue
+        if resolved.exists() and resolved.parent == loaders_dir:
+            return resolved
+    return None
+
+
+def _run_generated_loader(loader_file: Path, source_file: Path) -> list[dict[str, Any]]:
+    """Run a generated load_csv() function in the CodeExecutor sandbox."""
+    from agents.tools.code_executor import CodeExecutor
+
+    out_path = None
+    try:
+        loader_source = loader_file.read_text(encoding="utf-8")
+        with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as out:
+            out_path = out.name
+
+        wrapper = (
+            "import json\n"
+            "from pathlib import Path\n\n"
+            f"{loader_source}\n\n"
+            f"_source = Path({str(source_file)!r})\n"
+            f"_output = Path({out_path!r})\n"
+            "_count = 0\n\n"
+            "with _output.open(\"w\", encoding=\"utf-8\") as _fh:\n"
+            "    for _row in load_csv(_source):\n"
+            "        if not isinstance(_row, dict):\n"
+            "            raise TypeError(\"load_csv must yield dict rows\")\n"
+            "        _fh.write(json.dumps(_row, default=str) + \"\\n\")\n"
+            "        _count += 1\n\n"
+            "print(json.dumps({\"ok\": True, \"rows\": _count}))\n"
+        )
+
+        timeout = int(os.getenv("GENERATED_LOADER_EXEC_TIMEOUT", "60"))
+        result = CodeExecutor().execute_python(wrapper, timeout=timeout)
+        if not result.get("ok"):
+            raise RuntimeError(result.get("stderr") or "generated loader failed")
+
+        summary = json.loads(result.get("stdout", "{}").strip() or "{}")
+        if not summary.get("ok"):
+            raise RuntimeError(f"generated loader returned failure: {summary}")
+
+        rows: list[dict[str, Any]] = []
+        with open(out_path, encoding="utf-8") as fh:
+            for line in fh:
+                if line.strip():
+                    row = json.loads(line)
+                    if isinstance(row, dict):
+                        rows.append(row)
+        return rows
+    finally:
+        if out_path:
+            try:
+                os.unlink(out_path)
+            except Exception:
+                pass
+
+
+def _to_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_int(value: Any, default: int = 0) -> int:
+    return int(_to_float(value, float(default)))
+
+
+def _coerce_order_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Normalize generated canonical order rows before merging into Bronze orders."""
+    if not rows:
+        return []
+
+    observed_cols = set().union(*(set(r.keys()) for r in rows[:20]))
+    if not ORDER_REQUIRED_COLS.issubset(observed_cols):
+        return []
+
+    now = datetime.now(timezone.utc)
+    default_date = now.date().isoformat()
+    default_ts = now.isoformat()
+    normalized: list[dict[str, Any]] = []
+
+    for row in rows:
+        order_id = str(row.get("order_id") or "").strip()
+        if not order_id:
+            continue
+
+        quantity = max(1, _to_int(row.get("quantity"), 1))
+        unit_price = max(0.0, _to_float(row.get("unit_price"), 0.0))
+        order_value = max(0.0, _to_float(row.get("order_value"), unit_price * quantity))
+        if order_value == 0.0 and unit_price > 0:
+            order_value = round(unit_price * quantity, 2)
+
+        delay_days = max(0, _to_int(row.get("delay_days"), 0))
+        status = str(row.get("status") or ("DELAYED" if delay_days > 0 else "PENDING")).upper()
+        if status not in VALID_ORDER_STATUSES:
+            status = "PENDING"
+
+        inventory_level = min(100.0, max(0.0, _to_float(row.get("inventory_level"), 80.0)))
+
+        record = dict(row)
+        record.update({
+            "order_id": order_id,
+            "supplier_id": str(row.get("supplier_id") or "UNKNOWN").strip() or "UNKNOWN",
+            "product": str(row.get("product") or "UNKNOWN").strip() or "UNKNOWN",
+            "region": str(row.get("region") or "UNKNOWN").strip() or "UNKNOWN",
+            "quantity": quantity,
+            "unit_price": round(unit_price, 2),
+            "order_value": round(order_value, 2),
+            "expected_delivery": row.get("expected_delivery") or default_date,
+            "actual_delivery": row.get("actual_delivery") or None,
+            "delay_days": delay_days,
+            "status": status,
+            "inventory_level": inventory_level,
+            "created_at": row.get("created_at") or default_ts,
+        })
+        normalized.append(record)
+
+    return normalized
+
+
+def _ingest_generated_loaders(context: AssetExecutionContext | None = None) -> dict[str, Any]:
+    """Execute DataIngestionAgent-generated loaders and write their rows to Bronze."""
+    loaders_dir = DATA_DIR / "_loaders"
+    stats: dict[str, Any] = {
+        "loader_count": 0,
+        "failed_loaders": 0,
+        "generated_rows": 0,
+        "generated_order_rows": 0,
+        "tables": {},
+    }
+    if not loaders_dir.exists():
+        return stats
+
+    from ingestion import batch_loader as bl
+
+    original_bronze_path = bl.BRONZE_PATH
+    bl.BRONZE_PATH = BRONZE_PATH
+    try:
+        for meta_path in sorted(loaders_dir.glob("*.json")):
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                table_name = _safe_table_name(meta.get("table_name") or meta_path.stem)
+                source_name = Path(str(meta.get("source_file") or "")).name
+                source_file = DATA_DIR / source_name if source_name else None
+                loader_file = _loader_file_for_metadata(meta_path, meta)
+
+                if not source_file or not source_file.exists():
+                    raise FileNotFoundError(f"source file missing for loader metadata: {source_name}")
+                if not loader_file:
+                    raise FileNotFoundError(f"loader file missing for metadata: {meta_path.name}")
+
+                rows = _run_generated_loader(loader_file, source_file)
+                ingested_at = datetime.now(timezone.utc).isoformat()
+                for row in rows:
+                    row.setdefault("_source_file", source_file.name)
+                    row.setdefault("_source_ingested_at", ingested_at)
+
+                if rows and table_name != "orders":
+                    bl.load_to_bronze_generic(iter(rows), table_name)
+
+                order_rows = _coerce_order_records(rows)
+                if order_rows:
+                    bl.load_to_bronze_delta(iter(order_rows), "orders")
+
+                stats["loader_count"] += 1
+                stats["generated_rows"] += len(rows)
+                stats["generated_order_rows"] += len(order_rows)
+                stats["tables"][table_name] = len(rows)
+
+                if context is not None:
+                    context.log.info(
+                        "Generated loader %s ingested %d rows into bronze/%s (%d order rows)",
+                        loader_file.name, len(rows), table_name, len(order_rows),
+                    )
+            except Exception as exc:
+                stats["failed_loaders"] += 1
+                if context is not None:
+                    context.log.warning("Generated loader ingestion failed for %s: %s", meta_path.name, exc)
+                else:
+                    logger.warning("Generated loader ingestion failed for %s: %s", meta_path.name, exc)
+    finally:
+        bl.BRONZE_PATH = original_bronze_path
+
+    return stats
+
+
 # --- BRONZE LAYER ---
 @asset(compute_kind="python", group_name="bronze")
 def bronze_orders(context: AssetExecutionContext) -> MaterializeResult:
     """
     Bronze: Raw order data. Append-only, schema-on-read.
-    Source: batch CSV (OrderList) or Kafka consumer.
+    Source: batch CSV (OrderList), Kafka consumer, or generated customer loaders.
     """
     from ingestion.batch_loader import load_orderlist_csv, load_to_bronze_delta
 
     orderlist = DATA_DIR / "OrderList.csv"
-    if not orderlist.exists():
-        logger.warning("OrderList.csv missing. Run download_supply_chain_data.py first.")
-        return MaterializeResult(metadata={
-            "row_count": MetadataValue.int(0),
-            "source": MetadataValue.text("none"),
-        })
+    generated = _ingest_generated_loaders(context)
+    built_in_count = 0
+    sources = []
 
-    records = load_orderlist_csv(orderlist)
-    count = load_to_bronze_delta(records, "orders")
+    if orderlist.exists():
+        records = load_orderlist_csv(orderlist)
+        built_in_count = load_to_bronze_delta(records, "orders")
+        sources.append("OrderList.csv")
+    else:
+        logger.warning("OrderList.csv missing. Run download_supply_chain_data.py first.")
+
+    if generated["loader_count"]:
+        sources.append("generated_loaders")
+
+    total_order_rows = built_in_count + int(generated["generated_order_rows"])
     return MaterializeResult(metadata={
-        "row_count": MetadataValue.int(count),
-        "source": MetadataValue.text("OrderList.csv"),
+        "row_count": MetadataValue.int(total_order_rows),
+        "source": MetadataValue.text(",".join(sources) or "none"),
+        "generated_loader_count": MetadataValue.int(int(generated["loader_count"])),
+        "generated_rows": MetadataValue.int(int(generated["generated_rows"])),
+        "generated_order_rows": MetadataValue.int(int(generated["generated_order_rows"])),
+        "generated_loader_failures": MetadataValue.int(int(generated["failed_loaders"])),
+        "generated_tables": MetadataValue.text(json.dumps(generated["tables"], sort_keys=True)),
     })
 
 
