@@ -75,9 +75,9 @@ interval. The Orchestrator correlates failures across agents and issues signed c
    ▼               ▼                ▼                ▼                    ▼
  Kafka          Dagster          Medallion          ML / Data           Platform
  2. kafka       3. dagster       4. bronze          8. mlflow           11. database
-    guardian       guardian     5. silver          9. feature              health
-                                6. gold               engineer         12. ai quality
-                                7. supervisor      10. data                monitor
+    guardian       guardian      5. silver          9. feature              health
+                                 6. gold               engineer         12. ai quality
+                                 7. supervisor      10. data                monitor
                                                        ingestion        13. dashboard
                                                                             agent
 ```
