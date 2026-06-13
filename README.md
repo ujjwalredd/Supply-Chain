@@ -65,20 +65,21 @@ Agents run as daemon threads alongside the pipeline, each watching one domain on
 interval. The Orchestrator correlates failures across agents and issues signed corrections.
 
 ```
-┌─ ORCHESTRATOR (Claude Sonnet + deepagents/LangGraph) ─────────────────────────┐
-│   3 sub-agents : kafka_investigator · dagster_investigator · ml_investigator  │
-│   7 tools      : heartbeats · audit · Kafka · Dagster · MLflow ·              │
-│                  issue_correction · trigger_pipeline                          │
-│   knowledge    : 5 SKILL.md files + incident_patterns.md (8 patterns)         │
+┌─ ORCHESTRATOR ────────────────────────────────────────────────────────────────┐
+│  1. orchestrator                                                              │
+│  Claude Sonnet + deepagents/LangGraph + 3 specialist subagents + 7 tools      │
 └──────────────────────────────────┬────────────────────────────────────────────┘
-            issues HMAC-signed corrections via Redis pub/sub
+            issues HMAC-signed corrections via PostgreSQL + Redis pub/sub
                                     │
-   ┌───────────────┬────────────────┼────────────────┬───────────────┐
-   ▼               ▼                ▼                ▼               ▼
- Kafka          Dagster        Medallion          ML / Data       Platform
- Guardian       Guardian       Bronze·Silver·     MLflow Guardian Database Health
-                               Gold·Supervisor    Feature Eng.    AI Quality Mon.
-                                                  Data Ingestion  Dashboard Agent
+   ┌───────────────┬────────────────┼────────────────┬────────────────────┐
+   ▼               ▼                ▼                ▼                    ▼
+ Kafka          Dagster          Medallion          ML / Data           Platform
+ 2. kafka       3. dagster       4. bronze          8. mlflow           11. database
+    guardian       guardian     5. silver          9. feature              health
+                                6. gold               engineer         12. ai quality
+                                7. supervisor      10. data                monitor
+                                                       ingestion        13. dashboard
+                                                                            agent
 ```
 
 ### 3. ML feedback loop
