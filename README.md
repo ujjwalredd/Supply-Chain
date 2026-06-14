@@ -129,9 +129,9 @@ Model routing is intentionally hierarchical:
                                    DATA PLANE
 
  +---------------------+      +---------------------+      +---------------------+
- | Sources             |      | Landing             |      | Lakehouse / Dagster  |
+ | Sources             |      | Landing             |      | Lakehouse / Dagster |
  | CSV upload          | ---> | /data/source        | ---> | Bronze → Silver     |
- | MinIO / S3 drop     |      | watched every 60s   |      |        → Gold        |
+ | MinIO / S3 drop     |      | watched every 60s   |      |        → Gold       |
  +----------+----------+      +----------+----------+      +----------+----------+
             |                            |                            |
             |                            |                            v
