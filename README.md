@@ -87,10 +87,10 @@ Model routing is intentionally hierarchical:
       |                                  |                               |
       v                                  v                               v
 
-                  GUARDS / DOMAIN SENTINELS
+                             GUARDS / DOMAIN SENTINELS
 
  +-------------------------+   +-------------------------+   +-------------------------+
- | 2. kafka_guardian       |   | 3. dagster_guardian     |   | 8. mlflow_guardian      |
+ | 2. kafka_guardian       |   | 3. dagster_guardian     |   | 4. mlflow_guardian      |
  | Claude Haiku · 30 sec   |   | Claude Haiku · 2 min    |   | Claude Haiku · 5 min    |
  | lag · DLQ · producer    |   | runs · freshness        |   | drift · retrain         |
  | silence                 |   | reruns                  |   | promote                 |
@@ -99,20 +99,20 @@ Model routing is intentionally hierarchical:
               |                             |                             |
               v                             v                             v
 
-                         WORKERS / SPECIALIST AGENTS
+                                WORKERS / SPECIALIST AGENTS
 
  +-------------------------+   +-------------------------+   +-------------------------+
- | 10. data_ingestion      |   | 4. bronze_agent         |   | 9. feature_engineer     |
+ | 5. data_ingestion       |   | 6. bronze_agent         |   | 7. feature_engineer     |
  | Haiku + deepagents      |   | Claude Haiku · 5 min    |   | Claude Haiku · 15 min   |
  | loader generation       |   | raw layer checks        |   | 8-gate feature sandbox  |
  | + CodeExecutor          |   +-------------------------+   +-------------------------+
  +-------------------------+
 
- +-------------------------+   +-------------------------+   +-------------------------+
- | 5. silver_agent         |   | 6. gold_agent           |   | 7. medallion_supervisor |
- | Claude Haiku · 5 min    |   | Claude Haiku · 10 min   |   | Claude Haiku · 3 min    |
- | quality checks          |   | business + ML sanity    |   | Bronze→Silver→Gold gate |
- +-------------------------+   +-------------------------+   +-------------------------+
+ +-------------------------+   +-------------------------+   +--------------------------+
+ | 8. silver_agent         |   | 9. gold_agent           |   | 10. medallion_supervisor |
+ | Claude Haiku · 5 min    |   | Claude Haiku · 10 min   |   | Claude Haiku · 3 min     |
+ | quality checks          |   | business + ML sanity    |   | Bronze→Silver→Gold gate  |
+ +-------------------------+   +-------------------------+   +--------------------------+
 
  +-------------------------+   +-------------------------+   +-------------------------+
  | 11. database_health     |   | 12. ai_quality_monitor  |   | 13. dashboard_agent     |

@@ -90,8 +90,8 @@ def train_delay_model(df: pd.DataFrame, extra_feature_cols: list | None = None) 
         import xgboost as xgb
         from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, recall_score
         from sklearn.model_selection import train_test_split
-    except ImportError as e:
-        logger.warning("XGBoost/sklearn not available (%s). Using heuristic fallback.", e)
+    except Exception as e:
+        logger.warning("XGBoost/sklearn unavailable (%s). Using heuristic fallback.", e)
         return _heuristic_train_result(df)
 
     # --- Prepare target ---
@@ -212,8 +212,8 @@ def predict_delay(features: dict) -> dict:
     # --- Graceful degradation ---
     try:
         import xgboost as xgb
-    except ImportError:
-        logger.warning("XGBoost not available. Using heuristic prediction.")
+    except Exception as e:
+        logger.warning("XGBoost unavailable (%s). Using heuristic prediction.", e)
         return _heuristic_predict(features)
 
     from pathlib import Path
