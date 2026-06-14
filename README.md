@@ -59,30 +59,130 @@ The Kafka stream forks: the **operational path** (`pg-writer`) lands orders/devi
 in PostgreSQL for the live dashboard, while the **analytics path** feeds the Dagster
 medallion lakehouse for ML training.
 
-### 2. Autonomous control plane (13 agents)
+### 2. Full architecture with AI control plane
+
+The data plane does the ingestion, streaming, lakehouse, ML, and serving work. Around it,
+13 agents form an AI control plane. Each domain agent watches one slice of the system,
+writes heartbeats/audits to PostgreSQL, publishes alerts through Redis, and accepts only
+signed corrections from the Orchestrator.
+
+Model routing is intentionally hierarchical:
+
+- **Claude Sonnet** (`AGENT_MODEL_SONNET`, default `claude-sonnet-4-6`) is used only by the Orchestrator for cross-domain reasoning.
+- **Claude Haiku** (`AGENT_MODEL_HAIKU`, default `claude-haiku-4-5-20251001`) is used by the 12 domain agents for cheaper anomaly analysis.
+- The Orchestrator also has 3 Haiku specialist sub-agents: `kafka_investigator`, `dagster_investigator`, and `ml_investigator`.
+
+```
+                                   ORCHESTRATION
+
+                         +--------------------------------+
+                         |  1. orchestrator               |
+                         |  Claude Sonnet + deepagents    |
+                         |  3 sub-agents + 7 tools        |
+                         +---------------+----------------+
+                                         |
+                      HMAC-signed corrections + root-cause decisions
+                                         |
+      --------------------------------------------------------------------
+      |                                  |                               |
+      v                                  v                               v
+
+                  GUARDS / DOMAIN SENTINELS
+
+ +-------------------------+   +-------------------------+   +-------------------------+
+ | 2. kafka_guardian       |   | 3. dagster_guardian     |   | 8. mlflow_guardian      |
+ | Claude Haiku · 30 sec   |   | Claude Haiku · 2 min    |   | Claude Haiku · 5 min    |
+ | lag · DLQ · producer    |   | runs · freshness        |   | drift · retrain         |
+ | silence                 |   | reruns                  |   | promote                 |
+ +------------+------------+   +------------+------------+   +------------+------------+
+              |                             |                             |
+              |                             |                             |
+              v                             v                             v
+
+                         WORKERS / SPECIALIST AGENTS
+
+ +-------------------------+   +-------------------------+   +-------------------------+
+ | 10. data_ingestion      |   | 4. bronze_agent         |   | 9. feature_engineer     |
+ | Haiku + deepagents      |   | Claude Haiku · 5 min    |   | Claude Haiku · 15 min   |
+ | loader generation       |   | raw layer checks        |   | 8-gate feature sandbox  |
+ | + CodeExecutor          |   +-------------------------+   +-------------------------+
+ +-------------------------+
+
+ +-------------------------+   +-------------------------+   +-------------------------+
+ | 5. silver_agent         |   | 6. gold_agent           |   | 7. medallion_supervisor |
+ | Claude Haiku · 5 min    |   | Claude Haiku · 10 min   |   | Claude Haiku · 3 min    |
+ | quality checks          |   | business + ML sanity    |   | Bronze→Silver→Gold gate |
+ +-------------------------+   +-------------------------+   +-------------------------+
+
+ +-------------------------+   +-------------------------+   +-------------------------+
+ | 11. database_health     |   | 12. ai_quality_monitor  |   | 13. dashboard_agent     |
+ | Claude Haiku · 60 sec   |   | Claude Haiku · 60 sec   |   | Claude Haiku · 10 min   |
+ | locks · queries · pool  |   | stuck / low-confidence  |   | Grafana JSON updates    |
+ +-------------------------+   +-------------------------+   +-------------------------+
+
+                         SHARED AGENT CONTROL BUS
+
+        agents ==heartbeats / alerts / audits==> PostgreSQL + Redis
+        orchestrator --signed corrections------> PostgreSQL + Redis
+        target agents --verify HMAC------------> apply_correction()
+
+                                   DATA PLANE
+
+ +---------------------+      +---------------------+      +---------------------+
+ | Sources             |      | Landing             |      | Lakehouse / Dagster  |
+ | CSV upload          | ---> | /data/source        | ---> | Bronze → Silver     |
+ | MinIO / S3 drop     |      | watched every 60s   |      |        → Gold        |
+ +----------+----------+      +----------+----------+      +----------+----------+
+            |                            |                            |
+            |                            |                            v
+            |                            |                 +---------------------+
+            |                            |                 | ML models           |
+            |                            |                 | XGBoost + MLflow    |
+            |                            |                 | Prophet forecast    |
+            |                            |                 | supplier scoring    |
+            |                            |                 +----------+----------+
+            |                            |                            |
+            v                            v                            v
+ +---------------------+      +---------------------+      +---------------------+
+ | Kafka events        | ---> | pg-writer           | ---> | PostgreSQL          |
+ | supply-chain-events |      | Kafka → PostgreSQL  |      | orders/deviations   |
+ +---------------------+      +---------------------+      +----------+----------+
+                                                                  |
+                                                                  v
+                                                       +----------------------+
+                                                       | FastAPI REST + WS    |
+                                                       | Next.js dashboard    |
+                                                       | Grafana observability|
+                                                       +----------------------+
+```
+
+### 3. Autonomous control plane hierarchy
 
 Agents run as daemon threads alongside the pipeline, each watching one domain on its own
 interval. The Orchestrator correlates failures across agents and issues signed corrections.
 
 ```
-┌─ ORCHESTRATOR ────────────────────────────────────────────────────────────────┐
-│  1. orchestrator                                                              │
-│  Claude Sonnet + deepagents/LangGraph + 3 specialist subagents + 7 tools      │
-└──────────────────────────────────┬────────────────────────────────────────────┘
-            issues HMAC-signed corrections via PostgreSQL + Redis pub/sub
-                                    │
-   ┌───────────────┬────────────────┼────────────────┬────────────────────┐
-   ▼               ▼                ▼                ▼                    ▼
- Kafka          Dagster          Medallion          ML / Data           Platform
- 2. kafka       3. dagster       4. bronze          8. mlflow           11. database
-    guardian       guardian      5. silver          9. feature              health
-                                 6. gold               engineer         12. ai quality
-                                 7. supervisor      10. data                monitor
-                                                       ingestion        13. dashboard
-                                                                            agent
+orchestrator (Claude Sonnet + deepagents)
+├── Streaming
+│   └── kafka_guardian (Claude Haiku)
+├── Orchestration
+│   └── dagster_guardian (Claude Haiku)
+├── Lakehouse
+│   ├── bronze_agent (Claude Haiku)
+│   ├── silver_agent (Claude Haiku)
+│   ├── gold_agent (Claude Haiku)
+│   └── medallion_supervisor (Claude Haiku)
+├── ML / Data
+│   ├── data_ingestion (Claude Haiku + deepagents)
+│   ├── feature_engineer (Claude Haiku)
+│   └── mlflow_guardian (Claude Haiku)
+└── Serving / Platform
+    ├── database_health (Claude Haiku)
+    ├── ai_quality_monitor (Claude Haiku)
+    └── dashboard_agent (Claude Haiku)
 ```
 
-### 3. ML feedback loop
+### 4. ML feedback loop
 
 ```
 new Gold data ─▶ FeatureEngineer (15m) ─▶ 8-gate sandbox ─▶ computed_features/
@@ -103,7 +203,7 @@ new Gold data ─▶ FeatureEngineer (15m) ─▶ 8-gate sandbox ─▶ computed
 
 | Agent | Model | Interval | Responsibility |
 |-------|-------|----------|----------------|
-| **Orchestrator** | Claude Sonnet 4.6 | 5 min | deepagents LangGraph with 3 sub-agents and 7 tools. Cross-agent root cause analysis, structured `OrchestrationResult` corrections via Redis pub/sub. Loads 5 domain skills + incident memory. |
+| **Orchestrator** | Claude Sonnet 4.6 | 5 min | deepagents LangGraph with 3 sub-agents and 7 tools. Cross-agent root cause analysis, structured `OrchestrationResult` corrections via Redis pub/sub. Loads 4 orchestrator skills + incident memory. |
 | **Kafka Guardian** | Claude Haiku | 30s | Consumer lag, DLQ spikes, producer silence. Restarts containers via Docker API. |
 | **Dagster Guardian** | Claude Haiku | 2 min | Run failures, asset freshness, schedule health. Triggers full or incremental jobs. Responds to orchestrator corrections. |
 | **Bronze Agent** | Claude Haiku | 5 min | Parquet existence, schema drift, freshness validation. `apply_correction("trigger materialization")` → real Dagster trigger. |
@@ -140,10 +240,10 @@ OrchestratorAgent.check()
   └── ≥ 2 degraded or any CRITICAL/HIGH alert → deepagents invoked
             │
             ▼
-      create_deep_agent(llm=Sonnet, tools=[7 tools], subagents=[3 subagents],
+      create_deep_agent(model=SONNET_MODEL, tools=[7 tools], subagents=[3 subagents],
                         response_format=OrchestrationResult,
-                        memory_files=[incident_patterns.md],
-                        system_prompt=skills_text)
+                        memory=None,
+                        system_prompt=skills_text + incident_patterns.md)
             │
             ├── Calls tools: get_all_heartbeats, get_dagster_recent_runs, etc.
             ├── Delegates to sub-agents if deep investigation needed
